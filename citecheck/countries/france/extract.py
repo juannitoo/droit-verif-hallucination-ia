@@ -9,6 +9,8 @@ POURQUOI PAS UN MODÈLE
 CE QU'IL SAIT LIRE
   administratif : CE / CAA / TA ... n° 308850            (5 à 7 chiffres après « n° »)
   judiciaire    : Cass. / Civ. 2e / Soc. ... 17-28.268 ou 17-28268
+  appel, TJ     : CA Paris / cour d'appel de Paris / TJ Périgueux ... RG n° 11/18803 ;
+                  la juridiction doit être nommée dans la même phrase
   dates en toutes lettres (« 5 juin 2009 ») et en chiffres (05/06/2009)
   articles      : « article L. 3121-2 du Code du travail », « art. 1240 C. civ. »,
                   « C. trav., art. L. 1152-1 », « articles L. 1234-1 et L. 1234-5 du ... »,
@@ -116,6 +118,9 @@ def extract(text):
     if set_aside:
         remarks.append(f"{len(set_aside)} numéro(s) écarté(s), à 5-7 chiffres mais près d'une "
                        f"juridiction judiciaire : {', '.join(set_aside)}. À vérifier à la main.")
+    lower, lower_remarks = extract_lower_courts(text)
+    citations += lower
+    remarks += lower_remarks
     articles, article_remarks = extract_articles(text)
     # Dans l'ordre du document : c'est l'ordre dans lequel l'avocat relira.
     both = sorted(citations + articles, key=lambda c: c["span"][0])
@@ -264,3 +269,64 @@ def extract_articles(text):
                        f"{', '.join(attached[:12])}. Seul le texte de base des conventions "
                        "est vérifié.")
     return citations, remarks
+
+
+# Cours d'appel et tribunaux judiciaires
+
+# Un RG : deux chiffres (l'année), une barre, quatre ou cinq chiffres. On l'exige précédé de
+# « RG » ou « n° » : sinon « 03/2019 » (un mois) passerait pour un numéro.
+RE_RG = re.compile(r"(?:\bRG|\bR\.G\.|n[°º])\s*(?:n[°º]\s*)?:?\s*(\d{2}/\d{4,5})\b")
+RE_LOWER_COURT = re.compile(
+    r"\b(?P<kind>CA|cour\s+d['’]\s*appel|TJ|TGI|tribunal\s+judiciaire|"
+    r"tribunal\s+de\s+grande\s+instance)\b\s*(?:de\s+|d['’]\s*)?", re.I)
+CITY_LINKS = {"en", "de", "du", "des", "sur", "les", "la", "le", "lès", "d", "l"}
+
+
+def _city(text):
+    """Le nom de ville qui suit « CA » ou « tribunal judiciaire de » : mots à majuscule,
+    reliés par des tirets ou par en, de, sur... Vide si rien de tel."""
+    words = re.findall(r"[\wÀ-ÿ]+|['’-]|\s+", text[:60])
+    out, pending = [], []
+    for w in words:
+        if w.isspace() or w in "-'’":
+            pending.append(w)
+            continue
+        if w[0].isupper():
+            out += pending + [w]
+            pending = []
+        elif w.lower() in CITY_LINKS and out:
+            pending.append(w)
+        else:
+            break
+    return "".join(out).strip()
+
+
+def extract_lower_courts(text):
+    citations, seen, no_court = [], set(), []
+    for m in RE_RG.finditer(text):
+        number = m.group(1)
+        lo = max(0, m.start() - WINDOW)
+        for end in RE_SENTENCE_END.finditer(text, lo, m.start()):
+            lo = end.end()
+        courts = list(RE_LOWER_COURT.finditer(text, lo, m.start()))
+        city = _city(text[courts[-1].end():]) if courts else ""
+        if not courts or not city:
+            no_court.append(number)
+            continue
+        kind = courts[-1].group("kind").lower()
+        jurisdiction = "ca" if kind.startswith(("ca", "cour")) else "tj"
+        if (jurisdiction, city, number) in seen:
+            continue
+        seen.add((jurisdiction, city, number))
+        label = ("CA " if jurisdiction == "ca" else "TJ ") + city
+        citations.append({"kind": "decision", "order": "lower", "court": label,
+                          "jurisdiction": jurisdiction, "place": city, "number": number,
+                          "cited_date": nearest_date(text, m.start(), m.end()),
+                          "span": m.span()})
+    remarks = []
+    if no_court:
+        remarks.append(f"{len(no_court)} numéro(s) RG sans cour d'appel ni tribunal judiciaire "
+                       f"reconnu dans la même phrase : {', '.join(no_court[:12])}. Un RG seul "
+                       "n'identifie pas une décision : non vérifiés.")
+    return citations, remarks
+

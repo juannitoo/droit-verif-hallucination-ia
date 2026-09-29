@@ -11,6 +11,14 @@ DECISIONS = [
     "numéro doit suivre « n° ». Base interrogée : ArianeWeb.",
     "Cour de cassation : les numéros de pourvoi « 17-28.268 » ou « 17-28268 », avec ou sans "
     "« Cass. », « Civ. 2e », « Soc. »... Base interrogée : Judilibre.",
+    "Cours d'appel et tribunaux judiciaires : « CA Paris, 2 octobre 2013, RG n° 11/18803 », "
+    "« tribunal judiciaire de Périgueux, 18 décembre 2025, RG 23/00452 ». Un RG n'est pas "
+    "unique (chaque juridiction a sa numérotation) : la juridiction doit être nommée dans la "
+    "même phrase, sinon le RG est signalé sans être vérifié. Base interrogée : Judilibre.",
+    "Judilibre ne publie largement ces décisions que depuis peu, et pas au même rythme partout. "
+    "Le programme mesure, pour la juridiction citée, le nombre de décisions publiées par année. "
+    "Une décision introuvable dans une période publiée en partie, ou datée de moins de six "
+    "mois (délai de publication), sort « non vérifiable » : l'absence n'y prouve rien.",
     "La date citée est lue à côté du numéro, en toutes lettres (« 5 juin 2009 ») ou en "
     "chiffres (« 05/06/2009 »), puis comparée à celle de la base.",
 ]
@@ -37,11 +45,10 @@ CONVENTIONS = [
 ]
 
 NOT_CHECKED = [
-    "les arrêts des cours d'appel et les jugements des tribunaux, cités par leur numéro RG "
-    "(« CA Paris, 2 octobre 2013, RG 11/18803 ») : un RG n'est pas unique (chaque "
-    "juridiction a sa propre numérotation, « 11/18803 » existe dans plusieurs cours), et "
-    "ces décisions ne sont publiées en entier que depuis peu (2022 pour les cours d'appel en "
-    "matière civile), seulement en partie avant",
+    "un numéro RG sans cour d'appel ni tribunal judiciaire nommé dans la même phrase : un RG "
+    "seul n'identifie pas une décision",
+    "les juridictions autres que la Cour de cassation, les cours d'appel, les tribunaux "
+    "judiciaires et le Conseil d'État (tribunaux de commerce, conseils de prud'hommes...)",
     "les décisions des cours administratives d'appel (CAA) et des tribunaux administratifs "
     "(TA), à numéro mêlant chiffres et lettres (« 21BX01234 ») : les bases interrogeables "
     "sans installation n'en publient qu'une sélection",
@@ -73,7 +80,8 @@ def scope():
 
 def not_checked_summary():
     """Version courte, pour la fin du rapport : le détail est dans l'onglet."""
-    return ("arrêts de cours d'appel et jugements (numéros RG), décisions des CAA et TA, "
+    return ("RG sans juridiction nommée, autres juridictions (commerce, prud'hommes...), "
+            "décisions des CAA et TA, "
             "décisions européennes, lois et décrets non codifiés, avenants et accords "
             "attachés aux conventions, "
             "chambre, sens des décisions. Détail et raisons : onglet « Ce qui est vérifié »")

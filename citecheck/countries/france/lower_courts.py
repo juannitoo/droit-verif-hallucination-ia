@@ -1,0 +1,128 @@
+"""Cours d'appel et tribunaux judiciaires, cités par leur numéro RG, vérifiés dans Judilibre.
+
+UN RG N'EST PAS UNIQUE
+  Chaque juridiction a sa propre numérotation : « 11/18803 » existe à Paris, à Lyon, à
+  Rennes... On cherche donc toujours dans UNE juridiction, celle nommée dans la phrase, et
+  on compare la date.
+
+LA JURIDICTION
+  Le nom de ville écrit dans le texte (« Paris », « Aix-en-Provence », « Aix ») est comparé
+  aux libellés officiels de Judilibre. Une correspondance exacte, ou un début de nom qui ne
+  désigne qu'une seule juridiction (« Aix »), suffit. Sinon on ne devine pas : non vérifiée.
+
+LA COUVERTURE, CALCULÉE ET NON ÉCRITE EN DUR
+  Judilibre ne publie largement les décisions des cours d'appel que depuis 2022-2023, et des
+  tribunaux judiciaires que depuis 2024-2025 ; avant, une sélection. Et la couverture varie
+  d'une juridiction à l'autre (mesuré le 29/09/2026 : Périgueux, 71 décisions pour 2025,
+  269 pour les neuf premiers mois de 2026). Le programme lit donc, pour LA juridiction
+  citée, le nombre de décisions publiées par année (/stats), ramène l'année en cours à une
+  année pleine, et tient une année pour couverte si elle atteint 60 % de la meilleure.
+
+  Les décisions récentes arrivent avec retard : les trois derniers mois mesurés comptaient
+  deux à trois fois moins de décisions. Une décision de moins de six mois n'est donc jamais
+  déclarée « non publiée ».
+
+  Dans tous ces cas, une décision introuvable sort « non vérifiable », jamais « ne semble
+  pas publiée » : l'absence n'y prouve rien. Et même dans une période couverte, certaines
+  matières ne sont pas diffusées : le rapport dit « à vérifier ».
+"""
+import re
+import unicodedata
+from datetime import date
+
+from . import sources
+
+COMPLETE_SHARE = 0.6
+RECENT_DAYS = 183
+KIND = {"ca": "cour d'appel", "tj": "tribunal judiciaire"}
+
+
+def _simplify(name):
+    name = unicodedata.normalize("NFKD", name.lower())
+    name = "".join(ch for ch in name if not unicodedata.combining(ch))
+    name = re.sub(r"^(?:cour d'appel|tribunal judiciaire)\s*(?:de |d'|du )?", "", name.strip())
+    return " ".join(re.sub(r"[-'’]", " ", name).split())
+
+
+class Courts:
+    """Les juridictions et la couverture de Judilibre, lues une fois par vérification."""
+
+    def __init__(self, key):
+        self.key = key
+        self._places = {}
+        self._first_complete = {}
+
+    def location(self, jurisdiction, place):
+        """(code Judilibre, libellé officiel) de la juridiction, ou None."""
+        if jurisdiction not in self._places:
+            self._places[jurisdiction] = sources.locations(jurisdiction, self.key)
+        wanted = _simplify(place)
+        found = [(code, label) for code, label in self._places[jurisdiction].items()
+                 if _simplify(label) == wanted]
+        if not found:
+            found = [(code, label) for code, label in self._places[jurisdiction].items()
+                     if _simplify(label).startswith(wanted + " ")]
+        return found[0] if len(found) == 1 else None
+
+    def first_complete_year(self, jurisdiction, location):
+        """(première année couverte, {année: nombre}) pour cette juridiction."""
+        if location not in self._first_complete:
+            counts = sources.yearly_counts(jurisdiction, location, self.key)
+            today = date.today()
+            elapsed = (today - date(today.year, 1, 1)).days + 1
+            full = {y: (n * 365 / elapsed if y == str(today.year) else n)
+                    for y, n in counts.items()}
+            best = max(full.values(), default=0)
+            complete = sorted(y for y, n in full.items() if best and n >= COMPLETE_SHARE * best)
+            self._first_complete[location] = (complete[0] if complete else None, counts)
+        return self._first_complete[location]
+
+
+def check_lower_court(courts, citation):
+    jurisdiction, number = citation["jurisdiction"], citation["number"]
+    cited = citation.get("cited_date")
+    found = courts.location(jurisdiction, citation["place"])
+    if found is None:
+        return ("NOT_TESTED", f"{KIND[jurisdiction]} « {citation['place']} » non reconnue "
+                "sans ambiguïté parmi les juridictions de Judilibre", None)
+    code, label = found
+    dates = sources.judilibre_rg(number, jurisdiction, code, courts.key)
+    if isinstance(dates, dict):
+        return "ERROR", f"Judilibre n'a pas répondu ({dates['_err']})", None
+    if dates:
+        listed = ", ".join(dates)
+        if not cited:
+            return "EXISTS_DATE_UNCHECKED", f"{label} : existe, rendue le {listed} ; aucune date citée", listed
+        if cited in dates:
+            return "CONFIRMED", label, cited
+        return ("WRONG_DATE", f"{label} : le RG existe, mais Judilibre date la décision du "
+                f"{listed}, pas du {cited}", listed)
+
+    first, counts = courts.first_complete_year(jurisdiction, code)
+    recent = cited and (date.today() - date.fromisoformat(cited)).days < RECENT_DAYS
+    if cited and first and cited[:4] >= first and not recent:
+        return ("NOT_PUBLISHED", f"{label} : aucune décision sous ce RG dans Judilibre, qui "
+                f"publie largement les décisions de cette juridiction depuis {first} : la "
+                "décision ne semble pas publiée (certaines matières ne sont pas diffusées) ; "
+                "à vérifier", None)
+    year = cited[:4] if cited else None
+    if recent:
+        why = "la décision a moins de six mois, et Judilibre publie avec retard"
+    elif year:
+        why = (f"les décisions de {year} de cette juridiction ne sont publiées qu'en partie "
+               f"({counts.get(year, 0)} dans Judilibre cette année-là"
+               + (f", publication large depuis {first}" if first else "") + ")")
+    else:
+        why = "aucune date citée, donc impossible de savoir si la période est couverte"
+    return ("UNVERIFIABLE_PERIOD", f"{label} : introuvable dans Judilibre, mais {why} : "
+            "l'absence ne prouve rien", None)
+
+
+def check_lower_courts(citations, courts):
+    results = []
+    for c in citations:
+        try:
+            results.append(check_lower_court(courts, c))
+        except Exception as e:
+            results.append(("ERROR", f"Judilibre n'a pas répondu ({type(e).__name__})", None))
+    return results

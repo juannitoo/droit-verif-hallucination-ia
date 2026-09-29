@@ -3,8 +3,8 @@
 Notice destinée à une IA de code (ou à un développeur) qui doit faire tourner, compiler ou
 faire évoluer ce programme. Pour les humains qui veulent seulement s'en servir : le README.
 
-> **En cours de création.** Aucun exécutable n'est publié, et il ne le sera pas avant deux
-> étapes : la vérification des arrêts de cours d'appel, puis un audit de sécurité du code. D'ici là, ne rien
+> **En cours de création.** Aucun exécutable n'est publié, et il ne le sera pas avant un
+> audit de sécurité du code. D'ici là, ne rien
 > compiler ni distribuer.
 
 ## Ce que fait le programme
@@ -19,7 +19,7 @@ Il ne contient **aucune IA**, et c'est voulu : un programme qui consulte une bas
 inventer. Ne jamais y ajouter un modèle, ni pour extraire les citations, ni pour juger.
 
 Pays couverts : France. Bases : ArianeWeb (Conseil d'État, sans clé), Judilibre (Cour de
-cassation) et Légifrance (codes et conventions collectives), ces deux dernières avec le
+cassation, cours d'appel, tribunaux judiciaires) et Légifrance (codes et conventions collectives), ces deux dernières avec le
 compte PISTE de l'utilisateur.
 
 ## Arborescence
@@ -34,7 +34,7 @@ compte PISTE de l'utilisateur.
 | `citecheck/keys.py` | clés : variable d'environnement, sinon trousseau du système |
 | `citecheck/report.py` | rapport texte et JSON |
 | `citecheck/locales/fr.py` | tous les textes affichés ; une langue = un fichier |
-| `citecheck/countries/france/` | extraction, bases et verdicts pour la France : `extract.py`, `sources.py` (ArianeWeb, Judilibre), `legifrance.py`, `articles.py` (codes), `conventions.py`, `codes.py` (noms et abréviations), `scope.py` (ce qui est vérifié) |
+| `citecheck/countries/france/` | extraction, bases et verdicts pour la France : `extract.py`, `sources.py` (ArianeWeb, Judilibre), `legifrance.py`, `articles.py` (codes), `conventions.py`, `lower_courts.py` (cours d'appel, tribunaux), `codes.py` (noms et abréviations), `scope.py` (ce qui est vérifié) |
 | `cases/perigueux.json` | banc d'essai : un cas réel dont le tribunal a donné la réponse |
 | `tests/` | tests hors réseau |
 
@@ -89,6 +89,13 @@ citation placée dans une note de bas de page Word est signalée comme telle.
 **La date des faits** (champ facultatif de l'onglet Vérifier, ou `--reference-date`) est la
 date à laquelle les articles sont lus. Vide, c'est la date du jour, et le rapport le dit.
 
+**Cours d'appel et tribunaux judiciaires.** Un RG n'est pas unique : il n'est vérifié que
+si la juridiction est nommée dans la même phrase. Judilibre ne publie largement ces
+décisions que depuis peu, et pas au même rythme partout : le programme mesure la couverture
+de la juridiction citée (`/stats`, année par année) au lieu de l'écrire en dur, et une
+décision introuvable dans une période publiée en partie, ou de moins de six mois, sort
+« non vérifiable ». Détail et mesures du 29/09/2026 : `countries/france/lower_courts.py`.
+
 **L'IDCC** (champ facultatif, ou `--idcc`) identifie la convention collective des articles
 cités sans IDCC dans leur phrase. Le programme ne devine jamais une convention à partir de
 son nom ; sans IDCC, la citation sort « non vérifiée ». Seul le texte de base d'une
@@ -101,6 +108,7 @@ convention est vérifié, pas ses avenants ni ses accords attachés.
 .venv/bin/python -m citecheck --case cases/perigueux.json   # réseau, doit donner 4/4
 .venv/bin/python -m citecheck --case cases/articles.json    # réseau, doit donner 7/7
 .venv/bin/python -m citecheck --case cases/conventions.json # réseau, doit donner 6/6
+.venv/bin/python -m citecheck --case cases/lower_courts.json # réseau, doit donner 4/4
 ```
 
 ## Les trois règles, à ne jamais affaiblir
@@ -160,9 +168,6 @@ dans `cases/`.
 
 ## Ce que le programme ne sait pas encore faire
 
-- Vérifier les **arrêts de cours d'appel** cités par leur numéro RG : prévu, il faut relever
-  la cour, le RG et la date ensemble (un RG n'est pas unique), et dire « non vérifiable »
-  pour les périodes où la publication est partielle.
 - Vérifier les articles des **lois et décrets** non codifiés (« article 22 de la loi du 6
   juillet 1989 ») et des **avenants** de conventions. Ils sont signalés dans les remarques du
   rapport, jamais devinés.

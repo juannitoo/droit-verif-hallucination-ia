@@ -76,3 +76,47 @@ def judilibre(number, key):
         if target in [normalize(x) for x in (res.get("numbers") or [])]:
             return res
     return None
+
+
+# Cours d'appel et tribunaux judiciaires (Judilibre)
+
+API = "https://api.piste.gouv.fr/cassation/judilibre/v1.0"
+
+
+def _judilibre_get(route, params, key):
+    url = f"{API}/{route}?" + urllib.parse.urlencode(params, doseq=True)
+    req = urllib.request.Request(url, headers={
+        "KeyId": key, "Accept": "application/json", "User-Agent": USER_AGENT})
+    try:
+        return _get_json(req)
+    finally:
+        time.sleep(PAUSE)
+
+
+def locations(jurisdiction, key):
+    """{code Judilibre: libellé} des juridictions : « ca_paris » -> « Cour d'appel de Paris »."""
+    data = _judilibre_get("taxonomy", {"id": "location", "context_value": jurisdiction}, key)
+    return data.get("result") or {}
+
+
+def yearly_counts(jurisdiction, location, key):
+    """{année: nombre de décisions publiées} dans Judilibre pour cette juridiction."""
+    data = _judilibre_get("stats", {"jurisdiction": jurisdiction, "location": location,
+                                    "keys": "year"}, key)
+    return {a["key"]["year"]: a["decisions_count"]
+            for a in (data.get("results") or {}).get("aggregated_data") or []}
+
+
+def judilibre_rg(number, jurisdiction, location, key):
+    """Les décisions de cette juridiction sous ce numéro RG : liste de dates, vide si aucune,
+    ou {'_err': ...} si la base n'a pas répondu."""
+    try:
+        data = _judilibre_get("search", {"query": number, "jurisdiction": jurisdiction,
+                                         "location": location, "page_size": 20}, key)
+    except urllib.error.HTTPError as e:
+        return {"_err": f"HTTP {e.code}"}
+    except Exception as e:
+        return {"_err": type(e).__name__}
+    target = normalize(number)
+    return sorted({(r.get("decision_date") or "")[:10] for r in data.get("results") or []
+                   if target in [normalize(x) for x in (r.get("numbers") or [])]})

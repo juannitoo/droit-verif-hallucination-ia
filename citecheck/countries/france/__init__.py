@@ -1,4 +1,5 @@
-"""France : jurisprudence administrative (ArianeWeb) et judiciaire (Judilibre), articles
+"""France : jurisprudence administrative (ArianeWeb) et judiciaire (Judilibre : Cour de
+cassation, cours d'appel, tribunaux judiciaires), articles
 des codes et des conventions collectives (Légifrance).
 
 LES TROIS RÈGLES
@@ -19,6 +20,7 @@ from datetime import date
 from . import sources
 from .articles import check_articles
 from .conventions import check_convention_articles
+from .lower_courts import Courts, check_lower_courts
 from .extract import extract
 from .legifrance import Client, Unavailable
 from .scope import not_checked_summary, scope
@@ -42,6 +44,10 @@ JUDICIAL_REAL = [("13-11.789", "Cass. soc. 08/10/2014"),
 # Pas de « 00-00.000 » : Judilibre a une vraie fiche sous ce numéro de remplissage.
 JUDICIAL_FAKE = [("99-99.999", "pourvoi inventé"),
                  ("98-99.998", "pourvoi inventé")]
+# (code Judilibre, RG, date) : décisions connues ; et des RG inventés.
+LOWER_REAL = [("ca", "ca_paris", "11/18803", "2013-10-02"),
+              ("tj", "tj24322", "25/00578", "2026-02-23")]
+LOWER_FAKE = [("ca", "ca_paris", "99/99999"), ("tj", "tj24322", "99/99999")]
 # (code, numéro, nombre minimal de versions) : des articles dont l'histoire est connue.
 LEGI_REAL = [("Code du travail", "L3121-2", 2), ("Code civil", "1240", 2),
              ("Code du travail", "L122-14-4", 7)]
@@ -128,6 +134,24 @@ def selftest_judicial(key, log):
     return ok
 
 
+def selftest_lower(key, jurisdictions, log):
+    ok = True
+    for jurisdiction, location, number, day in LOWER_REAL:
+        if jurisdiction not in jurisdictions:
+            continue
+        dates = sources.judilibre_rg(number, jurisdiction, location, key)
+        good = isinstance(dates, list) and day in dates
+        ok &= good
+        log(_line(good, f"Judilibre doit trouver {location} RG {number} du {day}"))
+    for jurisdiction, location, number in LOWER_FAKE:
+        if jurisdiction not in jurisdictions:
+            continue
+        good = sources.judilibre_rg(number, jurisdiction, location, key) == []
+        ok &= good
+        log(_line(good, f"Judilibre ne doit pas trouver {location} RG {number}"))
+    return ok
+
+
 def selftest_legifrance(client, log, with_codes, with_conventions):
     ok = True
     try:
@@ -200,6 +224,7 @@ def check(citations, keys, log=lambda s: None, options=None):
     orders = {c["order"] for c in citations if c.get("kind") not in LEGISLATION}
     admin_ok = judicial_ok = False
     admin_why = judicial_why = None
+    lower_results = iter(())
 
     if "administrative" in orders:
         log("Contrôle d'ArianeWeb (Conseil d'État) avant de juger :")
@@ -216,12 +241,28 @@ def check(citations, keys, log=lambda s: None, options=None):
             judicial_ok = selftest_judicial(key, log)
             if not judicial_ok:
                 judicial_why = "Judilibre n'a pas passé ses contrôles : aucun verdict possible"
+    if "lower" in orders:
+        lower = [c for c in citations if c.get("order") == "lower"]
+        key = keys.get("PISTE_API_KEY")
+        if not key:
+            log("Judilibre non interrogé : aucune clé PISTE.")
+            why = "clé PISTE absente : Judilibre n'a pas été interrogé"
+            lower_results = iter([("NOT_TESTED", why, None)] * len(lower))
+        else:
+            log("Contrôle de Judilibre (cours d'appel, tribunaux) avant de juger :")
+            if selftest_lower(key, {c["jurisdiction"] for c in lower}, log):
+                lower_results = iter(check_lower_courts(lower, Courts(key)))
+            else:
+                why = "Judilibre n'a pas passé ses contrôles : aucun verdict possible"
+                lower_results = iter([("NOT_TESTED", why, None)] * len(lower))
 
     results = []
     log("Vérification des citations :")
     for c in citations:
         if c.get("kind") in LEGISLATION:
             v, why, actual = next(legislation)
+        elif c["order"] == "lower":
+            v, why, actual = next(lower_results)
         elif c["order"] == "administrative":
             if admin_ok:
                 v, why, actual = verdict_admin(*sources.ariane(c["number"]), c.get("cited_date"))

@@ -106,6 +106,20 @@ class Conventions(unittest.TestCase):
         self.assertEqual(_key("25.1"), "25.1")
 
 
+class LowerCourts(unittest.TestCase):
+    def test_rg_needs_a_court_in_the_sentence(self):
+        text = ("Voir CA Paris, pôle 4, ch. 3, 2 octobre 2013, RG n° 11/18803. La cour d'appel "
+                "d'Aix-en-Provence, 12 mars 2024, n° 22/01234. TJ Périgueux, 18 décembre 2025, "
+                "RG 23/00452. Un RG 21/00999 sans juridiction. En mars 03/2019 rien.")
+        citations, remarks = extract(text)
+        seen = [(c["jurisdiction"], c["place"], c["number"], c["cited_date"])
+                for c in citations if c.get("order") == "lower"]
+        self.assertEqual(seen, [("ca", "Paris", "11/18803", "2013-10-02"),
+                                ("ca", "Aix-en-Provence", "22/01234", "2024-03-12"),
+                                ("tj", "Périgueux", "23/00452", "2025-12-18")])
+        self.assertTrue(any("21/00999" in r for r in remarks))
+
+
 class Scope(unittest.TestCase):
     def test_every_displayed_abbreviation_is_recognized(self):
         """The "what is checked" tab must not promise an abbreviation we do not read."""

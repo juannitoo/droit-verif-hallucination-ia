@@ -1,0 +1,46 @@
+{
+  "country": "france",
+  "source": "Cour d'appel de Paris : un arrêt connu, et des RG inventés dans une période couverte et dans une période publiée en partie (relevé dans Judilibre le 29/09/2026)",
+  "citations": [
+    {
+      "kind": "decision",
+      "order": "lower",
+      "court": "CA Paris",
+      "jurisdiction": "ca",
+      "place": "Paris",
+      "number": "11/18803",
+      "cited_date": "2013-10-02",
+      "expected": "CONFIRMED"
+    },
+    {
+      "kind": "decision",
+      "order": "lower",
+      "court": "CA Paris",
+      "jurisdiction": "ca",
+      "place": "Paris",
+      "number": "11/18803",
+      "cited_date": "2013-10-12",
+      "expected": "WRONG_DATE"
+    },
+    {
+      "kind": "decision",
+      "order": "lower",
+      "court": "CA Paris",
+      "jurisdiction": "ca",
+      "place": "Paris",
+      "number": "99/99999",
+      "cited_date": "2024-05-02",
+      "expected": "NOT_PUBLISHED"
+    },
+    {
+      "kind": "decision",
+      "order": "lower",
+      "court": "CA Paris",
+      "jurisdiction": "ca",
+      "place": "Paris",
+      "number": "12/99999",
+      "cited_date": "2012-05-02",
+      "expected": "UNVERIFIABLE_PERIOD"
+    }
+  ]
+}
