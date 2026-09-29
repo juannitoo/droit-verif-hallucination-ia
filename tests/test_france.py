@@ -44,6 +44,91 @@ class Extraction(unittest.TestCase):
         self.assertTrue(remarks)
 
 
+class OtherCourts(unittest.TestCase):
+    """Point A (30/09/2026): numbers of courts this program does not check must never be
+    sent to ArianeWeb as Conseil d'État requests."""
+
+    def orders(self, text):
+        from citecheck.countries.france import check
+        citations, _ = extract(text)
+        results = check([c for c in citations if c["order"] == "other"], {})
+        return ([(c["order"], c["court"], c["number"], c["cited_date"]) for c in citations],
+                {r["verdict"] for r in results})
+
+    def test_echr_is_shown_with_its_link_and_conflicts_is_checked(self):
+        from citecheck.countries.france import verdict_other
+        seen, verdicts = self.orders(
+            "CEDH, 25 mars 1993, Costello-Roberts c. Royaume-Uni, n° 13134/87. "
+            "T. confl., 8 février 1873, Blanco, n° 00012.")
+        self.assertEqual(seen, [("other", "CEDH", "13134/87", "1993-03-25"),
+                                ("conflicts", "T. confl.", "00012", "1873-02-08")])
+        self.assertEqual(verdicts, {"MANUAL_CHECK"})
+        why = verdict_other({"court": "CEDH", "number": "13134/87"})[1]
+        self.assertIn("n'autorise pas", why)
+        self.assertIn("https://hudoc.echr.coe.int/fre#%7B%22appno%22%3A%5B%2213134%2F87%22%5D%7D",
+                      why)
+
+    def test_slash_year_is_never_a_ce_request(self):
+        seen, _ = self.orders("Requête n° 45678/12.")
+        self.assertEqual(seen, [("other", "juridiction non nommée", "45678/12", None)])
+
+    def test_court_is_read_in_the_same_sentence_only(self):
+        seen, _ = self.orders("T. confl., 8 février 1873, n° 00012. Voir CE, n° 298348.")
+        self.assertEqual([s[0] for s in seen], ["conflicts", "administrative"])
+
+    def test_parties_c_is_not_a_sentence_end(self):
+        seen, _ = self.orders("CE, 30 octobre 2009, Mme Perreux c. Ministre, n° 298348.")
+        self.assertEqual(seen, [("administrative", "CE", "298348", "2009-10-30")])
+
+    def test_ce_is_not_read_inside_cedh(self):
+        seen, _ = self.orders("Cour EDH, n° 13134.")
+        self.assertEqual(seen[0][:2], ("other", "CEDH"))
+
+
+class ConstitutionalConflictsEu(unittest.TestCase):
+    def test_extraction(self):
+        citations, _ = extract(
+            "Cons. const., 12 mai 2010, n° 2010-605 DC. Décision n° 2010-14/22 QPC. "
+            "TC, 17 juin 2013, Bergoend, n° C3911. T. confl., n° 4112. "
+            "CJUE, 6 octobre 2021, C‑561/19. Tribunal de l'Union, T-12/15. "
+            "Loi n° 2010-3 L. Voir T-12/15.")
+        self.assertEqual([(c["order"], c["number"], c["cited_date"]) for c in citations], [
+            ("constitutional", "2010-605", "2010-05-12"),
+            ("constitutional", "2010-14/22", None),
+            ("conflicts", "C3911", "2013-06-17"),
+            ("conflicts", "4112", None),
+            ("eu", "C-561/19", "2021-10-06"),
+            ("eu", "T-12/15", None)])
+
+    def test_celex(self):
+        from citecheck.countries.france.other_courts import celex_numbers
+        self.assertEqual(celex_numbers("C-561/19"),
+                         ["62019CJ0561", "62019CO0561", "62019CV0561"])
+        self.assertEqual(celex_numbers("T-12/89"), ["61989TJ0012", "61989TO0012"])
+        self.assertEqual(celex_numbers("13134/87"), [])
+
+    def test_verdicts(self):
+        from citecheck.countries.france import verdict_dates
+        self.assertEqual(verdict_dates([], "2010-05-12", "Légifrance")[0], "NOT_PUBLISHED")
+        self.assertEqual(verdict_dates(["2010-05-12"], "2010-05-12", "L")[0], "CONFIRMED")
+        self.assertEqual(verdict_dates(["2010-05-12"], "2010-05-13", "L")[0], "WRONG_DATE")
+        self.assertEqual(verdict_dates(["2010-05-12"], None, "L")[0], "EXISTS_DATE_UNCHECKED")
+
+    def test_conflicts_keeps_only_the_tribunal(self):
+        """00012 is Blanco AND a Conseil d'État decision of 1977."""
+        from citecheck.countries.france.other_courts import conflicts
+
+        class Fake:
+            def decision_titles(self, fond, number):
+                return {"00012": [
+                    "Conseil d'Etat, 6 / 2 SSR, du 21 octobre 1977, 00012, mentionné aux tables",
+                    "Tribunal des conflits, du 8 février 1873, 00012, publié au recueil Lebon"],
+                    "C4112": ["Tribunal des Conflits, , 12/02/2018, C4112, Publié au recueil"],
+                }.get(number, [])
+        self.assertEqual(conflicts(Fake(), "00012"), ["1873-02-08"])
+        self.assertEqual(conflicts(Fake(), "4112"), ["2018-02-12"])
+
+
 class Articles(unittest.TestCase):
     TEXT = ("Selon l'article L. 3121-2 du Code du travail, « les temps consacrés aux pauses "
             "sont considérés comme du temps de travail effectif ». Voir aussi les articles "

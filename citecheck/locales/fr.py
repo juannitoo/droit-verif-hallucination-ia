@@ -19,6 +19,7 @@ VERDICTS = {
     "ARTICLE_NOT_FOUND": "CET ARTICLE NE SEMBLE PAS EXISTER dans ce texte",
     "CONVENTION_NOT_FOUND": "CET IDCC NE SEMBLE CORRESPONDRE À AUCUNE CONVENTION",
     "UNVERIFIABLE_PERIOD": "non vérifiable : période publiée en partie",
+    "MANUAL_CHECK": "À VÉRIFIER À LA MAIN",
     "NOT_TESTED": "non vérifiée",
     "ERROR": "erreur technique, non vérifiée",
 }

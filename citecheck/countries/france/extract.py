@@ -11,6 +11,14 @@ CE QU'IL SAIT LIRE
   judiciaire    : Cass. / Civ. 2e / Soc. ... 17-28.268 ou 17-28268
   appel, TJ     : CA Paris / cour d'appel de Paris / TJ Périgueux ... RG n° 11/18803 ;
                   la juridiction doit être nommée dans la même phrase
+  Cons. const.  : « 2010-605 DC », « 2010-14/22 QPC » ; les autres suffixes (L, LP, AN...)
+                  seulement si le Conseil constitutionnel est nommé dans la phrase
+  T. confl.     : « C3911 », « n° 4112 », « n° 00012 », le Tribunal des conflits nommé dans
+                  la phrase
+  Union europ.  : « C-561/19 » (Cour de justice) ; « T-12/15 » (Tribunal) seulement si une
+                  juridiction de l'Union est nommée dans la phrase
+  CEDH, et tout numéro « 13134/87 » : jamais envoyés à une base qui n'est pas la leur, et
+                  rendus « à vérifier à la main »
   dates en toutes lettres (« 5 juin 2009 ») et en chiffres (05/06/2009)
   articles      : « article L. 3121-2 du Code du travail », « art. 1240 C. civ. »,
                   « C. trav., art. L. 1152-1 », « articles L. 1234-1 et L. 1234-5 du ... »,
@@ -47,6 +55,37 @@ MARK_JUDICIAL = re.compile(
     r"\b(?:(?:Cass|Civ|Soc|Com|Crim)(?:\.|\b)|Cour de cassation"
     r"|chambre (?:civile|sociale|commerciale))",
     re.I)
+
+# Juridictions que le programme ne vérifie pas. Les reconnaître sert à une chose : qu'un
+# « CEDH, n° 13134/87 » ne parte pas dans ArianeWeb comme une requête du Conseil d'État, où
+# il « confirmerait » une décision sans rapport, ou ferait dire « ne semble pas publiée »
+# d'une décision qui existe (audit du 30/09/2026, point A).
+MARK_OTHER = [
+    ("CEDH", re.compile(r"\b(?:CEDH|C\.\s?EDH|Cour\s+EDH|Comm\.\s?EDH"
+                        r"|Cour\s+européenne\s+des\s+droits\s+de\s+l['’]\s*homme)\b", re.I)),
+    ("Tribunal des conflits", re.compile(r"\b(?:T\.\s?confl\.|Trib\.\s?confl\.|TC\b"
+                                         r"|Tribunal\s+des\s+conflits)", re.I)),
+    ("Conseil constitutionnel", re.compile(r"\b(?:Cons\.\s?const\.|Conseil\s+constitutionnel)",
+                                           re.I)),
+    ("CJUE", re.compile(r"\b(?:CJUE|CJCE|TPICE|Trib\.\s?UE|Tribunal\s+de\s+l['’]\s*Union"
+                        r"|Cour\s+de\s+justice\s+(?:de\s+l['’]\s*Union|des\s+Communautés))",
+                        re.I)),
+]
+# « n° 13134/87 » : un numéro suivi d'une barre et de l'année n'est pas une requête du
+# Conseil d'État (c'est la forme des requêtes CEDH), même si aucune juridiction n'est nommée.
+RE_SLASH_YEAR = re.compile(r"/\d{2,4}\b")
+
+CONSTIT = "Conseil constitutionnel"
+CONFLICTS = "Tribunal des conflits"
+EU = "CJUE"
+# « 2010-605 DC » : l'année, le numéro, la nature. DC et QPC suffisent à reconnaître le
+# Conseil constitutionnel ; les autres natures (« L », « D »...) sont trop courtes pour être
+# lues sans que le Conseil soit nommé dans la phrase.
+RE_CONSTIT = re.compile(r"\b(\d{2,4}-\d{1,5}(?:/\d{1,5})*)\s+"
+                        r"(DC|QPC|LP|FNR|LOM|ORGA|RIP|PDR|REF|ELEC|AN|SEN|L|D|I)\b")
+CONSTIT_ALONE = {"DC", "QPC"}
+RE_CONFLICTS = re.compile(r"\bn[°ºo]\s*(C?\s?\d{4,5})\b|\b(C\d{4})\b")
+RE_EU = re.compile(r"\b([CT])\s?[-‑–]\s?(\d{1,4})/(\d{2})\b")
 
 WINDOW = 160   # caractères de part et d'autre où l'on cherche la date et la juridiction
 
@@ -98,17 +137,22 @@ def assign_dates(text, spans):
 
 
 def order_of(text, start, default):
-    """Le marqueur le plus PROCHE EN AMONT décide.
+    """Le marqueur le plus PROCHE EN AMONT décide. Renvoie « judicial », « administrative »,
+    ou le nom d'une juridiction hors champ (« CEDH »...).
 
     Une citation française se lit « Conseil d'État du 5 juin 2009, n° 308850 » : la
     juridiction précède le numéro. Chercher un marqueur « quelque part autour » ferait
-    gagner la juridiction de la citation SUIVANTE."""
-    before = text[max(0, start - WINDOW):start]
-    judicial = max((m.end() for m in MARK_JUDICIAL.finditer(before)), default=-1)
-    admin = max((m.end() for m in MARK_ADMIN.finditer(before)), default=-1)
-    if judicial < 0 and admin < 0:
-        return default
-    return "judicial" if judicial > admin else "administrative"
+    gagner la juridiction de la citation SUIVANTE. Et seulement dans la MÊME phrase :
+    « T. confl., ..., n° 00012. Requête n° 45678/12 » ne rattache pas la requête au Tribunal
+    des conflits."""
+    lo = max(0, start - WINDOW)
+    for end in RE_SENTENCE_END.finditer(text, lo, start):
+        lo = end.end()
+    before = text[lo:start]
+    marks = [("judicial", MARK_JUDICIAL), ("administrative", MARK_ADMIN)] + MARK_OTHER
+    nearest = max(((m.end(), name) for name, rx in marks for m in rx.finditer(before)),
+                  default=None)
+    return nearest[1] if nearest else default
 
 
 def extract(text):
@@ -116,10 +160,38 @@ def extract(text):
     citations, undated, set_aside = [], [], []
     appeals = list(RE_APPEAL.finditer(text))
     appeal_numbers = {m.group(1) for m in appeals}
-    requests = [m for m in RE_REQUEST.finditer(text) if m.group(1) not in appeal_numbers]
+    conflicts = [m for m in RE_CONFLICTS.finditer(text)
+                 if order_of(text, m.start(), None) == CONFLICTS]
+    taken = {m.start() for m in conflicts}
+    requests = [m for m in RE_REQUEST.finditer(text)
+                if m.group(1) not in appeal_numbers and m.start() not in taken]
+    constit = [m for m in RE_CONSTIT.finditer(text)
+               if m.group(2) in CONSTIT_ALONE or order_of(text, m.start(), None) == CONSTIT]
+    eu = [m for m in RE_EU.finditer(text)
+          if m.group(1) == "C" or order_of(text, m.start(), None) == EU]
     rgs = list(RE_RG.finditer(text))
-    dates = assign_dates(text, [m.span() for m in appeals + requests + rgs])
+    dates = assign_dates(text, [m.span() for m in
+                                appeals + requests + rgs + conflicts + constit + eu])
     seen = set()        # (numéro, date) : un même numéro cité à deux dates = deux citations
+
+    def add(order, court, number, m):
+        d = dates.get(m.start())
+        if (order, number, d) in seen:
+            return
+        seen.add((order, number, d))
+        citations.append({"kind": "decision", "order": order, "court": court,
+                          "number": number, "cited_date": d, "span": m.span()})
+
+    for m in conflicts:
+        add("conflicts", "T. confl.", re.sub(r"\s", "", m.group(1) or m.group(2)).upper(), m)
+    for m in constit:
+        c = len(citations)
+        add("constitutional", "Cons. const.", m.group(1), m)
+        if len(citations) > c:
+            citations[-1]["nature"] = m.group(2)       # « DC » : affiché, pas cherché
+    for m in eu:
+        add("eu", "CJUE" if m.group(1) == "C" else "Trib. UE",
+            f"{m.group(1)}-{int(m.group(2))}/{m.group(3)}", m)
 
     for m in appeals:
         number, d = m.group(1), dates.get(m.start())
@@ -133,10 +205,25 @@ def extract(text):
 
     for m in requests:
         number = m.group(1)
-        if order_of(text, m.start(), "administrative") == "judicial":
+        order = order_of(text, m.start(), "administrative")
+        if order == "judicial":
             set_aside.append(number)    # un n° à 5-7 chiffres près de « Cass. » : douteux
             continue
         d = dates.get(m.start())
+        slash = RE_SLASH_YEAR.match(text, m.end())
+        if order != "administrative" or slash:
+            # Hors champ : montré, jamais envoyé dans ArianeWeb.
+            if slash:
+                number += slash.group(0)
+            if ("other", number, d) in seen:
+                continue
+            seen.add(("other", number, d))
+            citations.append({"kind": "decision", "order": "other",
+                              "court": order if order != "administrative"
+                              else "juridiction non nommée",
+                              "number": number, "cited_date": d,
+                              "span": (m.start(), slash.end() if slash else m.end())})
+            continue
         if (number, d) in seen:
             continue
         seen.add((number, d))
@@ -200,7 +287,10 @@ QUOTE_AFTER = 200
 QUOTE_BEFORE = 15   # « ... » (art. L. 1234-5) : le texte précède, collé
 
 
-RE_SENTENCE_END = re.compile(r"[.;!?]\s+(?=[A-ZÀ-ÖØ-Þ«])")
+# « Costello-Roberts c. Royaume-Uni », « Mme X c. Commune de Y » : le « c. » des parties
+# n'est pas une fin de phrase. Sans cette exception, la date citée avant les noms des
+# parties n'atteignait jamais le numéro cité après.
+RE_SENTENCE_END = re.compile(r"(?<!\bc)[.;!?]\s+(?=[A-ZÀ-ÖØ-Þ«])")
 
 
 def nearest_idcc(text, start, end):

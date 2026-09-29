@@ -1,0 +1,86 @@
+{
+  "country": "france",
+  "source": "Conseil constitutionnel, Tribunal des conflits, Union européenne et CEDH : décisions connues, dates fausses et numéros inventés (relevé dans Légifrance et CELLAR le 29/09/2026)",
+  "citations": [
+    {
+      "kind": "decision",
+      "order": "constitutional",
+      "court": "Cons. const.",
+      "number": "2010-605",
+      "cited_date": "2010-05-12",
+      "expected": "CONFIRMED"
+    },
+    {
+      "kind": "decision",
+      "order": "constitutional",
+      "court": "Cons. const.",
+      "number": "2010-605",
+      "cited_date": "2010-05-21",
+      "expected": "WRONG_DATE"
+    },
+    {
+      "kind": "decision",
+      "order": "constitutional",
+      "court": "Cons. const.",
+      "number": "2011-9999",
+      "cited_date": "2011-06-01",
+      "expected": "NOT_PUBLISHED"
+    },
+    {
+      "kind": "decision",
+      "order": "conflicts",
+      "court": "T. confl.",
+      "number": "00012",
+      "cited_date": "1873-02-08",
+      "expected": "CONFIRMED"
+    },
+    {
+      "kind": "decision",
+      "order": "conflicts",
+      "court": "T. confl.",
+      "number": "4112",
+      "cited_date": "2018-02-12",
+      "expected": "CONFIRMED"
+    },
+    {
+      "kind": "decision",
+      "order": "conflicts",
+      "court": "T. confl.",
+      "number": "C9997",
+      "cited_date": "2019-03-11",
+      "expected": "NOT_PUBLISHED"
+    },
+    {
+      "kind": "decision",
+      "order": "eu",
+      "court": "CJUE",
+      "number": "C-311/18",
+      "cited_date": "2020-07-16",
+      "expected": "CONFIRMED"
+    },
+    {
+      "kind": "decision",
+      "order": "eu",
+      "court": "CJUE",
+      "number": "C-561/19",
+      "cited_date": "2021-10-16",
+      "expected": "WRONG_DATE"
+    },
+    {
+      "kind": "decision",
+      "order": "eu",
+      "court": "CJUE",
+      "number": "C-997/19",
+      "cited_date": "2021-01-01",
+      "expected": "NOT_PUBLISHED"
+    },
+    {
+      "kind": "decision",
+      "order": "other",
+      "court": "CEDH",
+      "number": "13134/87",
+      "cited_date": "1993-03-25",
+      "expected": "MANUAL_CHECK"
+    }
+  ]
+}

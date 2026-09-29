@@ -3,14 +3,15 @@
 Vérifie les citations d'un texte juridique français, sans rien inventer :
 
 - **les décisions de justice** (Conseil d'État, Cour de cassation, cours d'appel, tribunaux
-  judiciaires) : existent-elles, et à la date indiquée ?
+  judiciaires, Conseil constitutionnel, Tribunal des conflits, Cour de justice et Tribunal de
+  l'Union européenne) : existent-elles, et à la date indiquée ?
 - **les articles de codes et de conventions collectives** : existent-ils, étaient-ils en
   vigueur à la date des faits, et le texte cité entre guillemets est-il bien le leur ?
 
 Les IA inventent des décisions, citent une vraie décision avec une fausse date, ou
 reprennent un article dans une version périmée. Des tribunaux l'ont relevé dans des
 conclusions d'avocats (TJ Périgueux, 18 décembre 2025). Ce programme interroge les bases
-officielles (Judilibre, Légifrance, ArianeWeb) et rend un rapport, avec la page de chaque
+officielles (Judilibre, Légifrance, ArianeWeb, et CELLAR pour l'Union européenne) et rend un rapport, avec la page de chaque
 citation : exacte pour un PDF, approximative pour les autres formats.
 
 Il pointe ce qui est suspect, il ne donne pas d'avis. Il ne dit pas si une décision soutient
@@ -25,8 +26,9 @@ servi lors de la conception.
 
 ## Ce qu'il ne vérifie pas
 
-- les décisions des cours administratives d'appel et des tribunaux administratifs, et les
-  décisions européennes (CJUE, CEDH) ;
+- les décisions des cours administratives d'appel et des tribunaux administratifs ;
+- les décisions de la CEDH : la Cour n'autorise pas la recherche dans sa base par un
+  programme. Le rapport les signale, avec le lien de la recherche à ouvrir soi-même ;
 - les tribunaux de commerce (publiés par Judilibre depuis 2025 : pas encore fait) et les
   conseils de prud'hommes (que Judilibre ne publie pas) ;
 - un numéro RG cité sans le nom de la juridiction dans la même phrase (le même numéro

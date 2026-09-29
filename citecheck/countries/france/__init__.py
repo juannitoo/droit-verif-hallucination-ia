@@ -1,6 +1,8 @@
 """France : jurisprudence administrative (ArianeWeb) et judiciaire (Judilibre : Cour de
-cassation, cours d'appel, tribunaux judiciaires), articles
-des codes et des conventions collectives (Légifrance).
+cassation, cours d'appel, tribunaux judiciaires), Conseil constitutionnel et Tribunal des
+conflits (Légifrance), Cour de justice et Tribunal de l'Union européenne (CELLAR), articles
+des codes et des conventions collectives (Légifrance). La CEDH n'autorise pas la recherche
+par un programme : ses décisions sont signalées, avec le lien de la recherche.
 
 LES TROIS RÈGLES
   1. Chaque base se prouve avant de juger. Des numéros réels doivent être trouvés, des
@@ -17,7 +19,7 @@ CE QU'ELLE NE VÉRIFIE PAS
 """
 from datetime import date
 
-from . import codes, sources
+from . import codes, other_courts, sources
 from .articles import check_articles
 from .conventions import check_convention_articles
 from .lower_courts import Courts, check_lower_courts
@@ -58,6 +60,24 @@ LEGI_FAKE = [("Code du travail", "L9999-99"), ("Code civil", "9999")]
 # (IDCC, numéro, nombre minimal de versions) : HCR, article 21 remplacé le 13/07/2004.
 KALI_REAL = [("1979", "21", 2)]
 KALI_FAKE = ["9998"]
+# (numéro, date) : décisions connues, et numéros inventés (vérifiés vides le 29/09/2026).
+CONSTIT_REAL = [("2010-605", "2010-05-12"), ("2010-14/22", "2010-07-30")]
+CONSTIT_FAKE = ["2010-9999", "2019-9999"]
+# 00012 : Blanco, dont le numéro est aussi celui d'une décision du Conseil d'État de 1977.
+CONFLICTS_REAL = [("C3911", "2013-06-17"), ("00012", "1873-02-08")]
+CONFLICTS_FAKE = ["C9999", "C9998"]
+EU_REAL = [("C-561/19", "2021-10-06"), ("C-311/18", "2020-07-16")]
+EU_FAKE = ["C-999/19", "C-998/19"]
+# Pour chaque juridiction : (nom de la base, recherche, témoins réels, témoins inventés,
+# besoin des identifiants Légifrance).
+OTHER_BASES = {
+    "constitutional": ("Légifrance", other_courts.constitutional, CONSTIT_REAL, CONSTIT_FAKE,
+                       True),
+    "conflicts": ("Légifrance", other_courts.conflicts, CONFLICTS_REAL, CONFLICTS_FAKE, True),
+    "eu": ("CELLAR (Office des publications de l'UE)",
+           lambda client, number: other_courts.european_union(number), EU_REAL, EU_FAKE,
+           False),
+}
 
 __all__ = ["NAME", "KEYS", "KEY_HELP_URL", "prepare", "extract", "check", "scope",
            "not_checked_summary"]
@@ -115,8 +135,88 @@ def verdict_judicial(record, cited_date, first_complete=None):
             f"({ident})", actual)
 
 
+def verdict_dates(days, cited_date, base):
+    """Traduit la liste des dates d'une base qui publie toutes ses décisions (Conseil
+    constitutionnel, Tribunal des conflits, Union européenne)."""
+    if not days:
+        return ("NOT_PUBLISHED", f"aucune décision de ce numéro dans {base} : la décision ne "
+                "semble pas publiée ; à vérifier", None)
+    actual = ", ".join(days)
+    if not cited_date:
+        return "EXISTS_DATE_UNCHECKED", f"existe, rendue le {actual} ; aucune date citée", actual
+    if cited_date in days:
+        return "CONFIRMED", f"{base} date bien la décision du {cited_date}", cited_date
+    return ("WRONG_DATE", f"le numéro existe, mais {base} date la décision du {actual}, pas du "
+            f"{cited_date}", actual)
+
+
+def verdict_other(citation):
+    """Une décision qu'aucune base interrogeable ne couvre : on la montre, on ne la juge pas.
+    L'envoyer dans ArianeWeb donnerait un verdict sur une autre décision."""
+    court, number = citation["court"], citation["number"]
+    if court == "CEDH" or "/" in number:
+        what = ("décision de la CEDH" if court == "CEDH" else
+                f"numéro au format « {number} », qui n'est pas celui du Conseil d'État mais "
+                "celui des requêtes CEDH")
+        return ("MANUAL_CHECK", f"{what}. La Cour européenne des droits de l'homme "
+                "n'autorise pas la recherche dans sa base HUDOC par un programme : à vérifier "
+                f"dans votre navigateur, {other_courts.hudoc_link(number)}", None)
+    return ("MANUAL_CHECK", f"décision de la juridiction « {court} » citée sous une forme que "
+            "ce programme ne sait pas lire ; aucune base n'a été interrogée", None)
+
+
 def _line(ok, text):
     return f"  {'OK   ' if ok else 'ÉCHEC'} {text}"
+
+
+def selftest_other(base, search, real, fake, client, log):
+    """Les témoins d'une base : ses décisions connues, à leur date, et des numéros inventés
+    qui ne doivent rien donner."""
+    ok = True
+    try:
+        for number, day in real:
+            good = day in search(client, number)
+            ok &= good
+            log(_line(good, f"{base} doit trouver {number} du {day}"))
+        for number in fake:
+            good = search(client, number) == []
+            ok &= good
+            log(_line(good, f"{base} ne doit pas trouver {number}"))
+    except Unavailable as e:
+        log(f"        {e}")
+        return False
+    return ok
+
+
+def _check_other(citations, keys, log):
+    """Résultats pour le Conseil constitutionnel, le Tribunal des conflits et l'Union
+    européenne, dans l'ordre."""
+    results, client = {}, None
+    for order in OTHER_BASES:
+        mine = [i for i, c in enumerate(citations) if c["order"] == order]
+        if not mine:
+            continue
+        base, search, real, fake, needs_keys = OTHER_BASES[order]
+        if needs_keys:
+            cid, secret = keys.get("PISTE_CLIENT_ID"), keys.get("PISTE_CLIENT_SECRET")
+            if not (cid and secret):
+                why = "identifiant ou secret PISTE absent : Légifrance n'a pas été interrogé"
+                results.update({i: ("NOT_TESTED", why, None) for i in mine})
+                continue
+            client = client or Client(cid, secret)
+        log(f"Contrôle de {base} ({citations[mine[0]]['court']}) avant de juger :")
+        if not selftest_other(base, search, real, fake, client, log):
+            why = f"{base} n'a pas passé ses contrôles : aucun verdict possible"
+            results.update({i: ("NOT_TESTED", why, None) for i in mine})
+            continue
+        for i in mine:
+            c = citations[i]
+            try:
+                results[i] = verdict_dates(search(client, c["number"]), c.get("cited_date"),
+                                           base)
+            except Unavailable as e:
+                results[i] = ("ERROR", f"{base} n'a pas répondu ({e})", None)
+    return [results[i] for i in range(len(citations))]
 
 
 def selftest_admin(log):
@@ -260,6 +360,8 @@ def check(citations, keys, log=lambda s: None, options=None):
     legislation = iter(_check_legislation(
         [c for c in citations if c.get("kind") in LEGISLATION], keys, day,
         options.get("idcc"), log))
+    others = [c for c in citations if c.get("order") in OTHER_BASES]
+    other_results = iter(_check_other(others, keys, log))
     orders = {c["order"] for c in citations if c.get("kind") not in LEGISLATION}
     admin_ok = judicial_ok = False
     admin_why = judicial_why = None
@@ -306,6 +408,10 @@ def check(citations, keys, log=lambda s: None, options=None):
     for c in citations:
         if c.get("kind") in LEGISLATION:
             v, why, actual = next(legislation)
+        elif c["order"] in OTHER_BASES:
+            v, why, actual = next(other_results)
+        elif c["order"] == "other":
+            v, why, actual = verdict_other(c)
         elif c["order"] == "lower":
             v, why, actual = next(lower_results)
         elif c["order"] == "administrative":

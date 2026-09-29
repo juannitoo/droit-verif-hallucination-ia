@@ -19,6 +19,18 @@ DECISIONS = [
     "Le programme mesure, pour la juridiction citée, le nombre de décisions publiées par année. "
     "Une décision introuvable dans une période publiée en partie, ou datée de moins de six "
     "mois (délai de publication), sort « non vérifiable » : l'absence n'y prouve rien.",
+    "Conseil constitutionnel : « Cons. const., 12 mai 2010, n° 2010-605 DC », « 2010-14/22 "
+    "QPC ». Base interrogée : Légifrance.",
+    "Tribunal des conflits : « T. confl., 17 juin 2013, n° C3911 », « TC, n° 4112 », « n° "
+    "00012 » ; le Tribunal doit être nommé dans la même phrase. Base interrogée : Légifrance.",
+    "Cour de justice et Tribunal de l'Union européenne : « CJUE, 6 octobre 2021, C-561/19 », "
+    "« T-12/15 » (le Tribunal de l'Union doit alors être nommé dans la phrase). Base "
+    "interrogée : CELLAR, de l'Office des publications de l'Union.",
+    "CEDH : ses décisions sont repérées (« CEDH, n° 13134/87 ») et signalées « à vérifier à la "
+    "main », avec le lien de la recherche dans HUDOC, la base de la Cour. La Cour n'autorise "
+    "pas la recherche dans HUDOC par un programme, et ce programme ne la contourne pas. Un "
+    "numéro de la forme « 13134/87 » est traité de même, même sans juridiction nommée : ce "
+    "n'est pas un numéro du Conseil d'État.",
     "La date citée est lue à côté du numéro, en toutes lettres (« 5 juin 2009 ») ou en "
     "chiffres (« 05/06/2009 »), puis comparée à celle de la base.",
 ]
@@ -57,7 +69,8 @@ NOT_CHECKED = [
     "les décisions des cours administratives d'appel (CAA) et des tribunaux administratifs "
     "(TA), à numéro mêlant chiffres et lettres (« 21BX01234 ») : les bases interrogeables "
     "sans installation n'en publient qu'une sélection",
-    "les décisions européennes et internationales (CJUE, CEDH)",
+    "les décisions de la CEDH : la Cour n'autorise pas la recherche dans sa base par un "
+    "programme. Elles sont signalées, avec le lien de la recherche, à ouvrir soi-même",
     "les articles de lois et de décrets non codifiés (« article 22 de la loi du 6 juillet "
     "1989 ») : signalés, pas vérifiés",
     "les avenants, accords et textes salariaux attachés aux conventions collectives : "
@@ -87,6 +100,6 @@ def not_checked_summary():
     """Version courte, pour la fin du rapport : le détail est dans l'onglet."""
     return ("RG sans juridiction nommée, tribunaux de commerce, prud'hommes, "
             "décisions des CAA et TA, "
-            "décisions européennes, lois et décrets non codifiés, avenants et accords "
+            "décisions de la CEDH (lien fourni), lois et décrets non codifiés, avenants et accords "
             "attachés aux conventions, "
             "chambre, sens des décisions. Détail et raisons : onglet « Ce qui est vérifié »")

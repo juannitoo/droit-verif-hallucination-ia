@@ -20,8 +20,18 @@ Il ne contient **aucune IA**, et c'est voulu : un programme qui consulte une bas
 inventer. Ne jamais y ajouter un modèle, ni pour extraire les citations, ni pour juger.
 
 Pays couverts : France. Bases : ArianeWeb (Conseil d'État, sans clé), Judilibre (Cour de
-cassation, cours d'appel, tribunaux judiciaires) et Légifrance (codes et conventions collectives), ces deux dernières avec le
-compte PISTE de l'utilisateur.
+cassation, cours d'appel, tribunaux judiciaires) et Légifrance (codes, conventions
+collectives, Conseil constitutionnel, Tribunal des conflits), ces deux dernières avec le
+compte PISTE de l'utilisateur ; CELLAR, le dépôt public de l'Office des publications de
+l'Union, par son API REST (Cour de justice et Tribunal de l'UE, sans clé). Pas par son
+point d'accès SPARQL : trop instable (mesuré, détail dans `other_courts.py`).
+
+**La CEDH n'est pas interrogée, et ne doit pas l'être.** Sa base HUDOC est derrière un défi
+Cloudflare (HTTP 403 sur sa recherche comme sur son `robots.txt`, constaté le 29/09/2026) :
+la Cour n'autorise pas la recherche par un programme. Ne jamais contourner ce refus
+(navigateur piloté, en-têtes imités) : ce programme est fait pour des avocats, il doit
+s'utiliser sans embrouille. Le rapport donne le lien de la recherche HUDOC, que l'avocat
+ouvre dans son navigateur.
 
 ## Arborescence
 
@@ -35,9 +45,9 @@ compte PISTE de l'utilisateur.
 | `citecheck/keys.py` | clés : variable d'environnement, sinon trousseau du système |
 | `citecheck/report.py` | rapport texte et JSON |
 | `citecheck/locales/fr.py` | tous les textes affichés ; une langue = un fichier |
-| `citecheck/countries/france/` | extraction, bases et verdicts pour la France : `extract.py`, `sources.py` (ArianeWeb, Judilibre), `legifrance.py`, `articles.py` (codes), `conventions.py`, `lower_courts.py` (cours d'appel, tribunaux), `codes.py` (noms et abréviations), `scope.py` (ce qui est vérifié) |
+| `citecheck/countries/france/` | extraction, bases et verdicts pour la France : `extract.py`, `sources.py` (ArianeWeb, Judilibre), `legifrance.py`, `articles.py` (codes), `conventions.py`, `lower_courts.py` (cours d'appel, tribunaux), `other_courts.py` (Conseil constitutionnel, Tribunal des conflits, Union européenne, lien CEDH), `codes.py` (noms et abréviations), `scope.py` (ce qui est vérifié) |
 | `citecheck/http.py` | le seul point de sortie réseau, qui refuse toute redirection (une redirection emporterait les clés) |
-| `cases/` | bancs d'essai dont la réponse est connue : `perigueux.json` (cas réel jugé), `articles.json`, `conventions.json`, `lower_courts.json` |
+| `cases/` | bancs d'essai dont la réponse est connue : `perigueux.json` (cas réel jugé), `articles.json`, `conventions.json`, `lower_courts.json`, `other_courts.json` |
 | `tests/` | tests hors réseau |
 
 **Langues du code.** Noms de fichiers, de fonctions, de variables, codes de verdict, clés du
@@ -114,9 +124,10 @@ convention est vérifié, pas ses avenants ni ses accords attachés.
 ```bash
 .venv/bin/python -m unittest discover tests                  # hors réseau
 .venv/bin/python -m citecheck --case cases/perigueux.json   # réseau, doit donner 4/4
-.venv/bin/python -m citecheck --case cases/articles.json    # réseau, doit donner 7/7
+.venv/bin/python -m citecheck --case cases/articles.json    # réseau, doit donner 9/9
 .venv/bin/python -m citecheck --case cases/conventions.json # réseau, doit donner 6/6
 .venv/bin/python -m citecheck --case cases/lower_courts.json # réseau, doit donner 4/4
+.venv/bin/python -m citecheck --case cases/other_courts.json # réseau, doit donner 10/10
 ```
 
 ## Les trois règles, à ne jamais affaiblir
@@ -199,8 +210,11 @@ elle que l'utilisateur voit dans l'onglet « Ce qui est vérifié ». Le README 
 la résument ; en cas d'écart, c'est `scope.py` qu'il faut croire, et les deux autres qu'il
 faut corriger.
 
-- Vérifier les décisions des **CAA et TA** (numéros mêlant chiffres et lettres), les
-  décisions **européennes**, et un **RG** cité sans juridiction dans sa phrase.
+- Vérifier les décisions des **CAA et TA** (numéros mêlant chiffres et lettres), et un
+  **RG** cité sans juridiction dans sa phrase. Piste pour les CAA, sondée le 29/09/2026 :
+  Légifrance, fonds CETAT, champ NUM_DEC, trouve « 17NC01414 » et rien pour un numéro
+  inventé ; la couverture reste à mesurer.
+- Vérifier la **CEDH** : impossible sans l'accord de la Cour (voir plus haut).
 - Les **tribunaux de commerce** : Judilibre les publie depuis 2025 (juridiction `tcom`,
   141 tribunaux, mesuré le 29/09/2026). Même mécanisme que les tribunaux judiciaires ; la
   difficulté est que leurs numéros n'ont pas de format commun (« 2024F00234 »,

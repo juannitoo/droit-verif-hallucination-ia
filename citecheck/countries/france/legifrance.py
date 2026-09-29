@@ -22,6 +22,12 @@ CE QU'ON A APPRIS DE L'API (sondée le 29/09/2026)
     s'arrêtant tôt, l'article 1 du Code civil sortait 0, 2 puis 2 versions en trois appels,
     donc « ne semble pas exister » une fois sur trois (audit du 30/09/2026). On lit TOUS les
     résultats, par pages de 100 ; si on n'a pas pu tout lire, on ne conclut rien.
+  - Décisions (sondé le 29/09/2026 au soir) : /search avec le champ NUM_DEC, sur le fonds
+    CONSTIT (Conseil constitutionnel) ou CETAT (Conseil d'État, CAA, et Tribunal des
+    conflits). Le numéro s'écrit SANS suffixe : « 2010-605 » trouve la décision,
+    « 2010-605 DC » ne trouve rien. La date n'est que dans le titre. Et le champ
+    NUM_AFFAIRE, sur CETAT, IGNORE le critère : 571 555 résultats pour n'importe quel
+    numéro. Ne jamais s'en servir.
   - /consult/kaliContIdcc donne la convention d'un IDCC et l'identifiant de son texte de
     base ; /consult/kaliText renvoie en un appel tous les articles de ce texte, toutes leurs
     versions et leur contenu. Un IDCC inexistant y provoque une erreur 500, pas une réponse
@@ -163,6 +169,27 @@ class Client:
         """Le texte d'une version d'article."""
         data = self._post("/consult/getArticle", {"id": article_id})
         return ((data.get("article") or {}).get("texte") or "").strip()
+
+    def decision_titles(self, fond, number):
+        """Les titres des décisions portant ce numéro dans ce fonds (CONSTIT, CETAT). Liste
+        vide si aucune. Tout est lu, ou rien n'est conclu."""
+        titles, read = [], 0
+        for page in range(1, MAX_PAGES + 1):
+            data = self._post("/search", {"fond": fond, "recherche": {
+                "champs": [{"typeChamp": "NUM_DEC", "operateur": "ET", "criteres": [
+                    {"typeRecherche": "EXACTE", "valeur": number, "operateur": "ET"}]}],
+                "pageNumber": page, "pageSize": PAGE_SIZE, "operateur": "ET",
+                "sort": "PERTINENCE", "typePagination": "DEFAUT"}})
+            results = data.get("results") or []
+            total = data.get("totalResultNumber") or 0
+            read += len(results)
+            titles += [t.get("title") or "" for r in results for t in (r.get("titles") or [])[:1]]
+            if read >= total:
+                return titles
+            if not results:
+                break
+        raise Unavailable(f"recherche de la décision {number} incomplète ({read} résultats "
+                          f"lus sur {total})")
 
     def convention(self, idcc):
         """(titre, identifiants des textes de base) de la convention, ou None si Légifrance ne
