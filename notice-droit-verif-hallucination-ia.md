@@ -3,9 +3,10 @@
 Notice destinée à une IA de code (ou à un développeur) qui doit faire tourner, compiler ou
 faire évoluer ce programme. Pour les humains qui veulent seulement s'en servir : le README.
 
-> **En cours de création.** Aucun exécutable n'est publié, et il ne le sera pas avant un
-> audit de sécurité du code. D'ici là, ne rien
-> compiler ni distribuer.
+> **En cours de création.** Aucun exécutable n'est publié. L'audit de sécurité est fait,
+> en deux passes par deux modèles différents, et corrigé. Reste, avant publication, une
+> vérification sur des cas réels de citations inventées. D'ici là, ne rien compiler pour
+> d'autres ni distribuer.
 
 ## Ce que fait le programme
 
@@ -35,7 +36,8 @@ compte PISTE de l'utilisateur.
 | `citecheck/report.py` | rapport texte et JSON |
 | `citecheck/locales/fr.py` | tous les textes affichés ; une langue = un fichier |
 | `citecheck/countries/france/` | extraction, bases et verdicts pour la France : `extract.py`, `sources.py` (ArianeWeb, Judilibre), `legifrance.py`, `articles.py` (codes), `conventions.py`, `lower_courts.py` (cours d'appel, tribunaux), `codes.py` (noms et abréviations), `scope.py` (ce qui est vérifié) |
-| `cases/perigueux.json` | banc d'essai : un cas réel dont le tribunal a donné la réponse |
+| `citecheck/http.py` | le seul point de sortie réseau, qui refuse toute redirection (une redirection emporterait les clés) |
+| `cases/` | bancs d'essai dont la réponse est connue : `perigueux.json` (cas réel jugé), `articles.json`, `conventions.json`, `lower_courts.json` |
 | `tests/` | tests hors réseau |
 
 **Langues du code.** Noms de fichiers, de fonctions, de variables, codes de verdict, clés du
@@ -65,9 +67,10 @@ vérifié ». Les clés se donnent une fois dans le deuxième, qui s'ouvre d'off
 manque une ; elles vont dans le trousseau du système. Le troisième dit à l'utilisateur ce
 que le programme reconnaît (formats de décisions, codes et abréviations) et ce qu'il ne
 vérifie pas ; il est construit à partir des listes que l'extracteur utilise
-(`citecheck/countries/france/scope.py`), et `python -m citecheck --scope` l'affiche en ligne de
-commande. En ligne de commande, on les passe par des variables
-d'environnement.
+(`citecheck/countries/france/scope.py`), et `python -m citecheck --scope` l'affiche en ligne
+de commande.
+
+En ligne de commande, les clés se passent par des variables d'environnement.
 
 | Variable | Sert à | Où la trouver |
 |---|---|---|
@@ -86,7 +89,7 @@ l'entoure, et sa page : exacte pour un PDF, approximative pour Word et LibreOffi
 enregistrent les sauts de page de leur dernier affichage), absente pour du texte brut. Une
 citation placée dans une note de bas de page Word est signalée comme telle.
 
-**Enregistrer sans extraits** (case cochée par défaut, ou `--no-excerpts`) : le rapport
+**Enregistrer sans extraits** (case cochée par défaut ; en ligne de commande, c'est aussi le défaut, `--with-excerpts` pour les garder) : le rapport
 enregistré ne garde que numéros, dates et verdicts, sans aucune phrase du document. C'est
 ce qu'il faut pour le donner à une IA en ligne sans y faire passer des noms ou des faits
 couverts par le secret professionnel.
@@ -122,7 +125,8 @@ convention est vérifié, pas ses avenants ni ses accords attachés.
    numéros inventés ne doivent rien donner (les témoins, dans `citecheck/countries/france/__init__.py`).
    Si une base rate ses contrôles, ses citations sortent en `NOT_TESTED`.
 2. **Jamais « introuvable ».** Les bases publiques ne contiennent pas toutes les décisions :
-   zéro résultat veut dire « aucune décision publiée ne correspond ».
+   zéro résultat veut dire « ne semble pas publiée ». Et quand la base ne couvre la période
+   qu'en partie (mesuré, pas supposé), zéro résultat veut dire « non vérifiable ».
 3. **Une base injoignable ne donne jamais un verdict négatif.** Sinon une panne réseau ou
    une clé absente passerait pour une erreur de l'auteur du texte.
 
@@ -141,8 +145,9 @@ et Linux. Elles apparaissent dans **Releases**, dans la colonne de droite de la 
 dépôt sur GitHub. Un utilisateur n'a rien à compiler : il télécharge le fichier de son
 système. (Pas encore en place : voir l'encadré « En cours de création » en tête.)
 
-Pour compiler soi-même, avec PyInstaller, **sur le système visé** : on compile pour
-Windows sous Windows, pour macOS sous macOS.
+Pour compiler soi-même, avec PyInstaller **6 ou plus récent** (les versions antérieures à
+5.13.1 ont une faille en mode `--onefile` sous Windows), **sur le système visé** : on
+compile pour Windows sous Windows, pour macOS sous macOS.
 
 ```bash
 .venv/bin/pip install pyinstaller
@@ -173,6 +178,17 @@ dans `cases/`.
 
 ## Ce que le programme ne sait pas encore faire
 
+La liste qui fait foi est `NOT_CHECKED` dans `citecheck/countries/france/scope.py` : c'est
+elle que l'utilisateur voit dans l'onglet « Ce qui est vérifié ». Le README et cette section
+la résument ; en cas d'écart, c'est `scope.py` qu'il faut croire, et les deux autres qu'il
+faut corriger.
+
+- Vérifier les décisions des **CAA et TA** (numéros mêlant chiffres et lettres), les
+  décisions **européennes**, et un **RG** cité sans juridiction dans sa phrase.
+- Les **tribunaux de commerce** : Judilibre les publie depuis 2025 (juridiction `tcom`,
+  141 tribunaux, mesuré le 29/09/2026). Même mécanisme que les tribunaux judiciaires ; la
+  difficulté est que leurs numéros n'ont pas de format commun (« 2024F00234 »,
+  « 2023040843 »). Les **prud'hommes**, eux, ne sont pas dans Judilibre.
 - Vérifier les articles des **lois et décrets** non codifiés (« article 22 de la loi du 6
   juillet 1989 ») et des **avenants** de conventions. Ils sont signalés dans les remarques du
   rapport, jamais devinés.
