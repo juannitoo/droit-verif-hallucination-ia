@@ -1,0 +1,36 @@
+{
+  "country": "france",
+  "source": "TJ Périgueux, pôle social, 18 décembre 2025, RG 23/00452 (minute 25/00509)",
+  "context": "Contentieux CAF, indu d'AAH. Le requérant a gagné au fond ; le tribunal a relevé d'office les citations douteuses de ses conclusions.",
+  "verbatim": "À titre préliminaire le tribunal relève que les références de jurisprudence citées par le requérant, mais non produites dans ses pièces, ne semblent pas correspondre à des décisions publiées. À titre d'exemple, le pourvoi n° 16-26694 correspond à un arrêt de la Cour de cassation du 24 mai 2018. Le tribunal invitera donc le requérant et son conseil à vérifier à l'avenir que les références qu'ils ont pu trouver sur des moteurs de recherches ou à l'aide de l'intelligence artificielle ne sont pas des « hallucinations ».",
+  "citations": [
+    {
+      "order": "administrative",
+      "court": "CE",
+      "number": "308850",
+      "cited_date": "2009-06-05",
+      "expected": "NOT_PUBLISHED"
+    },
+    {
+      "order": "judicial",
+      "court": "Cass",
+      "number": "17-28268",
+      "cited_date": "2019-03-21",
+      "expected": "WRONG_DATE"
+    },
+    {
+      "order": "administrative",
+      "court": "CE",
+      "number": "402517",
+      "cited_date": "2018-11-30",
+      "expected": "NOT_PUBLISHED"
+    },
+    {
+      "order": "judicial",
+      "court": "Cass",
+      "number": "16-26694",
+      "cited_date": "2017-12-14",
+      "expected": "WRONG_DATE"
+    }
+  ]
+}
