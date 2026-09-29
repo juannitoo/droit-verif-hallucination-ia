@@ -3,8 +3,9 @@
   NAME                          display name
   KEYS                          {key name: label}, the keys the user must provide
   KEY_HELP_URL                  where to get them
-  prepare(keys, log)            called before extract: refresh what extract recognizes
-                                from the databases (must never fail, never block)
+  prepare(keys, log)            -> remarks. Called before extract: refresh what extract
+                                recognizes from the databases (must never fail, never
+                                block); the remarks go into the report
   extract(text)                 -> (citations, remarks)
   check(citations, keys, log, options) -> results, one per citation, in order
                                 options: reference_date, idcc (see the country)

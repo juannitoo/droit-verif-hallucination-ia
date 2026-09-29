@@ -176,6 +176,22 @@ l'ajouter à `COUNTRIES`.
 Les autres pays n'ont pas à changer. Il faut des témoins pour chaque base, et un cas réel
 dans `cases/`.
 
+## Un nouveau code chez Légifrance
+
+Personne ne fait de veille, et c'est voulu : un cron sur un VPS disparaît avec le VPS, et
+GitHub coupe les tâches planifiées d'un dépôt public après 60 jours sans commit. Ce qui
+tient sans personne :
+
+- `prepare()` (`countries/france/__init__.py`) demande la liste des codes à Légifrance avant
+  chaque extraction et ajoute les titres inconnus (`codes.learn`). Le nouveau code est
+  reconnu en toutes lettres chez tout utilisateur qui a ses identifiants PISTE.
+- Le rapport le dit, et invite l'utilisateur à le signaler dans les issues.
+
+Quand un signalement arrive : ajouter le titre à `TITLES` et son abréviation d'usage à
+`ABBREVIATIONS` dans `codes.py` (jamais un sigle ambigu), passer le compte du test
+`test_every_title_is_recognized_whole` au nouveau total, puis `python3 tests/online_codes.py`
+doit sortir 0.
+
 ## Ce que le programme ne sait pas encore faire
 
 La liste qui fait foi est `NOT_CHECKED` dans `citecheck/countries/france/scope.py` : c'est

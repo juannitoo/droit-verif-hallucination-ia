@@ -24,6 +24,7 @@ from .lower_courts import Courts, check_lower_courts
 from .extract import extract
 from .legifrance import Client, Unavailable
 from .scope import not_checked_summary, scope
+from ... import ISSUES_URL
 from ...locales import t
 
 NAME = "France"
@@ -225,16 +226,25 @@ def _check_legislation(citations, keys, day, idcc, log):
 def prepare(keys, log=lambda s: None):
     """Avant l'extraction : complète la liste des codes par celle de Légifrance, pour qu'un
     code créé après cette version soit repéré dans le texte. Sans identifiants ou si
-    Légifrance ne répond pas, on garde la liste embarquée, sans rien bloquer."""
+    Légifrance ne répond pas, on garde la liste embarquée, sans rien bloquer.
+
+    Renvoie les remarques du rapport. Personne n'assure la veille de ce programme gratuit :
+    c'est l'utilisateur qui voit le nouveau code, c'est donc lui qu'on invite à le signaler."""
     cid, secret = keys.get("PISTE_CLIENT_ID"), keys.get("PISTE_CLIENT_SECRET")
     if not (cid and secret):
-        return
+        return []
     try:
         new = codes.learn(Client(cid, secret).codes())
     except Exception:           # Unavailable, ou une réponse d'une forme inattendue
-        return
-    if new:
-        log(f"{len(new)} code(s) ajouté(s) depuis Légifrance : {', '.join(new)}")
+        return []
+    if not new:
+        return []
+    log(f"{len(new)} code(s) ajouté(s) depuis Légifrance : {', '.join(new)}")
+    return [f"Légifrance connaît {len(new)} code(s) que cette version du programme ne "
+            f"connaissait pas : {', '.join(new)}. Ils sont reconnus sous leur titre complet, "
+            "pas encore sous leur abréviation. Ce programme est gratuit et personne n'en "
+            f"assure la veille : merci de le signaler sur {ISSUES_URL}, ou de proposer la "
+            "correction (pull request)."]
 
 
 def check(citations, keys, log=lambda s: None, options=None):

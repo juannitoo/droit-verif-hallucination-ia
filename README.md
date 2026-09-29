@@ -60,10 +60,24 @@ Le fichier `notice-droit-verif-hallucination-ia.md` lui explique tout.
 Explications et démonstration sur des cas réels : [zicalo.com](https://www.zicalo.com/)
 (bientôt).
 
+## Contribuer : personne n'assure la veille
+
+Ce programme est gratuit et public. Personne n'est payé pour le tenir à jour, et personne ne
+le fera sur la durée. Le meilleur moyen reste donc de mettre les utilisateurs à
+contribution. Quand Légifrance crée un
+[code](https://www.legifrance.gouv.fr/liste/code?etatTexte=VIGUEUR), le programme le
+reconnaît tout seul sous son titre complet et le dit dans le rapport, mais pas encore sous
+[son abréviation](citecheck/countries/france/codes.py). Des citations ne seront donc pas
+recueillies. C'est vous, à l'usage, qui le découvrirez : signalez-le dans les
+[issues](https://github.com/juannitoo/droit-verif-hallucination-ia/issues), ou proposez la
+correction par une pull request pour ceux qui comprennent ce que c'est. Même chose pour une
+[abréviation d'usage](citecheck/countries/france/codes.py) qui manque, ou une citation mal
+lue.
+
 ## Licence
 
 Deux licences au choix, détail dans [LICENSE.md](LICENSE.md). Cabinets et entreprises :
 usage interne. Particuliers, associations, enseignement, administrations : usage non
 commercial. Personne ne peut le revendre.
 
-FOURNI TEL QUEL, SANS GARANTIE. VOUS RESTEZ RESPONSABLE DES CITATIONS QUE VOUS PRODUISEZ.
+**FOURNI TEL QUEL, SANS GARANTIE. VOUS RESTEZ RESPONSABLE DES CITATIONS QUE VOUS PRODUISEZ.**

@@ -24,8 +24,9 @@ def check_document(path, country_code=DEFAULT, log=lambda s: None, options=None)
     """Read, extract, check. Raises reader.Unreadable if the document cannot be read."""
     country = COUNTRIES[country_code]
     doc = reader.read(path)
-    country.prepare(available_keys(country), log)
+    learned = country.prepare(available_keys(country), log)
     citations, remarks = country.extract(doc.text)
+    remarks = learned + remarks
     log(t.FOUND.format(n=len(citations)))
     for c in citations:
         start, end = c.pop("span")
