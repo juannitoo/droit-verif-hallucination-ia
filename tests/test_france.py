@@ -174,6 +174,17 @@ class Verdicts(unittest.TestCase):
 
 
 class Report(unittest.TestCase):
+    def test_without_excerpts_leaves_no_document_text(self):
+        secret = "Madame Dupont, licenciée le 3 mars"
+        cit = {"kind": "article", "code": "Code civil", "number": "1240", "court": "Code civil",
+               "quote": secret, "verdict": "ARTICLE_IN_FORCE", "explanation": "x",
+               "location": {"page": 1, "page_exact": True, "in_notes": False,
+                            "excerpt": secret}}
+        r = report.without_excerpts(report.build("doc.pdf", "france", [cit], []))
+        self.assertNotIn(secret, report.to_json(r))
+        self.assertNotIn(secret, report.to_text(r))
+        self.assertIn("1240", report.to_json(r))
+
     def test_disclaimer_always_present(self):
         r = report.build("empty.txt", "france", [], [])
         self.assertIn("sans garantie", report.to_text(r))

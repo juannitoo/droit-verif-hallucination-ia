@@ -86,6 +86,11 @@ l'entoure, et sa page : exacte pour un PDF, approximative pour Word et LibreOffi
 enregistrent les sauts de page de leur dernier affichage), absente pour du texte brut. Une
 citation placée dans une note de bas de page Word est signalée comme telle.
 
+**Enregistrer sans extraits** (case cochée par défaut, ou `--no-excerpts`) : le rapport
+enregistré ne garde que numéros, dates et verdicts, sans aucune phrase du document. C'est
+ce qu'il faut pour le donner à une IA en ligne sans y faire passer des noms ou des faits
+couverts par le secret professionnel.
+
 **La date des faits** (champ facultatif de l'onglet Vérifier, ou `--reference-date`) est la
 date à laquelle les articles sont lus. Vide, c'est la date du jour, et le rapport le dit.
 

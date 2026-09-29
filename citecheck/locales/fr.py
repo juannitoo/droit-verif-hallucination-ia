@@ -107,3 +107,8 @@ IN_PROGRESS = "Vérification en cours…"
 SAVE_TXT = "Enregistrer le rapport (texte)"
 SAVE_JSON = "Enregistrer le rapport (pour une IA)"
 REPORT_FILE = "rapport-citations"
+NO_EXCERPTS = "Enregistrer sans extraits du document"
+NO_EXCERPTS_HINT = ("Le rapport enregistré ne contient alors que les numéros, les dates et les "
+                    "verdicts, sans aucune phrase de votre document. À garder coché si vous le "
+                    "donnez à une IA en ligne : les extraits pourraient contenir les noms des "
+                    "parties ou des faits couverts par le secret professionnel.")

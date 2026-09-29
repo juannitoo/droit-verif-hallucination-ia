@@ -90,6 +90,12 @@ class Window:
                                  command=lambda: self.save("json"))
         self.b_txt.pack(side="left", padx=4)
         self.b_json.pack(side="left", padx=4)
+        # Checked by default: a saved report travels, often to an online AI.
+        self.no_excerpts = tk.BooleanVar(value=True)
+        ttk.Checkbutton(tab, text=t.NO_EXCERPTS, variable=self.no_excerpts).grid(
+            row=9, column=0, columnspan=3, pady=(8, 0))
+        ttk.Label(tab, text=t.NO_EXCERPTS_HINT, foreground=MUTED, wraplength=740,
+                  justify="center").grid(row=10, column=0, columnspan=3)
 
     # Tab "keys"
 
@@ -231,7 +237,8 @@ class Window:
             defaultextension=f".{kind}", initialfile=f"{t.REPORT_FILE}.{kind}")
         if not path:
             return
-        content = report.to_json(self.last) if kind == "json" else report.to_text(self.last)
+        r = report.without_excerpts(self.last) if self.no_excerpts.get() else self.last
+        content = report.to_json(r) if kind == "json" else report.to_text(r)
         with open(path, "w", encoding="utf-8") as f:
             f.write(content)
 

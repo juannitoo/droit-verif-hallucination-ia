@@ -31,6 +31,21 @@ def build(source, country, results, remarks, options=None):
     }
 
 
+def without_excerpts(report):
+    """A copy with no text taken from the document: no excerpt, no quoted passage. Only
+    numbers, dates and verdicts remain. For a report handed to an online AI, when the
+    document holds names and facts that must not leave the office."""
+    out = dict(report)
+    out["citations"] = []
+    for r in report["citations"]:
+        r = {k: v for k, v in r.items() if k != "quote"}
+        if r.get("location"):
+            r["location"] = {k: v for k, v in r["location"].items() if k != "excerpt"}
+        out["citations"].append(r)
+    out["excerpts_removed"] = True
+    return out
+
+
 def to_json(report):
     return json.dumps(report, ensure_ascii=False, indent=2)
 
@@ -74,7 +89,7 @@ def to_text(report):
             lines.append(line.format(court=r["court"], number=r["number"],
                                      date=r.get("cited_date") or t.NO_DATE)
                          + _where(r))
-        if r.get("location"):
+        if (r.get("location") or {}).get("excerpt"):
             lines.append(t.EXCERPT_LINE.format(excerpt=r["location"]["excerpt"]))
         lines.append(f"    {t.VERDICTS[r['verdict']]} : {r['explanation']}")
         lines.append("")

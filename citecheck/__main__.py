@@ -52,6 +52,8 @@ def main(argv=None):
                     "YYYY-MM-DD (default: today)")
     ap.add_argument("--idcc", help="IDCC of the collective agreement, for articles cited "
                     "without one")
+    ap.add_argument("--no-excerpts", action="store_true",
+                    help="no text from the document in the report: numbers, dates, verdicts")
     ap.add_argument("--case", help="benchmark: a case file whose answer is known")
     ap.add_argument("--scope", action="store_true", help=t.CLI_SCOPE)
     ap.add_argument("--version", action="version", version=f"{NAME} {__version__}")
@@ -88,6 +90,8 @@ def main(argv=None):
             print(t.CLI_UNREADABLE.format(error=e), file=sys.stderr)
             return 2
 
+    if a.no_excerpts:
+        r = report.without_excerpts(r)
     out = report.to_json(r) if a.json else report.to_text(r)
     if a.output:
         with open(a.output, "w", encoding="utf-8") as f:
