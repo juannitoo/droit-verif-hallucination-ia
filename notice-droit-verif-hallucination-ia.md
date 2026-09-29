@@ -40,7 +40,7 @@ compte PISTE de l'utilisateur.
 
 **Langues du code.** Noms de fichiers, de fonctions, de variables, codes de verdict, clés du
 JSON et options de la ligne de commande : en anglais. Commentaires du tronc commun : en
-anglais. Commentaires et explications d'un pays (`countries/<pays>/`) : dans la langue du
+anglais. Commentaires et explications d'un pays (`citecheck/countries/<pays>/`) : dans la langue du
 pays. Textes affichés : dans `locales/`.
 
 Les codes de verdict (`CONFIRMED`, `WRONG_DATE`, `NOT_PUBLISHED`...) restent des
@@ -65,7 +65,7 @@ vérifié ». Les clés se donnent une fois dans le deuxième, qui s'ouvre d'off
 manque une ; elles vont dans le trousseau du système. Le troisième dit à l'utilisateur ce
 que le programme reconnaît (formats de décisions, codes et abréviations) et ce qu'il ne
 vérifie pas ; il est construit à partir des listes que l'extracteur utilise
-(`countries/france/scope.py`), et `python -m citecheck --scope` l'affiche en ligne de
+(`citecheck/countries/france/scope.py`), et `python -m citecheck --scope` l'affiche en ligne de
 commande. En ligne de commande, on les passe par des variables
 d'environnement.
 
@@ -99,7 +99,7 @@ si la juridiction est nommée dans la même phrase. Judilibre ne publie largemen
 décisions que depuis peu, et pas au même rythme partout : le programme mesure la couverture
 de la juridiction citée (`/stats`, année par année) au lieu de l'écrire en dur, et une
 décision introuvable dans une période publiée en partie, ou de moins de six mois, sort
-« non vérifiable ». Détail et mesures du 29/09/2026 : `countries/france/lower_courts.py`.
+« non vérifiable ». Détail et mesures du 29/09/2026 : `citecheck/countries/france/lower_courts.py`.
 
 **L'IDCC** (champ facultatif, ou `--idcc`) identifie la convention collective des articles
 cités sans IDCC dans leur phrase. Le programme ne devine jamais une convention à partir de
@@ -119,7 +119,7 @@ convention est vérifié, pas ses avenants ni ses accords attachés.
 ## Les trois règles, à ne jamais affaiblir
 
 1. **Chaque base se prouve avant de juger.** Des numéros réels doivent être trouvés, des
-   numéros inventés ne doivent rien donner (les témoins, dans `countries/france/__init__.py`).
+   numéros inventés ne doivent rien donner (les témoins, dans `citecheck/countries/france/__init__.py`).
    Si une base rate ses contrôles, ses citations sortent en `NOT_TESTED`.
 2. **Jamais « introuvable ».** Les bases publiques ne contiennent pas toutes les décisions :
    zéro résultat veut dire « aucune décision publiée ne correspond ».
@@ -166,7 +166,7 @@ La licence permet de compiler pour son propre usage, pas de redistribuer le rés
 ## Ajouter un pays
 
 Créer `citecheck/countries/<pays>/` qui expose `NAME`, `KEYS`, `KEY_HELP_URL`,
-`extract(text)` et `check(citations, keys, log)` (voir `countries/__init__.py`), puis
+`extract(text)` et `check(citations, keys, log, options)` (voir `citecheck/countries/__init__.py`), puis
 l'ajouter à `COUNTRIES`.
 Les autres pays n'ont pas à changer. Il faut des témoins pour chaque base, et un cas réel
 dans `cases/`.
