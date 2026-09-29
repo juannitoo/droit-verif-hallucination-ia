@@ -47,8 +47,10 @@ CONVENTIONS = [
 NOT_CHECKED = [
     "un numéro RG sans cour d'appel ni tribunal judiciaire nommé dans la même phrase : un RG "
     "seul n'identifie pas une décision",
-    "les juridictions autres que la Cour de cassation, les cours d'appel, les tribunaux "
-    "judiciaires et le Conseil d'État (tribunaux de commerce, conseils de prud'hommes...)",
+    "les tribunaux de commerce : Judilibre les publie depuis 2025, mais leur vérification "
+    "n'est pas encore écrite",
+    "les conseils de prud'hommes : Judilibre ne les publie pas (leurs jugements frappés "
+    "d'appel sont vérifiés, eux, au niveau de la cour d'appel)",
     "les décisions des cours administratives d'appel (CAA) et des tribunaux administratifs "
     "(TA), à numéro mêlant chiffres et lettres (« 21BX01234 ») : les bases interrogeables "
     "sans installation n'en publient qu'une sélection",
@@ -80,7 +82,7 @@ def scope():
 
 def not_checked_summary():
     """Version courte, pour la fin du rapport : le détail est dans l'onglet."""
-    return ("RG sans juridiction nommée, autres juridictions (commerce, prud'hommes...), "
+    return ("RG sans juridiction nommée, tribunaux de commerce, prud'hommes, "
             "décisions des CAA et TA, "
             "décisions européennes, lois et décrets non codifiés, avenants et accords "
             "attachés aux conventions, "
