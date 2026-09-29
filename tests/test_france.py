@@ -85,6 +85,58 @@ class OtherCourts(unittest.TestCase):
         self.assertEqual(seen[0][:2], ("other", "CEDH"))
 
 
+class SeenNotChecked(unittest.TestCase):
+    """Point B (30/09/2026): whatever is seen and not checked must be in the report."""
+
+    def seen(self, text):
+        citations, remarks = extract(text)
+        return [(c["order"], c["court"], c["number"], c["cited_date"]) for c in citations], remarks
+
+    def test_decisions_without_number(self):
+        seen, remarks = self.seen(
+            "Voir CE, Ass., 30 octobre 2009, Mme Perreux. La Cour de cassation (Cass. soc., "
+            "10 juillet 2013) l'a jugé. T. com. Paris, 9 janvier 2026, RG 2024F00234. "
+            "CA Paris, 2 octobre 2013. Cass. Com., 3 mars 2020.")
+        self.assertEqual(seen, [("unnumbered", "CE", None, "2009-10-30"),
+                                ("unnumbered", "Cass.", None, "2013-07-10"),
+                                ("unnumbered", "T. com.", None, "2026-01-09"),
+                                ("unnumbered", "CA", None, "2013-10-02"),
+                                ("unnumbered", "Cass.", None, "2020-03-03")])
+        self.assertFalse(any("None" in r for r in remarks))
+
+    def test_not_a_decision(self):
+        seen, _ = self.seen("La Cour de cassation applique la loi du 6 juillet 1989. "
+                            "Le Conseil d'État a jugé le 5 juin 2009 que ce 12 mars 2019 était "
+                            "loin. On lit ce 5 mars 2020.")
+        self.assertEqual(seen, [("unnumbered", "CE", None, "2009-06-05")])
+
+    def test_numbered_then_repeated_is_one_decision(self):
+        seen, _ = self.seen("CE, 5 juin 2009, n° 308850. Le Conseil d'État, le 5 juin 2009, "
+                            "a jugé.")
+        self.assertEqual(seen, [("administrative", "CE", "308850", "2009-06-05")])
+
+    def test_caa_and_ta_never_go_to_arianeweb(self):
+        seen, _ = self.seen("CAA Bordeaux, 3 mars 2022, n° 21BX01234. TA Paris, 5 mai 2020, "
+                            "n° 1901234. Tribunal administratif de Lyon, n° 2001234.")
+        self.assertEqual([s[:3] for s in seen], [("other", "CAA", "21BX01234"),
+                                                 ("other", "TA", "1901234"),
+                                                 ("other", "TA", "2001234")])
+
+    def test_verdicts_say_why(self):
+        from citecheck.countries.france import verdict_other
+        why = verdict_other({"order": "unnumbered", "court": "CE", "number": None})[1]
+        self.assertIn("nom des parties", why)
+        why = verdict_other({"order": "unnumbered", "court": "CPH", "number": None})[1]
+        self.assertIn("Judilibre ne les publie pas", why)
+
+    def test_report_line(self):
+        r = report.build("x", "france", [{"kind": "decision", "order": "unnumbered",
+                                          "court": "CE", "number": None,
+                                          "cited_date": "2009-10-30",
+                                          "verdict": "MANUAL_CHECK", "explanation": "e"}], [])
+        self.assertIn("CE, décision du 2009-10-30 (aucun numéro lu)", report.to_text(r))
+
+
 class ConstitutionalConflictsEu(unittest.TestCase):
     def test_extraction(self):
         citations, _ = extract(

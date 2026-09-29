@@ -37,6 +37,7 @@ NO_CITATION = ("Aucune citation juridique relevée dans ce document. Soit il n'e
 DOCUMENT_LINE = "Document : {source}"
 CHECKED_LINE = "Vérifié le {date} par {program}"
 CITATION_LINE = "{court} n° {number}, cité au {date}"
+UNNUMBERED_LINE = "{court}, décision du {date} (aucun numéro lu)"
 RG_LINE = "{court}, RG {number}, cité au {date}"
 ARTICLE_LINE = "{code}, article {number}"
 CONVENTION_LINE = "Convention collective IDCC {idcc}, article {number}"

@@ -19,6 +19,12 @@ CE QU'IL SAIT LIRE
                   juridiction de l'Union est nommée dans la phrase
   CEDH, et tout numéro « 13134/87 » : jamais envoyés à une base qui n'est pas la leur, et
                   rendus « à vérifier à la main »
+  CAA et TA     : « 21BX01234 », « TA Paris, n° 1901234 » : rendus « à vérifier à la main »,
+                  jamais envoyés dans ArianeWeb comme des décisions du Conseil d'État
+  sans numéro   : « CE, Ass., 30 octobre 2009, Mme Perreux », « Cass. soc., 10 juillet
+                  2013 » : une juridiction suivie de près d'une date, sans numéro, est
+                  rendue « à vérifier à la main ». Jamais cherchée : il faudrait envoyer le
+                  nom des parties, qui vient du document
   dates en toutes lettres (« 5 juin 2009 ») et en chiffres (05/06/2009)
   articles      : « article L. 3121-2 du Code du travail », « art. 1240 C. civ. »,
                   « C. trav., art. L. 1152-1 », « articles L. 1234-1 et L. 1234-5 du ... »,
@@ -48,7 +54,11 @@ RE_DATE_WORDS = re.compile(
     r"\b(\d{1,2})(?:er)?\s+(" + "|".join(MONTHS) + r")\s+(\d{4})\b", re.I)
 RE_DATE_DIGITS = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b")
 
-MARK_ADMIN = re.compile(r"\b(CE|C\.E\.|Conseil d['’]État|Conseil d['’]Etat|CAA|TA)\b", re.I)
+# Le Conseil d'État SEUL : les CAA et les TA ont leurs propres numéros, qu'ArianeWeb ne
+# connaît pas (audit du 30/09/2026, point B : « TA Paris, n° 1901234 » partait dans
+# ArianeWeb comme une décision du Conseil d'État). Sigles en majuscules : insensible à la
+# casse, « CE » était le pronom « ce ».
+MARK_ADMIN = re.compile(r"\b(?:CE\b|C\.E\.|Conseil\s+d['’]\s*[ÉE]tat\b)")
 # Les abréviations se terminent par un point ou une fin de mot : sans ça, « Com » attrapait
 # le « com » de « communication », et une décision du Conseil d'État était écartée sans bruit.
 MARK_JUDICIAL = re.compile(
@@ -67,6 +77,8 @@ MARK_OTHER = [
                                          r"|Tribunal\s+des\s+conflits)", re.I)),
     ("Conseil constitutionnel", re.compile(r"\b(?:Cons\.\s?const\.|Conseil\s+constitutionnel)",
                                            re.I)),
+    ("CAA", re.compile(r"\bCAA\b|\b[Cc]our\s+administrative\s+d['’]\s*appel\b")),
+    ("TA", re.compile(r"\bTA\b|\b[Tt]ribunal\s+administratif\b")),
     ("CJUE", re.compile(r"\b(?:CJUE|CJCE|TPICE|Trib\.\s?UE|Tribunal\s+de\s+l['’]\s*Union"
                         r"|Cour\s+de\s+justice\s+(?:de\s+l['’]\s*Union|des\s+Communautés))",
                         re.I)),
@@ -85,6 +97,21 @@ RE_CONSTIT = re.compile(r"\b(\d{2,4}-\d{1,5}(?:/\d{1,5})*)\s+"
                         r"(DC|QPC|LP|FNR|LOM|ORGA|RIP|PDR|REF|ELEC|AN|SEN|L|D|I)\b")
 CONSTIT_ALONE = {"DC", "QPC"}
 RE_CONFLICTS = re.compile(r"\bn[°ºo]\s*(C?\s?\d{4,5})\b|\b(C\d{4})\b")
+# Numéro de CAA : l'année, deux lettres de la cour, cinq chiffres. Aucune autre juridiction
+# n'a cette forme.
+RE_CAA = re.compile(r"\b(\d{2}[A-Z]{2}\d{5})\b")
+# Pour les décisions citées sans numéro : toute juridiction, suivie de près d'une date.
+MARK_ANY = [("CE", MARK_ADMIN), ("Cass.", MARK_JUDICIAL),
+            ("CA", re.compile(r"\bCA\b|\b[Cc]our\s+d['’]\s*appel\b")),
+            ("TJ", re.compile(r"\b(?:TJ|TGI)\b|\b[Tt]ribunal\s+(?:judiciaire|de\s+grande\s+"
+                              r"instance)\b")),
+            ("T. com.", re.compile(r"\bT\.\s?com\.|\b[Tt]ribunal\s+de\s+commerce\b")),
+            ("CPH", re.compile(r"\bCPH\b|\b[Cc]onseil\s+de\s+prud['’]\s*hommes\b"))
+            ] + MARK_OTHER
+UNNUMBERED_GAP = 60   # entre la juridiction et la date : « CE, Ass., sect., »
+# « la Cour de cassation applique la loi du 6 juillet 1989 » : la date est celle d'un texte.
+RE_NOT_A_DECISION = re.compile(r"\b(?:loi|décret|ordonnance|arrêté|circulaire|directive|"
+                               r"règlement|convention|accord|avenant|article|art\.)", re.I)
 RE_EU = re.compile(r"\b([CT])\s?[-‑–]\s?(\d{1,4})/(\d{2})\b")
 
 WINDOW = 160   # caractères de part et d'autre où l'on cherche la date et la juridiction
@@ -105,7 +132,7 @@ def _iso(m, words=True):
     return iso
 
 
-def assign_dates(text, spans):
+def assign_dates(text, spans, used=None):
     """Rattache chaque date à UN seul numéro de décision : le plus proche, dans la même
     phrase. Renvoie {début du numéro: date}.
 
@@ -132,8 +159,40 @@ def assign_dates(text, spans):
         if candidates:
             gap, start = min(candidates)
             if start not in best or gap < best[start][0]:
-                best[start] = (gap, day)
-    return {start: day for start, (_, day) in best.items()}
+                best[start] = (gap, day, m.start())
+    if used is not None:
+        used.update(where for _, _, where in best.values())
+    return {start: day for start, (_, day, _) in best.items()}
+
+
+def unnumbered(text, used):
+    """Les décisions citées sans numéro : une date qu'aucun numéro n'a prise, précédée de
+    près, dans la même phrase, par une juridiction. Renvoie [(juridiction, date, span)]."""
+    found = [(m, _iso(m)) for m in RE_DATE_WORDS.finditer(text)]
+    found += [(m, _iso(m, False)) for m in RE_DATE_DIGITS.finditer(text)]
+    out = []
+    for m, day in found:
+        if not day or m.start() in used:
+            continue
+        lo = max(0, m.start() - UNNUMBERED_GAP - 40)
+        for end in RE_SENTENCE_END.finditer(text, lo, m.start()):
+            lo = end.end()
+        # La plus proche ; à égalité, la plus longue : « T. com. » et non le « com. » de la
+        # chambre commerciale.
+        marks = [(x.end(), -x.start(), court) for court, rx in MARK_ANY
+                 for x in rx.finditer(text, lo, m.start())]
+        if not marks:
+            continue
+        end, start, court = max(marks)
+        start = -start
+        if m.start() - end > UNNUMBERED_GAP or RE_NOT_A_DECISION.search(text, end, m.start()):
+            continue
+        # « Le Conseil d'État a jugé le 5 juin 2009 que ce 12 mars 2019... » : la juridiction
+        # appartient à la première date, pas à celle qui suit.
+        if RE_DATE_WORDS.search(text, end, m.start()) or RE_DATE_DIGITS.search(text, end, m.start()):
+            continue
+        out.append((court, day, (start, m.end())))
+    return out
 
 
 def order_of(text, start, default):
@@ -169,9 +228,12 @@ def extract(text):
                if m.group(2) in CONSTIT_ALONE or order_of(text, m.start(), None) == CONSTIT]
     eu = [m for m in RE_EU.finditer(text)
           if m.group(1) == "C" or order_of(text, m.start(), None) == EU]
+    caa = list(RE_CAA.finditer(text))
     rgs = list(RE_RG.finditer(text))
+    used = set()
     dates = assign_dates(text, [m.span() for m in
-                                appeals + requests + rgs + conflicts + constit + eu])
+                                appeals + requests + rgs + conflicts + constit + eu + caa],
+                         used)
     seen = set()        # (numéro, date) : un même numéro cité à deux dates = deux citations
 
     def add(order, court, number, m):
@@ -192,6 +254,8 @@ def extract(text):
     for m in eu:
         add("eu", "CJUE" if m.group(1) == "C" else "Trib. UE",
             f"{m.group(1)}-{int(m.group(2))}/{m.group(3)}", m)
+    for m in caa:
+        add("other", "CAA", m.group(1), m)
 
     for m in appeals:
         number, d = m.group(1), dates.get(m.start())
@@ -242,7 +306,7 @@ def extract(text):
     lower, lower_remarks = extract_lower_courts(text, rgs, dates)
     by_number = {}
     for c in citations + lower:
-        if c["cited_date"]:
+        if c["cited_date"] and c["number"]:
             by_number.setdefault(c["number"], set()).add(c["cited_date"])
     for number, days in by_number.items():
         if len(days) > 1:
@@ -250,6 +314,16 @@ def extract(text):
                            f"({', '.join(sorted(days))}) : chacune est vérifiée.")
     citations += lower
     remarks += lower_remarks
+    numbered_days = {c["cited_date"] for c in citations}
+    for court, day, span in unnumbered(text, used):
+        # Déjà citée avec son numéro à cette date : c'est la même décision, reprise.
+        if day in numbered_days:
+            continue
+        if ("unnumbered", court, day) not in seen:
+            seen.add(("unnumbered", court, day))
+            citations.append({"kind": "decision", "order": "unnumbered", "court": court,
+                              "number": None, "cited_date": day, "span": span})
+
     articles, article_remarks = extract_articles(text)
     # Dans l'ordre du document : c'est l'ordre dans lequel l'avocat relira.
     both = sorted(citations + articles, key=lambda c: c["span"][0])
@@ -287,10 +361,15 @@ QUOTE_AFTER = 200
 QUOTE_BEFORE = 15   # « ... » (art. L. 1234-5) : le texte précède, collé
 
 
-# « Costello-Roberts c. Royaume-Uni », « Mme X c. Commune de Y » : le « c. » des parties
-# n'est pas une fin de phrase. Sans cette exception, la date citée avant les noms des
-# parties n'atteignait jamais le numéro cité après.
-RE_SENTENCE_END = re.compile(r"(?<!\bc)[.;!?]\s+(?=[A-ZÀ-ÖØ-Þ«])")
+# « Costello-Roberts c. Royaume-Uni », « T. com. Paris », « Cass. Soc. » : le point d'une
+# abréviation n'est pas une fin de phrase. Sans ces exceptions, la date citée avant les noms
+# des parties n'atteignait jamais le numéro cité après, et « T. com. Paris, 9 janvier 2026 »
+# perdait sa juridiction.
+ABBREVIATIONS_WITH_DOT = ["c", "com", "soc", "civ", "crim", "cass", "confl", "const", "cons",
+                          "trib", "ass", "sect", "ch", "req", "art", "t", "m", "plén"]
+RE_SENTENCE_END = re.compile(
+    "".join(rf"(?<!\b(?i:{a}))" for a in ABBREVIATIONS_WITH_DOT)
+    + r"[.;!?]\s+(?=[A-ZÀ-ÖØ-Þ«])")
 
 
 def nearest_idcc(text, start, end):

@@ -210,7 +210,12 @@ elle que l'utilisateur voit dans l'onglet « Ce qui est vérifié ». Le README 
 la résument ; en cas d'écart, c'est `scope.py` qu'il faut croire, et les deux autres qu'il
 faut corriger.
 
-- Vérifier les décisions des **CAA et TA** (numéros mêlant chiffres et lettres), et un
+- Vérifier les décisions **citées sans numéro**. Elles sont signalées ; les chercher
+  demanderait d'envoyer le nom des parties, ce que le programme ne fait jamais. Une piste
+  sans rien envoyer du document : juridiction et date seules, mais une chambre de la Cour de
+  cassation rend des dizaines de décisions le même jour.
+- Vérifier les décisions des **CAA et TA** (signalées aujourd'hui, jamais cherchées dans
+  ArianeWeb comme des décisions du Conseil d'État), et un
   **RG** cité sans juridiction dans sa phrase. Piste pour les CAA, sondée le 29/09/2026 :
   Légifrance, fonds CETAT, champ NUM_DEC, trouve « 17NC01414 » et rien pour un numéro
   inventé ; la couverture reste à mesurer.

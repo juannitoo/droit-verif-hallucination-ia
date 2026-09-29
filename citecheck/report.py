@@ -92,7 +92,10 @@ def to_text(report):
                 q = r["quote"] if len(r["quote"]) <= 160 else r["quote"][:157] + "..."
                 lines.append(t.QUOTE_LINE.format(quote=q))
         else:
-            line = t.RG_LINE if r.get("order") == "lower" else t.CITATION_LINE
+            if r.get("number") is None:
+                line = t.UNNUMBERED_LINE
+            else:
+                line = t.RG_LINE if r.get("order") == "lower" else t.CITATION_LINE
             lines.append(line.format(court=r["court"], number=r["number"],
                                      date=r.get("cited_date") or t.NO_DATE)
                          + _where(r))

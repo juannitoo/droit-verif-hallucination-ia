@@ -150,10 +150,29 @@ def verdict_dates(days, cited_date, base):
             f"{cited_date}", actual)
 
 
+# Juridictions repérées mais pas vérifiées, numéro ou non : la vraie raison, pour chacune.
+NOT_YET = {
+    "CAA": "décision d'une cour administrative d'appel, que ce programme ne vérifie pas "
+           "encore ; aucune base n'a été interrogée",
+    "TA": "décision d'un tribunal administratif, que ce programme ne vérifie pas encore ; "
+          "aucune base n'a été interrogée",
+    "T. com.": "décision d'un tribunal de commerce, que ce programme ne vérifie pas encore ; "
+               "aucune base n'a été interrogée",
+    "CPH": "décision d'un conseil de prud'hommes : Judilibre ne les publie pas, aucune base "
+           "n'a été interrogée",
+}
+
+
 def verdict_other(citation):
     """Une décision qu'aucune base interrogeable ne couvre : on la montre, on ne la juge pas.
     L'envoyer dans ArianeWeb donnerait un verdict sur une autre décision."""
     court, number = citation["court"], citation["number"]
+    if court in NOT_YET:
+        return "MANUAL_CHECK", NOT_YET[court], None
+    if citation.get("order") == "unnumbered":
+        return ("MANUAL_CHECK", "décision citée sans numéro. Ce programme ne cherche une "
+                "décision que par son numéro : il n'envoie jamais le nom des parties, qui vient "
+                "de votre document", None)
     if court == "CEDH" or "/" in number:
         what = ("décision de la CEDH" if court == "CEDH" else
                 f"numéro au format « {number} », qui n'est pas celui du Conseil d'État mais "
@@ -410,7 +429,7 @@ def check(citations, keys, log=lambda s: None, options=None):
             v, why, actual = next(legislation)
         elif c["order"] in OTHER_BASES:
             v, why, actual = next(other_results)
-        elif c["order"] == "other":
+        elif c["order"] in ("other", "unnumbered"):
             v, why, actual = verdict_other(c)
         elif c["order"] == "lower":
             v, why, actual = next(lower_results)
@@ -426,6 +445,9 @@ def check(citations, keys, log=lambda s: None, options=None):
         else:
             v, why, actual = "NOT_TESTED", judicial_why, None
         results.append({**c, "verdict": v, "explanation": why, "actual_date": actual})
-        log(f"  {c['court']} {'art.' if c.get('kind') in LEGISLATION else 'n°'} "
-            f"{c['number']} : {t.VERDICTS[v]}")
+        if c.get("number") is None:
+            log(f"  {c['court']}, {c.get('cited_date')}, sans numéro : {t.VERDICTS[v]}")
+        else:
+            log(f"  {c['court']} {'art.' if c.get('kind') in LEGISLATION else 'n°'} "
+                f"{c['number']} : {t.VERDICTS[v]}")
     return results

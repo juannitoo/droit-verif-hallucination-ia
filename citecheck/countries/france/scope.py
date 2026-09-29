@@ -31,6 +31,10 @@ DECISIONS = [
     "pas la recherche dans HUDOC par un programme, et ce programme ne la contourne pas. Un "
     "numéro de la forme « 13134/87 » est traité de même, même sans juridiction nommée : ce "
     "n'est pas un numéro du Conseil d'État.",
+    "Une décision citée SANS numéro (« CE, Ass., 30 octobre 2009, Mme Perreux », « Cass. "
+    "soc., 10 juillet 2013 ») est signalée « à vérifier à la main » : une juridiction suivie "
+    "de près d'une date suffit à la repérer. Elle n'est pas cherchée : il faudrait envoyer le "
+    "nom des parties, et ce programme n'envoie jamais rien de votre document.",
     "La date citée est lue à côté du numéro, en toutes lettres (« 5 juin 2009 ») ou en "
     "chiffres (« 05/06/2009 »), puis comparée à celle de la base.",
 ]
@@ -63,12 +67,14 @@ NOT_CHECKED = [
     "un numéro RG sans cour d'appel ni tribunal judiciaire nommé dans la même phrase : un RG "
     "seul n'identifie pas une décision",
     "les tribunaux de commerce : Judilibre les publie depuis 2025, mais leur vérification "
-    "n'est pas encore écrite",
+    "n'est pas encore écrite. Leurs décisions sont signalées « à vérifier à la main »",
     "les conseils de prud'hommes : Judilibre ne les publie pas (leurs jugements frappés "
-    "d'appel sont vérifiés, eux, au niveau de la cour d'appel)",
+    "d'appel sont vérifiés, eux, au niveau de la cour d'appel). Signalés « à vérifier à la "
+    "main »",
     "les décisions des cours administratives d'appel (CAA) et des tribunaux administratifs "
-    "(TA), à numéro mêlant chiffres et lettres (« 21BX01234 ») : les bases interrogeables "
-    "sans installation n'en publient qu'une sélection",
+    "(TA) : pas encore vérifiées. Signalées « à vérifier à la main », jamais cherchées parmi "
+    "celles du Conseil d'État",
+    "les décisions citées sans numéro : signalées « à vérifier à la main », pas cherchées",
     "les décisions de la CEDH : la Cour n'autorise pas la recherche dans sa base par un "
     "programme. Elles sont signalées, avec le lien de la recherche, à ouvrir soi-même",
     "les articles de lois et de décrets non codifiés (« article 22 de la loi du 6 juillet "

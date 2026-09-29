@@ -26,11 +26,12 @@ servi lors de la conception.
 
 ## Ce qu'il ne vérifie pas
 
-- les décisions des cours administratives d'appel et des tribunaux administratifs ;
+- les décisions des cours administratives d'appel et des tribunaux administratifs, et les
+  décisions citées sans numéro : le rapport les signale, à vérifier à la main ;
 - les décisions de la CEDH : la Cour n'autorise pas la recherche dans sa base par un
   programme. Le rapport les signale, avec le lien de la recherche à ouvrir soi-même ;
 - les tribunaux de commerce (publiés par Judilibre depuis 2025 : pas encore fait) et les
-  conseils de prud'hommes (que Judilibre ne publie pas) ;
+  conseils de prud'hommes (que Judilibre ne publie pas) : signalés, à vérifier à la main ;
 - un numéro RG cité sans le nom de la juridiction dans la même phrase (le même numéro
   existe dans plusieurs juridictions) ;
 - les articles de lois et de décrets non codifiés, et ceux des avenants de conventions
