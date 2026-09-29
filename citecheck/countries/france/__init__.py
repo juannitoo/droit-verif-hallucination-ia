@@ -88,9 +88,13 @@ def verdict_judicial(record, cited_date, first_complete=None):
     (mesurée : 1987 au 29/09/2026 ; avant, 2 000 décisions par an contre 13 000 après)."""
     if record is None:
         if not cited_date or not first_complete or cited_date[:4] < first_complete:
-            period = (f"les arrêts de {cited_date[:4]} ne sont publiés qu'en partie "
-                      f"(publication large depuis {first_complete})" if cited_date and first_complete
-                      else "sans date citée, impossible de savoir si la période est couverte")
+            if not first_complete:
+                period = "la couverture de Judilibre n'a pas pu être mesurée"
+            elif not cited_date:
+                period = "sans date citée, impossible de savoir si la période est couverte"
+            else:
+                period = (f"les arrêts de {cited_date[:4]} ne sont publiés qu'en partie "
+                          f"(publication large depuis {first_complete})")
             return ("UNVERIFIABLE_PERIOD", f"aucun pourvoi de ce numéro dans Judilibre, mais "
                     f"{period} : l'absence ne prouve rien", None)
         return ("NOT_PUBLISHED", "aucun pourvoi de ce numéro dans Judilibre : la décision ne "
@@ -251,7 +255,10 @@ def check(citations, keys, log=lambda s: None, options=None):
             if not judicial_ok:
                 judicial_why = "Judilibre n'a pas passé ses contrôles : aucun verdict possible"
             else:
-                cc_first = Courts(key).first_complete_year("cc", None)[0]
+                try:
+                    cc_first = Courts(key).first_complete_year("cc", None)[0]
+                except Exception:
+                    cc_first = None         # couverture non mesurée : « non vérifiable »
     if "lower" in orders:
         lower = [c for c in citations if c.get("order") == "lower"]
         key = keys.get("PISTE_API_KEY")

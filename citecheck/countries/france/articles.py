@@ -24,7 +24,7 @@ import unicodedata
 from .legifrance import Unavailable
 
 MIN_WORDS = 4
-MAX_VERSIONS_READ = 12
+MAX_VERSIONS_READ = 80   # au-delà, le rapport dit combien il en a lu, jamais « aucune »
 RE_CUT = re.compile(r"\[\s*(?:\.\.\.|…)\s*\]|\(\s*(?:\.\.\.|…)\s*\)|\.\.\.|…")
 
 
@@ -97,14 +97,18 @@ def check_article(client, citation, day, texts):
 
     if quote_in(fragments, text_of(current)):
         return "ARTICLE_IN_FORCE", base + " ; texte cité conforme à cette version", current["debut"]
-    others = [v for v in versions if v is not current][-MAX_VERSIONS_READ:]
-    for v in reversed(others):
+    others = [v for v in versions if v is not current]
+    read = others[-MAX_VERSIONS_READ:]
+    for v in reversed(read):
         if quote_in(fragments, text_of(v)):
             return ("ARTICLE_OTHER_VERSION",
                     f"le texte cité est celui de la version {_period(v)}, pas de celle en "
                     f"vigueur le {day} (version {_period(current)})", v["debut"])
+    scope = (f"aucune des {len(versions)} versions de l'article" if len(read) == len(others)
+             else f"aucune des {len(read) + 1} versions les plus récentes lues, sur "
+                  f"{len(versions)}")
     return ("QUOTE_NOT_FOUND",
-            f"{base} ; mais le texte cité ne se retrouve dans aucune version de l'article "
+            f"{base} ; mais le texte cité ne se retrouve dans {scope} "
             "(paraphrase, ou texte inventé : à vérifier)", current["debut"])
 
 

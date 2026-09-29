@@ -39,6 +39,13 @@ def without_excerpts(report):
     out["citations"] = []
     for r in report["citations"]:
         r = {k: v for k, v in r.items() if k != "quote"}
+        # « CA Paris » : le nom de ville est lu dans le document, il peut être autre chose
+        # (audit K6). On ne garde que le type de juridiction ; l'explication cite le libellé
+        # officiel de Judilibre quand il a été trouvé.
+        place = r.pop("place", None)
+        if place:
+            r["court"] = r["court"].split(" ", 1)[0]
+            r["explanation"] = (r.get("explanation") or "").replace(place, "…")
         if r.get("location"):
             r["location"] = {k: v for k, v in r["location"].items() if k != "excerpt"}
         out["citations"].append(r)

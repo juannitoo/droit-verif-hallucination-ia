@@ -179,6 +179,8 @@ def text_of(path):
         raw = READERS[ext](path) if ext in READERS else path.read_text(encoding="utf-8")
     except (zipfile.BadZipFile, ET.ParseError, KeyError) as e:
         raise Unreadable(t.DAMAGED.format(name=path.name, ext=ext, detail=e))
+    except RecursionError:
+        raise Unreadable(t.TOO_DEEP.format(name=path.name))
     except UnicodeDecodeError:
         raise Unreadable(t.UNKNOWN_FORMAT.format(name=path.name))
     text = _normalize(raw)

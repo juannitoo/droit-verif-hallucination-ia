@@ -66,15 +66,35 @@ def _iso(m, words=True):
     return iso
 
 
-def nearest_date(text, start, end):
-    """La date la plus proche du numéro, dans la fenêtre. Aucune si rien de lisible."""
-    origin = max(0, start - WINDOW)
-    zone = text[origin: end + WINDOW]
-    pos = start - origin
-    found = [(_iso(m), abs(m.start() - pos)) for m in RE_DATE_WORDS.finditer(zone)]
-    found += [(_iso(m, False), abs(m.start() - pos)) for m in RE_DATE_DIGITS.finditer(zone)]
-    found = [f for f in found if f[0]]
-    return min(found, key=lambda f: f[1])[0] if found else None
+def assign_dates(text, spans):
+    """Rattache chaque date à UN seul numéro de décision : le plus proche, dans la même
+    phrase. Renvoie {début du numéro: date}.
+
+    Avant (audit du 29/09/2026, K3) : chaque numéro prenait la date la plus proche, même
+    celle de son voisin. « CE n° 308850 du 5 juin 2009 et n° 402517 » datait les deux du
+    5 juin 2009, et le programme pouvait « confirmer » une association que le document n'a
+    jamais faite."""
+    starts = sorted(spans)
+    best = {}
+    dates = [(m, _iso(m)) for m in RE_DATE_WORDS.finditer(text)]
+    dates += [(m, _iso(m, False)) for m in RE_DATE_DIGITS.finditer(text)]
+    for m, day in dates:
+        if not day:
+            continue
+        candidates = []
+        for start, end in starts:
+            gap = m.start() - end if m.start() >= end else start - m.end()
+            if gap < 0 or gap > WINDOW:
+                continue
+            lo, hi = (end, m.start()) if m.start() >= end else (m.end(), start)
+            if RE_SENTENCE_END.search(text, max(0, lo - 1), hi):
+                continue                    # une fin de phrase les sépare
+            candidates.append((gap, start))
+        if candidates:
+            gap, start = min(candidates)
+            if start not in best or gap < best[start][0]:
+                best[start] = (gap, day)
+    return {start: day for start, (_, day) in best.items()}
 
 
 def order_of(text, start, default):
@@ -93,28 +113,33 @@ def order_of(text, start, default):
 
 def extract(text):
     """Renvoie (citations, remarques). Une remarque signale ce qui n'a pas pu être lu."""
-    seen, citations, undated, set_aside = set(), [], [], []
+    citations, undated, set_aside = [], [], []
+    appeals = list(RE_APPEAL.finditer(text))
+    appeal_numbers = {m.group(1) for m in appeals}
+    requests = [m for m in RE_REQUEST.finditer(text) if m.group(1) not in appeal_numbers]
+    rgs = list(RE_RG.finditer(text))
+    dates = assign_dates(text, [m.span() for m in appeals + requests + rgs])
+    seen = set()        # (numéro, date) : un même numéro cité à deux dates = deux citations
 
-    for m in RE_APPEAL.finditer(text):
-        number = m.group(1)
-        if number in seen:
+    for m in appeals:
+        number, d = m.group(1), dates.get(m.start())
+        if (number, d) in seen:
             continue
-        seen.add(number)
-        d = nearest_date(text, m.start(), m.end())
+        seen.add((number, d))
         citations.append({"kind": "decision", "order": "judicial", "court": "Cass",
                           "number": number, "cited_date": d, "span": m.span()})
         if not d:
             undated.append(number)
 
-    for m in RE_REQUEST.finditer(text):
+    for m in requests:
         number = m.group(1)
-        if number in seen:
-            continue
         if order_of(text, m.start(), "administrative") == "judicial":
             set_aside.append(number)    # un n° à 5-7 chiffres près de « Cass. » : douteux
             continue
-        seen.add(number)
-        d = nearest_date(text, m.start(), m.end())
+        d = dates.get(m.start())
+        if (number, d) in seen:
+            continue
+        seen.add((number, d))
         citations.append({"kind": "decision", "order": "administrative", "court": "CE",
                           "number": number, "cited_date": d, "span": m.span()})
         if not d:
@@ -127,7 +152,15 @@ def extract(text):
     if set_aside:
         remarks.append(f"{len(set_aside)} numéro(s) écarté(s), à 5-7 chiffres mais près d'une "
                        f"juridiction judiciaire : {', '.join(set_aside)}. À vérifier à la main.")
-    lower, lower_remarks = extract_lower_courts(text)
+    lower, lower_remarks = extract_lower_courts(text, rgs, dates)
+    by_number = {}
+    for c in citations + lower:
+        if c["cited_date"]:
+            by_number.setdefault(c["number"], set()).add(c["cited_date"])
+    for number, days in by_number.items():
+        if len(days) > 1:
+            remarks.append(f"n° {number} cité à {len(days)} dates différentes "
+                           f"({', '.join(sorted(days))}) : chacune est vérifiée.")
     citations += lower
     remarks += lower_remarks
     articles, article_remarks = extract_articles(text)
@@ -310,9 +343,9 @@ def _city(text):
     return "".join(out).strip()
 
 
-def extract_lower_courts(text):
+def extract_lower_courts(text, rgs, dates):
     citations, seen, no_court = [], set(), []
-    for m in RE_RG.finditer(text):
+    for m in rgs:
         number = m.group(1)
         lo = max(0, m.start() - WINDOW)
         for end in RE_SENTENCE_END.finditer(text, lo, m.start()):
@@ -324,14 +357,14 @@ def extract_lower_courts(text):
             continue
         kind = courts[-1].group("kind").lower()
         jurisdiction = "ca" if kind.startswith(("ca", "cour")) else "tj"
-        if (jurisdiction, city, number) in seen:
+        d = dates.get(m.start())
+        if (jurisdiction, city, number, d) in seen:
             continue
-        seen.add((jurisdiction, city, number))
+        seen.add((jurisdiction, city, number, d))
         label = ("CA " if jurisdiction == "ca" else "TJ ") + city
         citations.append({"kind": "decision", "order": "lower", "court": label,
                           "jurisdiction": jurisdiction, "place": city, "number": number,
-                          "cited_date": nearest_date(text, m.start(), m.end()),
-                          "span": m.span()})
+                          "cited_date": d, "span": m.span()})
     remarks = []
     if no_court:
         remarks.append(f"{len(no_court)} numéro(s) RG sans cour d'appel ni tribunal judiciaire "

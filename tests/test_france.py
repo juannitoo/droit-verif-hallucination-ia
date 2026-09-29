@@ -124,6 +124,65 @@ class LowerCourts(unittest.TestCase):
         self.assertTrue(any("21/00999" in r for r in remarks))
 
 
+class AuditPass2(unittest.TestCase):
+    """Les points de la seconde passe d'audit (K1 à K10), pour qu'ils ne reviennent pas."""
+
+    def test_k3_a_date_belongs_to_one_number(self):
+        citations, _ = extract("CE n° 308850 du 5 juin 2009 et n° 402517.")
+        self.assertEqual([(c["number"], c["cited_date"]) for c in citations],
+                         [("308850", "2009-06-05"), ("402517", None)])
+
+    def test_k3_no_date_across_a_sentence(self):
+        citations, _ = extract("Le 5 juin 2009, rien. CE n° 402517 : sans date.")
+        self.assertIsNone(citations[0]["cited_date"])
+
+    def test_k2_two_dates_two_checks(self):
+        citations, remarks = extract("Cass. soc., 21 mars 2019, n° 17-28268. Plus loin : "
+                                     "Cass. soc., 14 mai 2020, n° 17-28268.")
+        self.assertEqual([c["cited_date"] for c in citations], ["2019-03-21", "2020-05-14"])
+        self.assertTrue(any("2 dates différentes" in r for r in remarks))
+
+    def test_k4_overload_is_not_an_unknown_idcc(self):
+        from citecheck.countries.france.legifrance import Client, Unavailable
+
+        class Down(Client):
+            def _post(self, route, body):
+                raise Unavailable("HTTP 500", 500)
+        with self.assertRaises(Unavailable):
+            Down("id", "secret").convention("1234")
+
+    def test_k4_unknown_idcc_when_the_base_is_fine(self):
+        from citecheck.countries.france.legifrance import Client, Unavailable
+
+        class Picky(Client):
+            def _post(self, route, body):
+                if body["id"] == "1979":
+                    return {"titre": "HCR", "texteBaseId": ["KALITEXT1"]}
+                raise Unavailable("HTTP 500", 500)
+        self.assertIsNone(Picky("id", "secret").convention("9998"))
+
+    def test_k6_no_document_word_left(self):
+        cit = {"kind": "decision", "order": "lower", "court": "CA Dupont Martin",
+               "place": "Dupont Martin", "number": "11/18803", "cited_date": None,
+               "verdict": "NOT_TESTED",
+               "explanation": "cour d'appel « Dupont Martin » non reconnue"}
+        r = report.without_excerpts(report.build("doc.pdf", "france", [cit], []))
+        self.assertNotIn("Dupont", report.to_json(r))
+        self.assertNotIn("Dupont", report.to_text(r))
+
+    def test_k10_deeply_nested_odt_is_refused(self):
+        import tempfile
+        import zipfile
+        from citecheck.reader import Unreadable, text_of
+        ns = 'xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"'
+        deep = "<text:span>" * 5000 + "mot " * 10 + "</text:span>" * 5000
+        with tempfile.NamedTemporaryFile(suffix=".odt", delete=False) as f:
+            with zipfile.ZipFile(f, "w") as z:
+                z.writestr("content.xml", f"<r {ns}><text:p>{deep}</text:p></r>")
+        with self.assertRaises(Unreadable):
+            text_of(f.name)
+
+
 class Scope(unittest.TestCase):
     def test_every_displayed_abbreviation_is_recognized(self):
         """The "what is checked" tab must not promise an abbreviation we do not read."""

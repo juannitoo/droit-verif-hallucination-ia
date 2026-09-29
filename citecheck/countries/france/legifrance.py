@@ -41,6 +41,7 @@ USER_AGENT = f"{NAME}/{__version__}"
 PAUSE = 0.3
 TIMEOUT = 40
 MAX_PAGES = 5
+KNOWN_IDCC = "1979"     # convention HCR : sert à distinguer « IDCC inconnu » d'une panne
 
 
 class Unavailable(Exception):
@@ -157,12 +158,22 @@ class Client:
         la connaît pas. Une erreur 500 vaut « inconnue » : c'est ainsi que l'API répond à un
         IDCC inexistant (les contrôles ont prouvé juste avant qu'elle fonctionne)."""
         if idcc not in self._conventions:
-            try:
-                data = self._post("/consult/kaliContIdcc", {"id": str(idcc)})
-            except Unavailable as e:
-                if e.status != 500:
-                    raise
-                data = None
+            data = None
+            for attempt in (1, 2):
+                try:
+                    data = self._post("/consult/kaliContIdcc", {"id": str(idcc)})
+                    break
+                except Unavailable as e:
+                    if e.status != 500:
+                        raise
+            if data is None and idcc != KNOWN_IDCC:
+                # Deux 500 de suite. Surcharge, ou IDCC inconnu ? Une convention connue
+                # interrogée à l'instant tranche : si elle répond, le 500 visait cet IDCC ;
+                # sinon la base va mal, et c'est une erreur, jamais « inexistant »
+                # (audit du 29/09/2026, K4).
+                if self.convention(KNOWN_IDCC) is None:
+                    raise Unavailable("Légifrance répond en erreur, même pour une convention "
+                                      "connue", 500)
             base = (data or {}).get("texteBaseId") or []
             base = [base] if isinstance(base, str) else base   # une liste, parfois plusieurs
             if base:
