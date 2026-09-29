@@ -24,6 +24,7 @@ CE QU'IL NE FAIT JAMAIS
 """
 import re
 import unicodedata
+from datetime import date
 
 from .codes import find_code
 
@@ -51,11 +52,18 @@ WINDOW = 160   # caractères de part et d'autre où l'on cherche la date et la j
 
 
 def _iso(m, words=True):
+    """La date en AAAA-MM-JJ, ou None si elle n'existe pas au calendrier (« 31/02/2019 ») :
+    une date impossible n'est pas une date citée."""
     if words:
         day, month, year = m.group(1), MONTHS[m.group(2).lower()], m.group(3)
     else:
         day, month, year = m.group(1), int(m.group(2)), m.group(3)
-    return f"{year}-{month:02d}-{int(day):02d}"
+    iso = f"{year}-{month:02d}-{int(day):02d}"
+    try:
+        date.fromisoformat(iso)
+    except ValueError:
+        return None
+    return iso
 
 
 def nearest_date(text, start, end):
@@ -65,6 +73,7 @@ def nearest_date(text, start, end):
     pos = start - origin
     found = [(_iso(m), abs(m.start() - pos)) for m in RE_DATE_WORDS.finditer(zone)]
     found += [(_iso(m, False), abs(m.start() - pos)) for m in RE_DATE_DIGITS.finditer(zone)]
+    found = [f for f in found if f[0]]
     return min(found, key=lambda f: f[1])[0] if found else None
 
 

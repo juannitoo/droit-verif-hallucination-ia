@@ -62,6 +62,7 @@ EXPORT_FIRST = ("{name} : format {fmt} non lu. L'exporter en PDF ou en Word (.do
 DAMAGED = "{name} : fichier abîmé ou pas au format {ext} ({detail})"
 UNKNOWN_FORMAT = "{name} : format inconnu. Formats lus : .pdf .docx .odt .txt .md"
 NO_TEXT = "{name} : aucun texte lisible."
+TOO_BIG = "Document trop volumineux une fois décompressé ({name}) : refusé par prudence."
 NO_TEXT_PDF = ("{name} : aucun texte lisible. C'est sans doute un PDF scanné (une image) : "
                "il faut un PDF texte.")
 

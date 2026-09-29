@@ -32,6 +32,10 @@ class Extraction(unittest.TestCase):
         self.assertEqual([(c["number"], c["order"]) for c in citations],
                          [("416043", "administrative")])
 
+    def test_impossible_date_is_not_a_date(self):
+        citations, _ = extract("Cass. soc., 31/02/2019, n° 17-28268.")
+        self.assertIsNone(citations[0]["cited_date"])
+
     def test_missing_date_is_reported(self):
         citations, remarks = extract("Conseil d'État, n° 308850.")
         self.assertIsNone(citations[0]["cited_date"])
@@ -163,7 +167,9 @@ class Verdicts(unittest.TestCase):
         record = {"decision_date": "2019-04-10", "chamber": "civ1", "solution": "rejet"}
         self.assertEqual(verdict_judicial(record, "2019-04-10")[0], "CONFIRMED")
         self.assertEqual(verdict_judicial(record, "2019-03-21")[0], "WRONG_DATE")
-        self.assertEqual(verdict_judicial(None, "2019-03-21")[0], "NOT_PUBLISHED")
+        self.assertEqual(verdict_judicial(None, "2019-03-21", "1987")[0], "NOT_PUBLISHED")
+        self.assertEqual(verdict_judicial(None, "1983-03-21", "1987")[0], "UNVERIFIABLE_PERIOD")
+        self.assertEqual(verdict_judicial(None, None, "1987")[0], "UNVERIFIABLE_PERIOD")
         self.assertEqual(verdict_judicial({"_err": "HTTP 500"}, None)[0], "ERROR")
 
 

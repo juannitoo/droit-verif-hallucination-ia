@@ -15,6 +15,7 @@ import urllib.parse
 import urllib.request
 
 from ... import NAME, __version__
+from ...http import urlopen
 
 ARIANE = "https://www.conseil-etat.fr/xsearch?type=json"
 JUDILIBRE = "https://api.piste.gouv.fr/cassation/judilibre/v1.0"
@@ -24,7 +25,7 @@ TIMEOUT = 40
 
 
 def _get_json(req):
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+    with urlopen(req, timeout=TIMEOUT) as r:
         return json.loads(r.read().decode("utf-8", "replace"))
 
 
@@ -101,8 +102,10 @@ def locations(jurisdiction, key):
 
 def yearly_counts(jurisdiction, location, key):
     """{année: nombre de décisions publiées} dans Judilibre pour cette juridiction."""
-    data = _judilibre_get("stats", {"jurisdiction": jurisdiction, "location": location,
-                                    "keys": "year"}, key)
+    params = {"jurisdiction": jurisdiction, "keys": "year"}
+    if location:
+        params["location"] = location
+    data = _judilibre_get("stats", params, key)
     return {a["key"]["year"]: a["decisions_count"]
             for a in (data.get("results") or {}).get("aggregated_data") or []}
 

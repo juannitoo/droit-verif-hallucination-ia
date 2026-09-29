@@ -31,6 +31,8 @@ from pathlib import Path
 
 from .locales import t
 
+MAX_UNPACKED = 200 * 1024 * 1024   # a .docx or .odt part larger than this is refused:
+                                   # a crafted "zip bomb" would otherwise fill the memory
 PAGE = "\f"
 NOTES = "\x1e"      # separates the body of a Word document from its footnotes
 
@@ -62,8 +64,15 @@ class Document:
         return ("…" if a else "") + body + ("…" if b < len(self.text) else "")
 
 
+def _check_size(z, names):
+    for name in names:
+        if name in z.namelist() and z.getinfo(name).file_size > MAX_UNPACKED:
+            raise Unreadable(t.TOO_BIG.format(name=name))
+
+
 def _docx(path):
     with zipfile.ZipFile(path) as z:
+        _check_size(z, ["word/document.xml", "word/footnotes.xml", "word/endnotes.xml"])
         parts = ["word/document.xml", "word/footnotes.xml", "word/endnotes.xml"]
         xmls = [z.read(p) for p in parts if p in z.namelist()]
     blocks = []
@@ -107,6 +116,7 @@ def _odt_text(e):
 
 def _odt(path):
     with zipfile.ZipFile(path) as z:
+        _check_size(z, ["content.xml"])
         root = ET.fromstring(z.read("content.xml"))
 
     # Notes sit INSIDE the paragraph that calls them: read them in place, and do not descend

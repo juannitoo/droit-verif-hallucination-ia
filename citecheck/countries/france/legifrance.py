@@ -10,8 +10,12 @@ CE QU'ON A APPRIS DE L'API (sondée le 29/09/2026)
   - /consult/getArticleWithIdAndNum ne connaît que les articles EN VIGUEUR aujourd'hui. Un
     article abrogé ou pas encore en vigueur y répond `null` : inutilisable pour dire
     « n'existe pas ».
-  - /search sur le fonds CODE_ETAT renvoie toutes les versions d'un numéro, avec leur état
-    et leurs dates. C'est ce qu'on utilise.
+  - /search sur le fonds CODE_ETAT trouve un numéro d'article même abrogé ou pas encore en
+    vigueur. MAIS il TRONQUE la liste des versions à une dizaine, et pas toujours les mêmes
+    d'un appel à l'autre : L. 242-1 du Code de la sécurité sociale, 37 versions, en montrait
+    3, et le programme le déclarait « abrogé » (audit du 29/09/2026). On ne s'en sert donc
+    que pour trouver UNE version ; la liste complète vient de la fiche de cette version
+    (/consult/getArticle, champ articleVersions).
   - Le filtre NOM_CODE ne suffit pas : l'article 1382 du Code civil ramène aussi le 1382 du
     Code général des impôts. On filtre sur l'identifiant du code (LEGITEXT...).
   - /consult/kaliContIdcc donne la convention d'un IDCC et l'identifiant de son texte de
@@ -29,6 +33,7 @@ import urllib.parse
 import urllib.request
 
 from ... import NAME, __version__
+from ...http import urlopen
 
 OAUTH = "https://oauth.piste.gouv.fr/api/oauth/token"
 API = "https://api.piste.gouv.fr/dila/legifrance/lf-engine-app"
@@ -62,7 +67,7 @@ class Client:
         req = urllib.request.Request(OAUTH, data=body, headers={
             "Content-Type": "application/x-www-form-urlencoded", "User-Agent": USER_AGENT})
         try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+            with urlopen(req, timeout=TIMEOUT) as r:
                 token = json.loads(r.read().decode()).get("access_token")
         except urllib.error.HTTPError as e:
             raise Unavailable(f"HTTP {e.code} sur l'authentification"
@@ -80,7 +85,7 @@ class Client:
             "Authorization": f"Bearer {self._token}", "Content-Type": "application/json",
             "Accept": "application/json", "User-Agent": USER_AGENT})
         try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+            with urlopen(req, timeout=TIMEOUT) as r:
                 return json.loads(r.read().decode("utf-8", "replace"))
         except urllib.error.HTTPError as e:
             raise Unavailable(f"HTTP {e.code}" + (" (accès refusé : l'application PISTE "
@@ -104,6 +109,21 @@ class Client:
 
         Chaque version : {id, etat, debut, fin} (dates AAAA-MM-JJ). Liste vide si aucun
         article de ce numéro n'a jamais existé dans ce code."""
+        found = self._search_versions(code_title, code_id, number)
+        if not found:
+            return []
+        # La fiche d'une version porte la liste complète ; la recherche, non.
+        article = self._post("/consult/getArticle", {"id": found[0]["id"]}).get("article") or {}
+        complete = [{"id": v.get("id"), "etat": v.get("etat"), "debut": _day(v.get("dateDebut")),
+                     "fin": _day(v.get("dateFin"))}
+                    for v in article.get("articleVersions") or [] if v.get("id")]
+        if len(complete) < len(found):
+            raise Unavailable(f"liste des versions de {number} incohérente "
+                              f"({len(complete)} dans la fiche, {len(found)} dans la recherche)")
+        return sorted(complete, key=lambda v: v["debut"])
+
+    def _search_versions(self, code_title, code_id, number):
+        """Les versions que la recherche veut bien montrer : incomplet, voir plus haut."""
         found = {}
         for page in range(1, MAX_PAGES + 1):
             data = self._post("/search", {"fond": "CODE_ETAT", "recherche": {

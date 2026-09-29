@@ -65,9 +65,12 @@ class Courts:
         return found[0] if len(found) == 1 else None
 
     def first_complete_year(self, jurisdiction, location):
-        """(première année couverte, {année: nombre}) pour cette juridiction."""
+        """(première année couverte, {année: nombre}) pour cette juridiction, ou pour tout le
+        type de juridiction si `location` vaut None (la Cour de cassation n'en a qu'une)."""
+        location = location or jurisdiction
         if location not in self._first_complete:
-            counts = sources.yearly_counts(jurisdiction, location, self.key)
+            counts = sources.yearly_counts(
+                jurisdiction, None if location == jurisdiction else location, self.key)
             today = date.today()
             elapsed = (today - date(today.year, 1, 1)).days + 1
             full = {y: (n * 365 / elapsed if y == str(today.year) else n)

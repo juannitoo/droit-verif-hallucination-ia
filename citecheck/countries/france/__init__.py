@@ -83,8 +83,16 @@ def verdict_admin(count, dates, cited_date):
             "elle-même n'est pas dans ArianeWeb : date NON contrôlée", None)
 
 
-def verdict_judicial(record, cited_date):
+def verdict_judicial(record, cited_date, first_complete=None):
+    """`first_complete` : première année où Judilibre publie largement la Cour de cassation
+    (mesurée : 1987 au 29/09/2026 ; avant, 2 000 décisions par an contre 13 000 après)."""
     if record is None:
+        if not cited_date or not first_complete or cited_date[:4] < first_complete:
+            period = (f"les arrêts de {cited_date[:4]} ne sont publiés qu'en partie "
+                      f"(publication large depuis {first_complete})" if cited_date and first_complete
+                      else "sans date citée, impossible de savoir si la période est couverte")
+            return ("UNVERIFIABLE_PERIOD", f"aucun pourvoi de ce numéro dans Judilibre, mais "
+                    f"{period} : l'absence ne prouve rien", None)
         return ("NOT_PUBLISHED", "aucun pourvoi de ce numéro dans Judilibre : la décision ne "
                 "semble pas publiée ; à vérifier", None)
     if "_err" in record:
@@ -225,6 +233,7 @@ def check(citations, keys, log=lambda s: None, options=None):
     admin_ok = judicial_ok = False
     admin_why = judicial_why = None
     lower_results = iter(())
+    cc_first = None
 
     if "administrative" in orders:
         log("Contrôle d'ArianeWeb (Conseil d'État) avant de juger :")
@@ -241,6 +250,8 @@ def check(citations, keys, log=lambda s: None, options=None):
             judicial_ok = selftest_judicial(key, log)
             if not judicial_ok:
                 judicial_why = "Judilibre n'a pas passé ses contrôles : aucun verdict possible"
+            else:
+                cc_first = Courts(key).first_complete_year("cc", None)[0]
     if "lower" in orders:
         lower = [c for c in citations if c.get("order") == "lower"]
         key = keys.get("PISTE_API_KEY")
@@ -270,7 +281,8 @@ def check(citations, keys, log=lambda s: None, options=None):
                 v, why, actual = "NOT_TESTED", admin_why, None
         elif judicial_ok:
             v, why, actual = verdict_judicial(
-                sources.judilibre(c["number"], keys["PISTE_API_KEY"]), c.get("cited_date"))
+                sources.judilibre(c["number"], keys["PISTE_API_KEY"]), c.get("cited_date"),
+                cc_first)
         else:
             v, why, actual = "NOT_TESTED", judicial_why, None
         results.append({**c, "verdict": v, "explanation": why, "actual_date": actual})
