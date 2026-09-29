@@ -12,14 +12,17 @@ from .countries import COUNTRIES
 from .locales import t
 
 
-def build(source, country, results, remarks, reference_date=None):
+def build(source, country, results, remarks, options=None):
+    options = options or {}
     return {
         "program": f"{NAME} {__version__}",
         "date": date.today().isoformat(),
         "source": source,
         "country": country,
         # The date the cited articles were read at; None means "today, by default".
-        "reference_date": reference_date,
+        "reference_date": options.get("reference_date"),
+        # The IDCC the user gave for conventions cited without one.
+        "idcc": options.get("idcc"),
         "disclaimer": t.DISCLAIMER,
         "summary": dict(Counter(r["verdict"] for r in results)),
         # `verdict` is a stable code, the same in every language; `verdict_label` is for humans.
@@ -48,7 +51,7 @@ def to_text(report):
              t.CHECKED_LINE.format(date=report["date"], program=report["program"]), "",
              t.DISCLAIMER, ""]
     cits = report["citations"]
-    if any(c.get("kind") == "article" for c in cits):
+    if any(c.get("kind") in ("article", "convention_article") for c in cits):
         lines.append(t.REFERENCE_LINE.format(
             date=report["reference_date"] or report["date"],
             default="" if report["reference_date"] else t.REFERENCE_DEFAULT))
@@ -56,8 +59,13 @@ def to_text(report):
     if not cits:
         lines.append(t.NO_CITATION)
     for r in cits:
-        if r.get("kind") == "article":
-            lines.append(t.ARTICLE_LINE.format(code=r["code"], number=r["number"]) + _where(r))
+        if r.get("kind") in ("article", "convention_article"):
+            if r["kind"] == "article":
+                head = t.ARTICLE_LINE.format(code=r["code"], number=r["number"])
+            else:
+                head = t.CONVENTION_LINE.format(idcc=r.get("idcc") or report.get("idcc") or t.IDCC_UNKNOWN,
+                                                number=r["number"])
+            lines.append(head + _where(r))
             if r.get("quote"):
                 q = r["quote"] if len(r["quote"]) <= 160 else r["quote"][:157] + "..."
                 lines.append(t.QUOTE_LINE.format(quote=q))

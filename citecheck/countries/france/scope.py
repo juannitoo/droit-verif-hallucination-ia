@@ -24,6 +24,18 @@ ARTICLES = [
     "jour.",
 ]
 
+CONVENTIONS = [
+    "« article 21 de la convention collective nationale des HCR (IDCC 1979) », « article "
+    "25.1 de la CCN », « article 12.1 de ladite convention ».",
+    "La convention est identifiée par son IDCC (quatre chiffres, sur le bulletin de paie), "
+    "écrit dans la même phrase que la citation, ou donné dans le champ « IDCC ». Elle n'est "
+    "jamais devinée à partir de son nom : la recherche par nom de Légifrance mélange "
+    "conventions, avenants et accords.",
+    "Seul le texte de base de la convention est vérifié. Le texte cité entre guillemets est "
+    "comparé à toutes les versions de l'article, et le rapport dit si la version en vigueur "
+    "est étendue. Base interrogée : Légifrance.",
+]
+
 NOT_CHECKED = [
     "les arrêts des cours d'appel et les jugements des tribunaux, cités par leur numéro RG "
     "(« CA Paris, 2 octobre 2013, RG 11/18803 ») : un RG n'est pas unique (chaque "
@@ -36,7 +48,9 @@ NOT_CHECKED = [
     "les décisions européennes et internationales (CJUE, CEDH)",
     "les articles de lois et de décrets non codifiés (« article 22 de la loi du 6 juillet "
     "1989 ») : signalés, pas vérifiés",
-    "les conventions collectives (en préparation)",
+    "les avenants, accords et textes salariaux attachés aux conventions collectives : "
+    "signalés, pas vérifiés (seul le texte de base l'est)",
+    "un article de convention cité sans IDCC dans sa phrase, si l'IDCC n'est pas donné",
     "la chambre ou la formation qui a rendu la décision",
     "le sens d'une décision : si elle soutient l'argument pour lequel elle est citée",
 ]
@@ -51,6 +65,7 @@ def scope():
     return [
         ("Décisions de justice reconnues", DECISIONS),
         ("Articles de codes reconnus", ARTICLES),
+        ("Articles de conventions collectives reconnus", CONVENTIONS),
         (f"Les {len(TITLES)} codes reconnus, avec leurs abréviations", codes),
         ("Ce qui n'est PAS vérifié", NOT_CHECKED),
     ]
@@ -59,5 +74,6 @@ def scope():
 def not_checked_summary():
     """Version courte, pour la fin du rapport : le détail est dans l'onglet."""
     return ("arrêts de cours d'appel et jugements (numéros RG), décisions des CAA et TA, "
-            "décisions européennes, lois et décrets non codifiés, conventions collectives, "
+            "décisions européennes, lois et décrets non codifiés, avenants et accords "
+            "attachés aux conventions, "
             "chambre, sens des décisions. Détail et raisons : onglet « Ce qui est vérifié »")

@@ -1,5 +1,5 @@
-"""Légifrance, via le portail PISTE : les codes (fonds LEGI) et, plus tard, les conventions
-collectives (fonds KALI).
+"""Légifrance, via le portail PISTE : les codes (fonds LEGI) et les conventions collectives
+(fonds KALI).
 
 AUTHENTIFICATION
   OAuth2 « client_credentials » : l'identifiant et le secret de l'application PISTE de
@@ -14,6 +14,10 @@ CE QU'ON A APPRIS DE L'API (sondée le 29/09/2026)
     et leurs dates. C'est ce qu'on utilise.
   - Le filtre NOM_CODE ne suffit pas : l'article 1382 du Code civil ramène aussi le 1382 du
     Code général des impôts. On filtre sur l'identifiant du code (LEGITEXT...).
+  - /consult/kaliContIdcc donne la convention d'un IDCC et l'identifiant de son texte de
+    base ; /consult/kaliText renvoie en un appel tous les articles de ce texte, toutes leurs
+    versions et leur contenu. Un IDCC inexistant y provoque une erreur 500, pas une réponse
+    vide.
 
 Seuls le numéro d'article et le nom du code partent sur le réseau. Jamais le texte du
 document.
@@ -37,12 +41,18 @@ MAX_PAGES = 5
 class Unavailable(Exception):
     """Légifrance n'a pas répondu, ou a refusé les identifiants."""
 
+    def __init__(self, message, status=None):
+        super().__init__(message)
+        self.status = status
+
 
 class Client:
     def __init__(self, client_id, client_secret):
         self._id, self._secret = client_id, client_secret
         self._token = None
         self._codes = None
+        self._conventions = {}
+        self._kali_texts = {}
 
     def _get_token(self):
         body = urllib.parse.urlencode({"grant_type": "client_credentials",
@@ -74,7 +84,8 @@ class Client:
                 return json.loads(r.read().decode("utf-8", "replace"))
         except urllib.error.HTTPError as e:
             raise Unavailable(f"HTTP {e.code}" + (" (accès refusé : l'application PISTE "
-                              "est-elle abonnée à Légifrance ?)" if e.code == 403 else ""))
+                              "est-elle abonnée à Légifrance ?)" if e.code == 403 else ""),
+                              e.code)
         except Exception as e:
             raise Unavailable(type(e).__name__)
         finally:
@@ -120,3 +131,59 @@ class Client:
         """Le texte d'une version d'article."""
         data = self._post("/consult/getArticle", {"id": article_id})
         return ((data.get("article") or {}).get("texte") or "").strip()
+
+    def convention(self, idcc):
+        """(titre, identifiants des textes de base) de la convention, ou None si Légifrance ne
+        la connaît pas. Une erreur 500 vaut « inconnue » : c'est ainsi que l'API répond à un
+        IDCC inexistant (les contrôles ont prouvé juste avant qu'elle fonctionne)."""
+        if idcc not in self._conventions:
+            try:
+                data = self._post("/consult/kaliContIdcc", {"id": str(idcc)})
+            except Unavailable as e:
+                if e.status != 500:
+                    raise
+                data = None
+            base = (data or {}).get("texteBaseId") or []
+            base = [base] if isinstance(base, str) else base   # une liste, parfois plusieurs
+            if base:
+                self._conventions[idcc] = (data.get("titre") or "", tuple(base))
+            else:
+                self._conventions[idcc] = None
+        return self._conventions[idcc]
+
+    def convention_articles(self, text_ids):
+        """Tous les articles des textes de base, toutes versions : liste de
+        {id, num, etat, debut, fin, texte}."""
+        return [a for tid in text_ids for a in self._kali_text(tid)]
+
+    def _kali_text(self, text_id):
+        if text_id not in self._kali_texts:
+            data = self._post("/consult/kaliText", {"id": text_id})
+            found = []
+
+            def walk(section):
+                for a in section.get("articles") or []:
+                    found.append({"id": a.get("id"), "num": a.get("num"), "etat": a.get("etat"),
+                                  "debut": _day(a.get("dateDebut")),
+                                  "fin": _day(a.get("dateFin")),
+                                  "texte": _strip_html(a.get("content") or "")})
+                for sub in section.get("sections") or []:
+                    walk(sub)
+            walk(data)
+            self._kali_texts[text_id] = found
+        return self._kali_texts[text_id]
+
+
+def _day(ms):
+    """Date Légifrance (millisecondes depuis 1970) en AAAA-MM-JJ."""
+    if ms is None:
+        return ""
+    from datetime import datetime, timezone
+    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).date().isoformat()
+
+
+def _strip_html(html):
+    import html as h
+    import re
+    return h.unescape(re.sub(r"<[^>]+>", " ", html)).strip()
+

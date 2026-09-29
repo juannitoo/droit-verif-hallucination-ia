@@ -4,7 +4,8 @@
   KEYS                          {key name: label}, the keys the user must provide
   KEY_HELP_URL                  where to get them
   extract(text)                 -> (citations, remarks)
-  check(citations, keys, log, reference_date) -> results, one per citation, in order
+  check(citations, keys, log, options) -> results, one per citation, in order
+                                options: reference_date, idcc (see the country)
   scope()                       -> [(heading, lines)], what is and is not checked
   not_checked_summary()         -> one line, printed at the end of every report
 

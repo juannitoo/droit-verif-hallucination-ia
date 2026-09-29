@@ -1,7 +1,7 @@
 {
   "country": "france",
   "source": "Articles dont l'histoire est connue, relevée dans Légifrance le 29/09/2026",
-  "reference_date": "2026-09-29",
+  "options": {"reference_date": "2026-09-29"},
   "context": "Chaque cas illustre un piège : texte d'une version périmée, article pas encore en vigueur, article abrogé, numéro inexistant, citation inventée.",
   "citations": [
     {

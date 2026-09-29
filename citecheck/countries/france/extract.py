@@ -13,6 +13,8 @@ CE QU'IL SAIT LIRE
   articles      : « article L. 3121-2 du Code du travail », « art. 1240 C. civ. »,
                   « C. trav., art. L. 1152-1 », « articles L. 1234-1 et L. 1234-5 du ... »,
                   « du même code » ; et le texte cité entre guillemets juste à côté
+  conventions   : « article 21 de la convention collective nationale des HCR (IDCC
+                  1979) » ; l'IDCC est lu à proximité, jamais déduit du nom
 
 CE QU'IL NE FAIT JAMAIS
   Deviner. Un numéro sans date lisible sort sans date, et le contrôle de date est annoncé
@@ -124,7 +126,8 @@ def extract(text):
 
 # Un numéro d'article : lettre facultative (L, R, D, A, avec ou sans point, étoile des
 # articles réglementaires), puis des chiffres séparés par des tirets, puis bis/ter...
-NUM = r"(?:[LRDA]\.?\s?\*?\s?)?\d+(?:[-‑]\d+)*(?:\s(?:bis|ter|quater|quinquies))?\b"
+NUM = (r"(?:[LRDA]\.?\s?\*?\s?)?(?:1er|\d+(?:[-‑.]\d+)*)"
+       r"(?:\s(?:bis|ter|quater|quinquies))?\b")
 RE_ARTICLES = re.compile(
     r"\bart(?:icle)?s?\.?\s+(" + NUM + r"(?:\s*(?:,|et|à|ou)\s*" + NUM + r")*)", re.I)
 RE_ONE_NUM = re.compile(NUM, re.I)
@@ -134,16 +137,42 @@ RE_QUOTE = re.compile(r"«\s*([^»]{20,})\s*»|“([^”]{20,})”|\"([^\"]{20,}
 RE_OTHER_TEXT = re.compile(r"\W{0,3}(?:\w+\s+){0,2}(?:de\s+la\s+|du\s+|de\s+l['’]\s*)?"
                            r"(?:loi|décret|ordonnance|convention|directive|règlement|arrêté|"
                            r"accord|traité|constitution)\b", re.I)
+RE_CONVENTION = re.compile(
+    r"^\W{0,3}(?:de\s+la\s+|du\s+|de\s+l['’]\s*)?(?:convention\s+collective|CCNT?\b)", re.I)
+RE_ATTACHED = re.compile(
+    r"^\W{0,3}(?:de\s+l['’]\s*|du\s+)(?:avenant|accord\s+(?:de\s+branche|collectif|national))",
+    re.I)
+RE_SAME_CONVENTION = re.compile(
+    r"^\W{0,3}(?:de\s+ladite\s+convention|de\s+la\s+(?:même\s+)?(?:convention|CCN)"
+    r"(?:\s+collective)?(?:\s+nationale)?\s+(?:précitée|susvisée|susmentionnée))", re.I)
+RE_IDCC = re.compile(r"\bIDCC\s*(?:n[°ºo]\s*)?:?\s*(\d{1,4})\b", re.I)
+IDCC_WINDOW = 250
 CODE_AFTER = 70     # un nom de code doit suivre le numéro de près
 CODE_BEFORE = 25    # ou le précéder de très près (« C. trav., art. L. 1152-1 »)
 QUOTE_AFTER = 200
 QUOTE_BEFORE = 15   # « ... » (art. L. 1234-5) : le texte précède, collé
 
 
+RE_SENTENCE_END = re.compile(r"[.;!?]\s+(?=[A-ZÀ-ÖØ-Þ«])")
+
+
+def nearest_idcc(text, start, end):
+    """L'IDCC écrit dans la MÊME PHRASE que la citation, le plus proche, ou None. Jamais
+    déduit d'un nom, jamais repris d'une phrase voisine (sauf « ladite convention »)."""
+    lo, hi = max(0, start - IDCC_WINDOW), min(len(text), end + IDCC_WINDOW)
+    for m in RE_SENTENCE_END.finditer(text, lo, start):
+        lo = m.end()
+    m = RE_SENTENCE_END.search(text, end, hi)
+    hi = m.start() + 1 if m else hi
+    found = [(abs(m.start() - start), m.group(1)) for m in RE_IDCC.finditer(text, lo, hi)]
+    return min(found)[1] if found else None
+
+
 def normalize_number(raw):
     """« L. 3121-2 » -> « L3121-2 », comme l'écrit Légifrance."""
     n = unicodedata.normalize("NFKC", raw).replace("‑", "-")
-    n = re.sub(r"[\s.*]", "", n)
+    n = re.sub(r"^([LRDA])[\s.*]+", r"\1", n, flags=re.I)   # « L. » : le point du préfixe seul
+    n = re.sub(r"\s+", "", n)                                 # « 25.1 » garde son point
     n = re.sub(r"(bis|ter|quater|quinquies)$", r" \1", n, flags=re.I)
     return n[0].upper() + n[1:] if n[0].isalpha() else n
 
@@ -157,7 +186,9 @@ def assign_quotes(text, spans):
         body = " ".join(next(g for g in m.groups() if g).split())
         candidates = []
         for i, (start, end) in enumerate(spans):
-            if m.end() <= start and start - m.end() <= QUOTE_BEFORE:
+            if (m.end() <= start and start - m.end() <= QUOTE_BEFORE
+                    and not RE_SENTENCE_END.search(text, m.end() - 1, start)):
+                # « ... » (C. civ., art. X) : collé, sans fin de phrase entre les deux
                 candidates.append((start - m.end(), i))
             elif m.start() >= end and m.start() - end <= QUOTE_AFTER:
                 candidates.append((m.start() - end, i))
@@ -172,11 +203,31 @@ def extract_articles(text):
     """Renvoie (citations d'articles, remarques)."""
     matches = list(RE_ARTICLES.finditer(text))
     quotes = assign_quotes(text, [(m.start(), m.end()) for m in matches])
-    citations, seen, no_code = [], set(), []
-    last_code = None
+    citations, seen, no_code, attached = [], set(), [], []
+    last_code = last_idcc = None
     for index, m in enumerate(matches):
         after = text[m.end(): m.end() + CODE_AFTER]
         before = text[max(0, m.start() - CODE_BEFORE): m.start()]
+        numbers = [normalize_number(x) for x in RE_ONE_NUM.findall(m.group(1))]
+        quote = quotes.get(index) if len(numbers) == 1 else None
+
+        if RE_ATTACHED.match(after):
+            attached.extend(numbers)            # avenant, accord : pas le texte de base
+            continue
+        same = RE_SAME_CONVENTION.match(after)
+        if same or RE_CONVENTION.match(after):
+            idcc = last_idcc if same and last_idcc else nearest_idcc(text, m.start(), m.end())
+            last_idcc = idcc or last_idcc
+            for number in numbers:
+                if ("idcc", idcc, number) in seen:
+                    continue
+                seen.add(("idcc", idcc, number))
+                citations.append({"kind": "convention_article", "order": "legislation",
+                                  "court": f"IDCC {idcc}" if idcc else "convention collective",
+                                  "idcc": idcc, "number": number, "cited_date": None,
+                                  "quote": quote, "span": m.span()})
+            continue
+
         code = None
         found = find_code(after)
         # Le code doit venir avant toute autre mention d'article (sinon il appartient à la
@@ -192,12 +243,10 @@ def extract_articles(text):
             found = find_code(before, last=True)
             if found and re.fullmatch(r"[\s,;:]*", before[found[2]:]):
                 code = found[0]
-        numbers = [normalize_number(x) for x in RE_ONE_NUM.findall(m.group(1))]
         if not code:
             no_code.extend(numbers)
             continue
         last_code = code
-        quote = quotes.get(index) if len(numbers) == 1 else None
         for number in numbers:
             if (code, number) in seen:
                 continue
@@ -209,5 +258,9 @@ def extract_articles(text):
     if no_code:
         remarks.append(f"{len(no_code)} article(s) cité(s) sans code reconnu : "
                        f"{', '.join(no_code[:12])}{'...' if len(no_code) > 12 else ''}. "
-                       "Les lois, décrets et conventions ne sont pas encore vérifiés.")
+                       "Les lois et décrets non codifiés ne sont pas vérifiés.")
+    if attached:
+        remarks.append(f"{len(attached)} article(s) d'avenant ou d'accord collectif : "
+                       f"{', '.join(attached[:12])}. Seul le texte de base des conventions "
+                       "est vérifié.")
     return citations, remarks

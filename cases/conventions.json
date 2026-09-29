@@ -1,0 +1,69 @@
+{
+  "country": "france",
+  "source": "Articles de la convention collective HCR (IDCC 1979) dont l'histoire est connue, relevée dans Légifrance le 29/09/2026",
+  "options": {
+    "reference_date": "2026-09-29"
+  },
+  "citations": [
+    {
+      "kind": "convention_article",
+      "order": "legislation",
+      "court": "IDCC 1979",
+      "idcc": "1979",
+      "number": "21",
+      "cited_date": null,
+      "quote": "Pour les cuisiniers, la durée hebdomadaire au travail est de 43 heures",
+      "expected": "ARTICLE_IN_FORCE"
+    },
+    {
+      "kind": "convention_article",
+      "order": "legislation",
+      "court": "IDCC 1979",
+      "idcc": "1979",
+      "number": "21",
+      "cited_date": null,
+      "quote": "après un an d'application de la présente convention : 43 heures",
+      "expected": "ARTICLE_OTHER_VERSION"
+    },
+    {
+      "kind": "convention_article",
+      "order": "legislation",
+      "court": "IDCC 1979",
+      "idcc": "1979",
+      "number": "1er",
+      "cited_date": null,
+      "quote": null,
+      "expected": "ARTICLE_IN_FORCE"
+    },
+    {
+      "kind": "convention_article",
+      "order": "legislation",
+      "court": "IDCC 1979",
+      "idcc": "1979",
+      "number": "5",
+      "cited_date": null,
+      "quote": null,
+      "expected": "ARTICLE_NOT_IN_FORCE"
+    },
+    {
+      "kind": "convention_article",
+      "order": "legislation",
+      "court": "IDCC 1979",
+      "idcc": "1979",
+      "number": "9999",
+      "cited_date": null,
+      "quote": null,
+      "expected": "ARTICLE_NOT_FOUND"
+    },
+    {
+      "kind": "convention_article",
+      "order": "legislation",
+      "court": "IDCC 9998",
+      "idcc": "9998",
+      "number": "1",
+      "cited_date": null,
+      "quote": null,
+      "expected": "CONVENTION_NOT_FOUND"
+    }
+  ]
+}

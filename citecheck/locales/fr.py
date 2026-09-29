@@ -16,7 +16,8 @@ VERDICTS = {
     "ARTICLE_OTHER_VERSION": "TEXTE CITÉ D'UNE AUTRE VERSION",
     "QUOTE_NOT_FOUND": "TEXTE CITÉ NON RETROUVÉ dans l'article",
     "ARTICLE_NOT_IN_FORCE": "ARTICLE PAS EN VIGUEUR à la date de référence",
-    "ARTICLE_NOT_FOUND": "CET ARTICLE NE SEMBLE PAS EXISTER dans ce code",
+    "ARTICLE_NOT_FOUND": "CET ARTICLE NE SEMBLE PAS EXISTER dans ce texte",
+    "CONVENTION_NOT_FOUND": "CET IDCC NE SEMBLE CORRESPONDRE À AUCUNE CONVENTION",
     "NOT_TESTED": "non vérifiée",
     "ERROR": "erreur technique, non vérifiée",
 }
@@ -35,6 +36,8 @@ DOCUMENT_LINE = "Document : {source}"
 CHECKED_LINE = "Vérifié le {date} par {program}"
 CITATION_LINE = "{court} n° {number}, cité au {date}"
 ARTICLE_LINE = "{code}, article {number}"
+CONVENTION_LINE = "Convention collective IDCC {idcc}, article {number}"
+IDCC_UNKNOWN = "non indiqué"
 QUOTE_LINE = "    texte cité : « {quote} »"
 NOT_CHECKED = "Non vérifié par ce programme : {what}."
 EXCERPT_LINE = "    extrait : {excerpt}"
@@ -90,6 +93,10 @@ KEY_MISSING = "aucune clé : ces décisions ne seront pas vérifiées"
 KEY_HELP = "Obtenir une clé (gratuit)"
 REFERENCE_DATE = "Date des faits (facultatif)"
 REFERENCE_HINT = "AAAA-MM-JJ ; sinon la date du jour. Les articles sont lus à cette date."
+IDCC = "IDCC de la convention (facultatif)"
+IDCC_HINT = ("Quatre chiffres, sur le bulletin de paie. Utilisé pour les articles de "
+             "convention cités sans IDCC.")
+IDCC_INVALID = "IDCC invalide : des chiffres seulement, par exemple 1979."
 REFERENCE_INVALID = "Date des faits invalide : écrire AAAA-MM-JJ, par exemple 2019-03-21."
 KEY_NO_KEYRING = "ce système n'a pas de trousseau : la clé ne sera pas conservée"
 CHECK = "Vérifier"

@@ -5,6 +5,7 @@ import unittest
 
 from citecheck import report
 from citecheck.countries.france.codes import ABBREVIATIONS, find_code
+from citecheck.countries.france.conventions import _key
 from citecheck.reader import NOTES, PAGE, Document
 from citecheck.countries.france import verdict_admin, verdict_judicial
 from citecheck.countries.france.articles import quote_fragments, quote_in, version_at
@@ -82,6 +83,27 @@ class Articles(unittest.TestCase):
         self.assertEqual(version_at(versions, "2012-01-01")["debut"], "2008-05-01")
         self.assertEqual(version_at(versions, "2016-08-10")["debut"], "2016-08-10")
         self.assertIsNone(version_at(versions, "2000-01-01"))
+
+
+class Conventions(unittest.TestCase):
+    TEXT = ("Selon l'article 21 de la convention collective nationale des hôtels, cafés "
+            "restaurants (IDCC 1979), « Pour les cuisiniers, la durée hebdomadaire au travail "
+            "est de 43 heures ». Voir aussi l'article 25.1 de la CCN et l'article 12.1 de "
+            "ladite convention. « Les parties conviennent » (art. 3 de l'avenant n° 2).")
+
+    def test_idcc_numbers_and_quote(self):
+        citations, remarks = extract(self.TEXT)
+        seen = [(c["idcc"], c["number"], bool(c["quote"])) for c in citations
+                if c["kind"] == "convention_article"]
+        # 25.1 est dans la phrase suivante : son IDCC n'est pas deviné.
+        self.assertEqual(seen, [("1979", "21", True), (None, "25.1", False),
+                                ("1979", "12.1", False)])
+        self.assertTrue(any("avenant" in r for r in remarks))
+
+    def test_number_keys(self):
+        self.assertEqual(_key("1er"), _key("1"))
+        self.assertEqual(_key("8 (1)"), "8")
+        self.assertEqual(_key("25.1"), "25.1")
 
 
 class Scope(unittest.TestCase):

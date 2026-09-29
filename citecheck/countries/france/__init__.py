@@ -1,5 +1,5 @@
 """France : jurisprudence administrative (ArianeWeb) et judiciaire (Judilibre), articles
-des codes (Légifrance).
+des codes et des conventions collectives (Légifrance).
 
 LES TROIS RÈGLES
   1. Chaque base se prouve avant de juger. Des numéros réels doivent être trouvés, des
@@ -18,6 +18,7 @@ from datetime import date
 
 from . import sources
 from .articles import check_articles
+from .conventions import check_convention_articles
 from .extract import extract
 from .legifrance import Client, Unavailable
 from .scope import not_checked_summary, scope
@@ -45,6 +46,9 @@ JUDICIAL_FAKE = [("99-99.999", "pourvoi inventé"),
 LEGI_REAL = [("Code du travail", "L3121-2", 2), ("Code civil", "1240", 2),
              ("Code du travail", "L122-14-4", 7)]
 LEGI_FAKE = [("Code du travail", "L9999-99"), ("Code civil", "9999")]
+# (IDCC, numéro, nombre minimal de versions) : HCR, article 21 remplacé le 13/07/2004.
+KALI_REAL = [("1979", "21", 2)]
+KALI_FAKE = ["9998"]
 
 __all__ = ["NAME", "KEYS", "KEY_HELP_URL", "extract", "check", "scope",
            "not_checked_summary"]
@@ -124,50 +128,76 @@ def selftest_judicial(key, log):
     return ok
 
 
-def selftest_legifrance(client, log):
+def selftest_legifrance(client, log, with_codes, with_conventions):
     ok = True
     try:
-        codes = client.codes()
-        for code, number, minimum in LEGI_REAL:
-            good = code in codes and len(client.versions(code, codes[code], number)) >= minimum
-            ok &= good
-            log(_line(good, f"Légifrance doit trouver {code}, article {number}"))
-        for code, number in LEGI_FAKE:
-            good = code in codes and client.versions(code, codes[code], number) == []
-            ok &= good
-            log(_line(good, f"Légifrance ne doit pas trouver {code}, article {number}"))
+        if with_codes:
+            codes = client.codes()
+            for code, number, minimum in LEGI_REAL:
+                good = (code in codes
+                        and len(client.versions(code, codes[code], number)) >= minimum)
+                ok &= good
+                log(_line(good, f"Légifrance doit trouver {code}, article {number}"))
+            for code, number in LEGI_FAKE:
+                good = code in codes and client.versions(code, codes[code], number) == []
+                ok &= good
+                log(_line(good, f"Légifrance ne doit pas trouver {code}, article {number}"))
+        if with_conventions:
+            for idcc, number, minimum in KALI_REAL:
+                conv = client.convention(idcc)
+                found = [a for a in client.convention_articles(conv[1])
+                         if a["num"] == number] if conv else []
+                good = len(found) >= minimum
+                ok &= good
+                log(_line(good, f"Légifrance doit trouver IDCC {idcc}, article {number}"))
+            for idcc in KALI_FAKE:
+                good = client.convention(idcc) is None
+                ok &= good
+                log(_line(good, f"Légifrance ne doit pas trouver l'IDCC {idcc}"))
     except Unavailable as e:
         log(f"        {e}")
         return False
     return ok
 
 
-def _check_legislation(articles, keys, day, log):
-    """Résultats (verdict, explication, date) pour les articles, dans l'ordre."""
-    if not articles:
+LEGISLATION = ("article", "convention_article")
+
+
+def _check_legislation(citations, keys, day, idcc, log):
+    """Résultats (verdict, explication, date) pour les articles de codes et de conventions,
+    dans l'ordre."""
+    if not citations:
         return []
     cid, secret = keys.get("PISTE_CLIENT_ID"), keys.get("PISTE_CLIENT_SECRET")
     if not (cid and secret):
         log("Légifrance non interrogé : identifiant ou secret PISTE absent.")
         why = "identifiant ou secret PISTE absent : Légifrance n'a pas été interrogé"
-        return [("NOT_TESTED", why, None)] * len(articles)
+        return [("NOT_TESTED", why, None)] * len(citations)
     client = Client(cid, secret)
-    log("Contrôle de Légifrance (codes) avant de juger :")
-    if not selftest_legifrance(client, log):
+    kinds = {c["kind"] for c in citations}
+    log("Contrôle de Légifrance avant de juger :")
+    if not selftest_legifrance(client, log, "article" in kinds, "convention_article" in kinds):
         why = "Légifrance n'a pas passé ses contrôles : aucun verdict possible"
-        return [("NOT_TESTED", why, None)] * len(articles)
-    return check_articles(articles, client, day, log)
+        return [("NOT_TESTED", why, None)] * len(citations)
+    codes = iter(check_articles([c for c in citations if c["kind"] == "article"],
+                                client, day, log))
+    conventions = iter(check_convention_articles(
+        [c for c in citations if c["kind"] == "convention_article"], client, day, idcc))
+    return [next(codes) if c["kind"] == "article" else next(conventions) for c in citations]
 
 
-def check(citations, keys, log=lambda s: None, reference_date=None):
+def check(citations, keys, log=lambda s: None, options=None):
     """Vérifie chaque citation. Renvoie un résultat par citation, dans l'ordre.
 
-    `reference_date` (AAAA-MM-JJ) : la date à laquelle les articles doivent être lus. Par
-    défaut, aujourd'hui."""
-    day = reference_date or date.today().isoformat()
-    articles = [c for c in citations if c.get("kind") == "article"]
-    legislation = iter(_check_legislation(articles, keys, day, log))
-    orders = {c["order"] for c in citations if c.get("kind") != "article"}
+    `options` :
+      reference_date  AAAA-MM-JJ, la date à laquelle les articles sont lus (défaut : jour)
+      idcc            l'IDCC à utiliser pour une convention citée sans IDCC"""
+    options = options or {}
+    day = options.get("reference_date") or date.today().isoformat()
+    legislation = iter(_check_legislation(
+        [c for c in citations if c.get("kind") in LEGISLATION], keys, day,
+        options.get("idcc"), log))
+    orders = {c["order"] for c in citations if c.get("kind") not in LEGISLATION}
     admin_ok = judicial_ok = False
     admin_why = judicial_why = None
 
@@ -190,7 +220,7 @@ def check(citations, keys, log=lambda s: None, reference_date=None):
     results = []
     log("Vérification des citations :")
     for c in citations:
-        if c.get("kind") == "article":
+        if c.get("kind") in LEGISLATION:
             v, why, actual = next(legislation)
         elif c["order"] == "administrative":
             if admin_ok:
@@ -203,6 +233,6 @@ def check(citations, keys, log=lambda s: None, reference_date=None):
         else:
             v, why, actual = "NOT_TESTED", judicial_why, None
         results.append({**c, "verdict": v, "explanation": why, "actual_date": actual})
-        log(f"  {c['court']} {'art.' if c.get('kind') == 'article' else 'n°'} "
+        log(f"  {c['court']} {'art.' if c.get('kind') in LEGISLATION else 'n°'} "
             f"{c['number']} : {t.VERDICTS[v]}")
     return results

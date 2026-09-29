@@ -26,7 +26,7 @@ def benchmark(path):
     with open(path, encoding="utf-8") as f:
         case = json.load(f)
     r = check_citations(case["citations"], case["source"], case.get("country", "france"), log,
-                        case.get("reference_date"))
+                        case.get("options"))
     print(report.to_text(r))
     gaps = [c for c in r["citations"]
             if c["verdict"] != "NOT_TESTED" and c["verdict"] != c.get("expected")]
@@ -50,6 +50,8 @@ def main(argv=None):
                     help="order of the decision for --number (guessed from its format)")
     ap.add_argument("--reference-date", help="date the cited articles must be read at, "
                     "YYYY-MM-DD (default: today)")
+    ap.add_argument("--idcc", help="IDCC of the collective agreement, for articles cited "
+                    "without one")
     ap.add_argument("--case", help="benchmark: a case file whose answer is known")
     ap.add_argument("--scope", action="store_true", help=t.CLI_SCOPE)
     ap.add_argument("--version", action="version", version=f"{NAME} {__version__}")
@@ -57,6 +59,8 @@ def main(argv=None):
     for d in (a.reference_date, a.date):
         if d and not valid_date(d):
             ap.error(t.REFERENCE_INVALID)
+    if a.idcc and not a.idcc.isdigit():
+        ap.error(t.IDCC_INVALID)
 
     if a.scope:
         for heading, lines in COUNTRIES[DEFAULT].scope():
@@ -78,7 +82,8 @@ def main(argv=None):
         r = check_citations([citation], f"n° {a.number}", log=log)
     else:
         try:
-            r = check_document(a.document, log=log, reference_date=a.reference_date)
+            r = check_document(a.document, log=log, options={
+                "reference_date": a.reference_date, "idcc": a.idcc})
         except reader.Unreadable as e:
             print(t.CLI_UNREADABLE.format(error=e), file=sys.stderr)
             return 2
