@@ -47,7 +47,7 @@ ouvre dans son navigateur.
 | `citecheck/locales/fr.py` | tous les textes affichés ; une langue = un fichier |
 | `citecheck/countries/france/` | extraction, bases et verdicts pour la France : `extract.py`, `sources.py` (ArianeWeb, Judilibre), `legifrance.py`, `articles.py` (codes), `conventions.py`, `lower_courts.py` (cours d'appel, tribunaux), `other_courts.py` (Conseil constitutionnel, Tribunal des conflits, Union européenne, lien CEDH), `codes.py` (noms et abréviations), `scope.py` (ce qui est vérifié) |
 | `citecheck/http.py` | le seul point de sortie réseau, qui refuse toute redirection (une redirection emporterait les clés) |
-| `cases/` | bancs d'essai dont la réponse est connue : `perigueux.json` (cas réel jugé), `articles.json`, `conventions.json`, `lower_courts.json`, `other_courts.json`, `abrogated_codes.json` et `abrogated_codes_2010.json` (codes abrogés, lus à deux dates) |
+| `cases/` | bancs d'essai dont la réponse est connue : `perigueux.json` (cas réel jugé), `articles.json`, `conventions.json`, `lower_courts.json`, `other_courts.json`, `abrogated_codes.json` et `abrogated_codes_2010.json` (codes abrogés, lus à deux dates), `cgi.json` (suffixes et annexes du CGI) |
 | `tests/` | tests hors réseau |
 
 **Langues du code.** Noms de fichiers, de fonctions, de variables, codes de verdict, clés du
@@ -130,6 +130,7 @@ convention est vérifié, pas ses avenants ni ses accords attachés.
 .venv/bin/python -m citecheck --case cases/other_courts.json # réseau, doit donner 10/10
 .venv/bin/python -m citecheck --case cases/abrogated_codes.json      # réseau, 7/7
 .venv/bin/python -m citecheck --case cases/abrogated_codes_2010.json # réseau, 3/3
+.venv/bin/python -m citecheck --case cases/cgi.json                  # réseau, 7/7
 ```
 
 ## Les trois règles, à ne jamais affaiblir

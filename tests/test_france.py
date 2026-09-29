@@ -403,6 +403,47 @@ class AmbiguousCode(unittest.TestCase):
         self.assertEqual(self.check({}, {})[0], "ARTICLE_NOT_FOUND")
 
 
+class TaxCodeNumbers(unittest.TestCase):
+    """Point E (30/09/2026): stacked suffixes of the CGI, and its annexes."""
+
+    def read(self, text):
+        return [(c["code"], c["number"]) for c in extract(text)[0]]
+
+    def test_stacked_suffixes(self):
+        cgi = "Code général des impôts"
+        for text, number in [("article 46 quater-0 ZZ bis du CGI.", "46 quater-0 ZZ bis"),
+                             ("article 199 undecies B du CGI.", "199 undecies B"),
+                             ("article 150-0 A du CGI.", "150-0 A"),
+                             ("CGI, art. 238 bis-0 I.", "238 bis-0 I"),
+                             ("article 302 bis ZA du CGI.", "302 bis ZA"),
+                             ("article 1649 quater-0 B bis du CGI.", "1649 quater-0 B bis"),
+                             ("article 81 A du CGI.", "81 A"),
+                             ("article 209-0 B du CGI.", "209-0 B")]:
+            self.assertEqual(self.read(text), [(cgi, number)], text)
+        self.assertEqual(self.read("article L. 80 A du LPF."),
+                         [("Livre des procédures fiscales", "L80 A")])
+
+    def test_what_is_not_a_suffix(self):
+        self.assertEqual(self.read("art. 1240 C. civ."), [("Code civil", "1240")])
+        self.assertEqual(self.read("art. 1240 C. Civ."), [("Code civil", "1240")])
+        self.assertEqual(self.read("article 700 CPC."), [("Code de procédure civile", "700")])
+        self.assertEqual(self.read("article L. 1152-1 C. trav."), [("Code du travail", "L1152-1")])
+
+    def test_annexes(self):
+        a3 = "Code général des impôts, annexe III"
+        self.assertEqual(self.read("article 46 quater-0 ZZ bis de l'annexe III au CGI."),
+                         [(a3, "46 quater-0 ZZ bis")])
+        self.assertEqual(self.read("CGI, ann. III, art. 2."), [(a3, "2")])
+        self.assertEqual(self.read("article 171 AB de l'annexe II au code général des impôts."),
+                         [("Code général des impôts, annexe II", "171 AB")])
+        self.assertEqual(self.read("article 1 de l'annexe IV du CGI."),
+                         [("Code général des impôts, annexe IV", "1")])
+
+    def test_normalization(self):
+        self.assertEqual(normalize_number("46  Quater-0 ZZ   bis"), "46 quater-0 ZZ bis")
+        self.assertEqual(normalize_number("L. 80 A"), "L80 A")
+
+
 class Succession(unittest.TestCase):
     """Point C (30/09/2026): a code and its abrogated editions."""
     NOW = [{"id": "n", "etat": "VIGUEUR", "debut": "2012-07-01", "fin": "2999-01-01"}]

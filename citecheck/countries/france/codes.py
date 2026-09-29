@@ -131,6 +131,13 @@ ALIASES = [
     (r"ancien\s+Code\s+forestier", "Code forestier"),
     (r"ancien\s+Code\s+rural", "Code rural (ancien)"),
     (r"ancien\s+Code\s+de\s+justice\s+militaire", "Code de justice militaire"),
+] + [
+    # Les annexes du CGI (point E) : « de l'annexe III au CGI », « CGI, ann. III ». Sans
+    # elles, l'article était attribué au CGI lui-même.
+    (rf"ann(?:exe|\.)\s+{roman}\b\s*,?\s*(?:au|du|à\s+la|de\s+la)?\s*"
+     rf"(?:CGI|Code\s+g[ée]n[ée]ral\s+des\s+imp[ôo]ts)|(?:CGI|Code\s+g[ée]n[ée]ral\s+des\s+"
+     rf"imp[ôo]ts)\s*,?\s*ann(?:exe|\.)\s+{roman}\b", f"Code général des impôts, annexe {roman}")
+    for roman in ("IV", "III", "II", "I")
 ]
 # Comment nommer chacun dans le rapport, quand le titre de Légifrance ne suffit pas.
 LABELS = {"Code minier": "ancien Code minier", "Code forestier": "ancien Code forestier",

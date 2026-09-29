@@ -333,9 +333,23 @@ def extract(text):
 # Articles de codes
 
 # Un numéro d'article : lettre facultative (L, R, D, A, avec ou sans point, étoile des
-# articles réglementaires), puis des chiffres séparés par des tirets, puis bis/ter...
-NUM = (r"(?:[LRDA]\.?\s?\*?\s?)?(?:1er|\d+(?:[-‑.]\d+)*)"
-       r"(?:\s(?:bis|ter|quater|quinquies))?\b")
+# articles réglementaires), puis des chiffres séparés par des tirets, puis des suffixes.
+# Le CGI et le Code des douanes en empilent (point E de l'audit du 30/09/2026) :
+# « 46 quater-0 ZZ bis », « 199 undecies B », « 238 bis-0 I », « 302 bis ZA ». Avant, tout
+# s'arrêtait au premier : « 199 undecies B » était vérifié comme « 199 », un article qui
+# existe, et le rapport disait « en vigueur » d'un autre article.
+#   Une majuscule n'est un suffixe que seule ou par deux, jamais suivie d'une lettre, ni
+#   d'un point puis d'une minuscule : « 700 CPC » (sigle), « 1240 C. civ. », « 12 Trav. »
+#   n'en sont pas ; « 238 bis-0 I. » en fin de phrase, si. « C. » n'en est jamais un : c'est
+#   l'abréviation de « Code » (« 1240 C. Civ. »). Et jamais insensible à la casse : sinon le
+#   « du » de « 81 A du CGI » en serait un.
+LATIN = (r"(?:bis|ter|quater|quinquies|sexies|septies|octies|nonies|novies|decies|undecies|"
+         r"duodecies|terdecies|quaterdecies|quindecies|sexdecies|septdecies|octodecies|"
+         r"novodecies|vicies|unvicies|duovicies|tervicies|quatervicies|quinvicies|sexvicies|"
+         r"septvicies|octovicies|novovicies|tricies)")
+SUFFIX = (rf"(?:\s{LATIN}\b|-0\b"
+          r"|\s(?-i:(?!C\.)[A-Z]{1,2})(?!\w)(?!\.\s*[a-zà-ÿ]))")
+NUM = rf"(?:[LRDA]\.?\s?\*?\s?)?(?:1er|\d+(?:[-‑.]\d+)*){SUFFIX}*\b"
 RE_ARTICLES = re.compile(
     r"\bart(?:icle)?s?\.?\s+(" + NUM + r"(?:\s*(?:,|et|à|ou)\s*" + NUM + r")*)", re.I)
 RE_ONE_NUM = re.compile(NUM, re.I)
@@ -385,11 +399,12 @@ def nearest_idcc(text, start, end):
 
 
 def normalize_number(raw):
-    """« L. 3121-2 » -> « L3121-2 », « 1er » -> « 1 », comme l'écrit Légifrance."""
+    """Comme l'écrit Légifrance : « L. 3121-2 » -> « L3121-2 », « 1er » -> « 1 »,
+    « 46 Quater-0 ZZ  bis » -> « 46 quater-0 ZZ bis » (une espace entre les suffixes)."""
     n = unicodedata.normalize("NFKC", raw).replace("‑", "-")
     n = re.sub(r"^([LRDA])[\s.*]+", r"\1", n, flags=re.I)   # « L. » : le point du préfixe seul
-    n = re.sub(r"\s+", "", n)                                 # « 25.1 » garde son point
-    n = re.sub(r"(bis|ter|quater|quinquies)$", r" \1", n, flags=re.I)
+    n = " ".join(n.split())                                  # « 25.1 » garde son point
+    n = re.sub(LATIN, lambda m: m.group(0).lower(), n, flags=re.I)
     if n.lower() == "1er":                                   # Légifrance écrit « 1 »
         return "1"
     return n[0].upper() + n[1:] if n[0].isalpha() else n

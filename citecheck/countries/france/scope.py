@@ -42,6 +42,9 @@ DECISIONS = [
 ARTICLES = [
     "« article L. 3121-2 du Code du travail », « art. 1240 C. civ. », « C. trav., art. "
     "L. 1152-1 », « articles L. 1234-1 et L. 1234-5 du même code ».",
+    "Les numéros à suffixes du Code général des impôts : « article 199 undecies B du CGI », "
+    "« 46 quater-0 ZZ bis », « 238 bis-0 I » ; et ses annexes : « article 2 de l'annexe III "
+    "au CGI », « CGI, ann. III, art. 2 ».",
     "Le texte cité entre guillemets juste à côté de l'article est comparé à toutes les "
     "versions de l'article. Base interrogée : Légifrance.",
     "Les articles sont lus à la « date des faits » si elle est donnée, sinon à la date du "

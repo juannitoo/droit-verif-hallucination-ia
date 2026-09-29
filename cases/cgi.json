@@ -1,0 +1,72 @@
+{
+  "country": "france",
+  "source": "Code général des impôts et ses annexes : numéros à suffixes empilés (relevé dans Légifrance le 29/09/2026)",
+  "options": {
+    "reference_date": "2026-09-29"
+  },
+  "citations": [
+    {
+      "kind": "article",
+      "order": "legislation",
+      "court": "Code général des impôts, annexe III",
+      "code": "Code général des impôts, annexe III",
+      "number": "46 quater-0 ZZ bis",
+      "cited_date": null,
+      "expected": "ARTICLE_IN_FORCE"
+    },
+    {
+      "kind": "article",
+      "order": "legislation",
+      "court": "Code général des impôts",
+      "code": "Code général des impôts",
+      "number": "46 quater-0 ZZ bis",
+      "cited_date": null,
+      "expected": "ARTICLE_NOT_FOUND"
+    },
+    {
+      "kind": "article",
+      "order": "legislation",
+      "court": "Code général des impôts",
+      "code": "Code général des impôts",
+      "number": "199 undecies B",
+      "cited_date": null,
+      "expected": "ARTICLE_IN_FORCE"
+    },
+    {
+      "kind": "article",
+      "order": "legislation",
+      "court": "Code général des impôts",
+      "code": "Code général des impôts",
+      "number": "238 bis-0 I",
+      "cited_date": null,
+      "expected": "ARTICLE_IN_FORCE"
+    },
+    {
+      "kind": "article",
+      "order": "legislation",
+      "court": "Code général des impôts",
+      "code": "Code général des impôts",
+      "number": "81 A",
+      "cited_date": null,
+      "expected": "ARTICLE_IN_FORCE"
+    },
+    {
+      "kind": "article",
+      "order": "legislation",
+      "court": "Code général des impôts",
+      "code": "Code général des impôts",
+      "number": "199 undecies Z",
+      "cited_date": null,
+      "expected": "ARTICLE_NOT_FOUND"
+    },
+    {
+      "kind": "article",
+      "order": "legislation",
+      "court": "Livre des procédures fiscales",
+      "code": "Livre des procédures fiscales",
+      "number": "L80 A",
+      "cited_date": null,
+      "expected": "ARTICLE_IN_FORCE"
+    }
+  ]
+}
