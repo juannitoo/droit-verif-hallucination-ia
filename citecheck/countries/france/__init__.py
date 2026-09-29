@@ -17,7 +17,7 @@ CE QU'ELLE NE VÉRIFIE PAS
 """
 from datetime import date
 
-from . import sources
+from . import codes, sources
 from .articles import check_articles
 from .conventions import check_convention_articles
 from .lower_courts import Courts, check_lower_courts
@@ -56,7 +56,7 @@ LEGI_FAKE = [("Code du travail", "L9999-99"), ("Code civil", "9999")]
 KALI_REAL = [("1979", "21", 2)]
 KALI_FAKE = ["9998"]
 
-__all__ = ["NAME", "KEYS", "KEY_HELP_URL", "extract", "check", "scope",
+__all__ = ["NAME", "KEYS", "KEY_HELP_URL", "prepare", "extract", "check", "scope",
            "not_checked_summary"]
 
 
@@ -220,6 +220,21 @@ def _check_legislation(citations, keys, day, idcc, log):
     conventions = iter(check_convention_articles(
         [c for c in citations if c["kind"] == "convention_article"], client, day, idcc))
     return [next(codes) if c["kind"] == "article" else next(conventions) for c in citations]
+
+
+def prepare(keys, log=lambda s: None):
+    """Avant l'extraction : complète la liste des codes par celle de Légifrance, pour qu'un
+    code créé après cette version soit repéré dans le texte. Sans identifiants ou si
+    Légifrance ne répond pas, on garde la liste embarquée, sans rien bloquer."""
+    cid, secret = keys.get("PISTE_CLIENT_ID"), keys.get("PISTE_CLIENT_SECRET")
+    if not (cid and secret):
+        return
+    try:
+        new = codes.learn(Client(cid, secret).codes())
+    except Exception:           # Unavailable, ou une réponse d'une forme inattendue
+        return
+    if new:
+        log(f"{len(new)} code(s) ajouté(s) depuis Légifrance : {', '.join(new)}")
 
 
 def check(citations, keys, log=lambda s: None, options=None):

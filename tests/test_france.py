@@ -4,7 +4,8 @@ import json
 import unittest
 
 from citecheck import report
-from citecheck.countries.france.codes import ABBREVIATIONS, find_code
+from citecheck.countries.france import codes
+from citecheck.countries.france.codes import ABBREVIATIONS, TITLES, find_code, learn
 from citecheck.countries.france.conventions import _key
 from citecheck.reader import NOTES, PAGE, Document
 from citecheck.countries.france import verdict_admin, verdict_judicial
@@ -189,6 +190,25 @@ class Scope(unittest.TestCase):
         for forms, _, title in ABBREVIATIONS:
             for form in forms:
                 self.assertEqual(find_code(f"art. 1 {form} x")[0], title, form)
+
+    def test_every_title_is_recognized_whole(self):
+        """A title that is the prefix of another (Code minier / Code minier (nouveau), the
+        CGI and its annexes) must not swallow the longer one."""
+        self.assertEqual(len(TITLES), 76)
+        for title in TITLES:
+            self.assertEqual(find_code(f"art. 1 du {title}, x")[0], title, title)
+
+    def test_a_code_learned_from_legifrance_is_recognized(self):
+        saved = list(TITLES)
+        try:
+            self.assertIsNone(find_code("art. 3 du Code imaginaire des essais, x"))
+            self.assertEqual(learn(["Code civil", "Code imaginaire des essais"]),
+                             ["Code imaginaire des essais"])
+            self.assertEqual(find_code("art. 3 du Code imaginaire des essais, x")[0],
+                             "Code imaginaire des essais")
+        finally:
+            TITLES[:] = saved
+            codes._build()
 
 
 class Location(unittest.TestCase):

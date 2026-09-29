@@ -1,32 +1,53 @@
 """Reconnaître le nom d'un code dans un texte, en toutes lettres ou abrégé.
 
-Les titres exacts sont ceux de Légifrance (/list/code, relevés le 29/09/2026). Les
+Les titres exacts sont ceux de Légifrance (/list/code, relevés le 29/09/2026) : les 76 codes
+qu'elle donne en vigueur, sans exception, anciens codes presque vides compris (Code des
+communes, Code rural (ancien)...) : une IA qui les cite est justement ce qu'on veut voir. Les
 abréviations sont celles de l'usage (C. trav., CSS, CPC...). Une abréviation ambiguë n'est
 pas reconnue plutôt que d'être devinée : « CT » ou « CP » ne désignent rien de sûr.
 """
 import re
 
 TITLES = [
-    "Code civil", "Code de commerce", "Code de justice administrative",
-    "Code de l'action sociale et des familles", "Code de l'entrée et du séjour des étrangers "
-    "et du droit d'asile", "Code de l'environnement", "Code de l'expropriation pour cause "
-    "d'utilité publique", "Code de l'organisation judiciaire", "Code de l'urbanisme",
-    "Code de l'éducation", "Code de l'énergie", "Code de la commande publique",
-    "Code de la consommation", "Code de la construction et de l'habitation",
-    "Code de la défense", "Code de la justice pénale des mineurs", "Code de la mutualité",
-    "Code de la propriété intellectuelle", "Code de la recherche", "Code de la route",
-    "Code de la santé publique", "Code de la sécurité intérieure",
+    "Code civil", "Code de commerce", "Code de déontologie des architectes",
+    "Code de justice administrative", "Code de justice militaire (nouveau)",
+    "Code de l'action sociale et des familles", "Code de l'artisanat",
+    "Code de l'aviation civile",
+    "Code de l'entrée et du séjour des étrangers et du droit d'asile",
+    "Code de l'environnement", "Code de l'expropriation pour cause d'utilité publique",
+    "Code de l'organisation judiciaire", "Code de l'urbanisme", "Code de l'éducation",
+    "Code de l'énergie",
+    "Code de la Légion d'honneur, de la Médaille militaire et de l'ordre national du Mérite",
+    "Code de la commande publique", "Code de la consommation",
+    "Code de la construction et de l'habitation", "Code de la défense",
+    "Code de la famille et de l'aide sociale", "Code de la justice pénale des mineurs",
+    "Code de la mutualité", "Code de la propriété intellectuelle", "Code de la recherche",
+    "Code de la route", "Code de la santé publique", "Code de la sécurité intérieure",
     "Code de la sécurité sociale", "Code de la voirie routière", "Code de procédure civile",
-    "Code de procédure pénale", "Code des assurances", "Code des douanes",
-    "Code des impositions sur les biens et services", "Code des juridictions financières",
-    "Code des pensions civiles et militaires de retraite", "Code des postes et des "
-    "communications électroniques", "Code des procédures civiles d'exécution",
+    "Code de procédure pénale", "Code des assurances", "Code des communes",
+    "Code des communes de la Nouvelle-Calédonie", "Code des douanes",
+    "Code des impositions sur les biens et services",
+    "Code des instruments monétaires et des médailles", "Code des juridictions financières",
+    "Code des pensions civiles et militaires de retraite",
+    "Code des pensions de retraite des marins français du commerce, de pêche ou de plaisance",
+    "Code des pensions militaires d'invalidité et des victimes de guerre",
+    "Code des ports maritimes", "Code des postes et des communications électroniques",
+    "Code des procédures civiles d'exécution",
     "Code des relations entre le public et l'administration", "Code des transports",
-    "Code du patrimoine", "Code du sport", "Code du tourisme", "Code du travail",
-    "Code général de la fonction publique", "Code général de la propriété des personnes "
-    "publiques", "Code général des collectivités territoriales", "Code général des impôts",
+    "Code disciplinaire et pénal de la marine marchande",
+    "Code du cinéma et de l'image animée", "Code du domaine de l'Etat",
+    "Code du domaine de l'Etat et des collectivités publiques applicable à la collectivité "
+    "territoriale de Mayotte", "Code du domaine public fluvial et de la navigation intérieure",
+    "Code du patrimoine", "Code du service national", "Code du sport", "Code du tourisme",
+    "Code du travail", "Code du travail maritime", "Code forestier (nouveau)",
+    "Code général de la fonction publique",
+    "Code général de la propriété des personnes publiques",
+    "Code général des collectivités territoriales", "Code général des impôts",
+    "Code général des impôts, annexe I", "Code général des impôts, annexe II",
+    "Code général des impôts, annexe III", "Code général des impôts, annexe IV", "Code minier",
     "Code minier (nouveau)", "Code monétaire et financier", "Code pénal", "Code pénitentiaire",
-    "Code rural et de la pêche maritime", "Code électoral", "Livre des procédures fiscales",
+    "Code rural (ancien)", "Code rural et de la pêche maritime", "Code électoral",
+    "Livre des procédures fiscales",
 ]
 
 # Abréviations d'usage : (formes affichées à l'utilisateur, motif reconnu, titre exact).
@@ -92,13 +113,28 @@ def _loose(title):
     return "".join(out)
 
 
-_PATTERNS = sorted(
-    [(_loose(t), t) for t in TITLES] + [(p, t) for _, p, t in ABBREVIATIONS],
-    key=lambda p: -len(p[0]))          # le plus long d'abord : « Code de procédure civile »
+def _build():
+    global _PATTERNS, RE_CODE
+    _PATTERNS = sorted(
+        [(_loose(t), t) for t in TITLES] + [(p, t) for _, p, t in ABBREVIATIONS],
+        key=lambda p: -len(p[0]))      # le plus long d'abord : « Code de procédure civile »
                                        # avant « Code civil »
+    RE_CODE = re.compile(
+        "|".join(f"(?P<c{i}>{p})" for i, (p, _) in enumerate(_PATTERNS)), re.I)
 
-RE_CODE = re.compile(
-    "|".join(f"(?P<c{i}>{p})" for i, (p, _) in enumerate(_PATTERNS)), re.I)
+
+_build()
+
+
+def learn(titles):
+    """Ajoute à la reconnaissance les titres que Légifrance connaît et pas nous. Renvoie les
+    nouveaux. On n'en retire jamais : un code disparu de Légifrance reste une citation à
+    repérer. Les abréviations, elles, ne s'apprennent pas : elles viennent de l'usage."""
+    new = sorted(set(titles) - set(TITLES))
+    if new:
+        TITLES.extend(new)
+        _build()
+    return new
 # Les sigles (CSS, CPC...) ne valent qu'en majuscules et en mot entier.
 _ACRONYM = re.compile(r"^[A-Z]{2,7}$")
 
