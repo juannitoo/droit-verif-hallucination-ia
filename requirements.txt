@@ -1,2 +1,4 @@
-pypdf>=4
-keyring>=24
+# Planchers relevés le 29/09/2026 : pypdf < 6.16.1 cumule une vingtaine d'avis de sécurité
+# (pip-audit). Les versions exactes, avec empreintes, sont figées au moment de compiler.
+pypdf>=6.19.0
+keyring>=25.7.0
