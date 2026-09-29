@@ -30,6 +30,9 @@ ARTICLES = [
     "versions de l'article. Base interrogée : Légifrance.",
     "Les articles sont lus à la « date des faits » si elle est donnée, sinon à la date du "
     "jour.",
+    "« Code minier » écrit sans précision désigne deux codes, l'ancien et celui de 2011 : "
+    "l'article est cherché dans les deux. S'il existe dans les deux, le programme ne choisit "
+    "pas, il montre les deux résultats et c'est au lecteur de dire lequel est visé.",
 ]
 
 CONVENTIONS = [

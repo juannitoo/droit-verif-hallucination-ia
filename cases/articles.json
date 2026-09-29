@@ -1,7 +1,9 @@
 {
   "country": "france",
   "source": "Articles dont l'histoire est connue, relevée dans Légifrance le 29/09/2026",
-  "options": {"reference_date": "2026-09-29"},
+  "options": {
+    "reference_date": "2026-09-29"
+  },
   "context": "Chaque cas illustre un piège : texte d'une version périmée, article pas encore en vigueur, article abrogé, numéro inexistant, citation inventée.",
   "citations": [
     {
@@ -73,6 +75,28 @@
       "cited_date": null,
       "quote": null,
       "expected": "ARTICLE_NOT_FOUND"
+    },
+    {
+      "kind": "article",
+      "order": "legislation",
+      "court": "Code civil",
+      "code": "Code civil",
+      "number": "1",
+      "cited_date": null,
+      "quote": null,
+      "expected": "ARTICLE_IN_FORCE",
+      "note": "« article 1er » : 40 homonymes dans les autres codes ; sortait « n'existe pas » une fois sur trois avant le 30/09/2026"
+    },
+    {
+      "kind": "article",
+      "order": "legislation",
+      "court": "Code minier",
+      "code": "Code minier",
+      "number": "L111-1",
+      "cited_date": null,
+      "quote": null,
+      "expected": "ARTICLE_IN_FORCE",
+      "note": "« Code minier » sans précision : cherché dans l'ancien et le nouveau, n'existe que dans le nouveau"
     }
   ]
 }

@@ -16,8 +16,12 @@ CE QU'ON A APPRIS DE L'API (sondée le 29/09/2026)
     3, et le programme le déclarait « abrogé » (audit du 29/09/2026). On ne s'en sert donc
     que pour trouver UNE version ; la liste complète vient de la fiche de cette version
     (/consult/getArticle, champ articleVersions).
-  - Le filtre NOM_CODE ne suffit pas : l'article 1382 du Code civil ramène aussi le 1382 du
-    Code général des impôts. On filtre sur l'identifiant du code (LEGITEXT...).
+  - Le filtre NOM_CODE ne filtre presque rien : « article 1 » du Code civil ramène les 41
+    « article 1 » de tous les codes. On trie donc nous-mêmes sur l'identifiant du code
+    (LEGITEXT...). Et l'ordre des pages CHANGE d'un appel à l'autre : lu par pages de 10 en
+    s'arrêtant tôt, l'article 1 du Code civil sortait 0, 2 puis 2 versions en trois appels,
+    donc « ne semble pas exister » une fois sur trois (audit du 30/09/2026). On lit TOUS les
+    résultats, par pages de 100 ; si on n'a pas pu tout lire, on ne conclut rien.
   - /consult/kaliContIdcc donne la convention d'un IDCC et l'identifiant de son texte de
     base ; /consult/kaliText renvoie en un appel tous les articles de ce texte, toutes leurs
     versions et leur contenu. Un IDCC inexistant y provoque une erreur 500, pas une réponse
@@ -40,7 +44,8 @@ API = "https://api.piste.gouv.fr/dila/legifrance/lf-engine-app"
 USER_AGENT = f"{NAME}/{__version__}"
 PAUSE = 0.3
 TIMEOUT = 40
-MAX_PAGES = 5
+PAGE_SIZE = 100
+MAX_PAGES = 5         # 500 résultats ; mesuré le 30/09 : 41 « 1 », 44 « L111-1 »
 KNOWN_IDCC = "1979"     # convention HCR : sert à distinguer « IDCC inconnu » d'une panne
 
 
@@ -125,15 +130,17 @@ class Client:
 
     def _search_versions(self, code_title, code_id, number):
         """Les versions que la recherche veut bien montrer : incomplet, voir plus haut."""
-        found = {}
+        found, read = {}, 0
         for page in range(1, MAX_PAGES + 1):
             data = self._post("/search", {"fond": "CODE_ETAT", "recherche": {
                 "champs": [{"typeChamp": "NUM_ARTICLE", "operateur": "ET", "criteres": [
                     {"typeRecherche": "EXACTE", "valeur": number, "operateur": "ET"}]}],
                 "filtres": [{"facette": "NOM_CODE", "valeurs": [code_title]}],
-                "pageNumber": page, "pageSize": 10, "operateur": "ET",
+                "pageNumber": page, "pageSize": PAGE_SIZE, "operateur": "ET",
                 "sort": "PERTINENCE", "typePagination": "ARTICLE"}})
             results = data.get("results") or []
+            total = data.get("totalResultNumber") or 0
+            read += len(results)
             for res in results:
                 if not any(t.get("cid") == code_id for t in res.get("titles") or []):
                     continue
@@ -144,9 +151,13 @@ class Client:
                                 "id": ext["id"], "etat": ext.get("legalStatus"),
                                 "debut": (ext.get("dateDebut") or "")[:10],
                                 "fin": (ext.get("dateFin") or "")[:10]}
-            if found or len(results) < 10:
+            if read >= total:
+                return sorted(found.values(), key=lambda v: v["debut"])
+            if not results:
                 break
-        return sorted(found.values(), key=lambda v: v["debut"])
+        # Tout n'a pas été lu : une absence ici ne prouverait rien.
+        raise Unavailable(f"recherche de l'article {number} incomplète ({read} résultats lus "
+                          f"sur {total})")
 
     def text(self, article_id):
         """Le texte d'une version d'article."""

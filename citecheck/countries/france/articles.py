@@ -21,6 +21,7 @@ LA COMPARAISON DU TEXTE CITÉ
 import re
 import unicodedata
 
+from .codes import AMBIGUOUS, LABELS
 from .legifrance import Unavailable
 
 MIN_WORDS = 4
@@ -58,7 +59,39 @@ def _period(v):
 
 def check_article(client, citation, day, texts):
     """(verdict, explication, date de début de la version retenue). `texts` sert de cache
-    {id de version: texte}."""
+    {id de version: texte}.
+
+    Un titre ambigu (AMBIGUOUS) est cherché dans chacun des codes qu'il peut désigner. Si
+    l'article n'existe que dans l'un, on le dit ; s'il existe dans plusieurs, on ne choisit
+    pas : DOUTEUX, avec ce qu'on a trouvé dans chacun."""
+    code, number = citation["code"], citation["number"]
+    if code not in AMBIGUOUS:
+        return _check_one(client, citation, day, texts)
+    found = [(t, _check_one(client, {**citation, "code": t}, day, texts))
+             for t in AMBIGUOUS[code]]
+    names = " et ".join(_the(t) for t, _ in found)
+    head = f"« {code} » sans précision désigne deux codes, {names} : cherché dans les deux"
+    hits = [(t, r) for t, r in found if r[0] != "ARTICLE_NOT_FOUND"]
+    if not hits:
+        return ("ARTICLE_NOT_FOUND", f"{head} ; aucun article {number} dans l'un ni dans "
+                "l'autre, à aucune date : il ne semble pas exister ; à vérifier sur Légifrance",
+                None)
+    if len(hits) == 1:
+        t, (verdict, why, start) = hits[0]
+        return (verdict, f"{head} ; l'article {number} n'existe que dans {_the(t)} : {why}",
+                start)
+    return ("DOUBTFUL", f"{head} ; l'article {number} existe dans les deux, à vous de dire "
+            "lequel est visé : " + " ; ".join(f"dans {_the(t)}, {why}"
+                                             for t, (_, why, _) in hits), None)
+
+
+def _the(title):
+    """« le Code minier (nouveau) », « l'ancien Code minier »."""
+    label = LABELS.get(title, title)
+    return ("l'" if label[0].lower() in "aeiouéè" else "le ") + label
+
+
+def _check_one(client, citation, day, texts):
     code, number = citation["code"], citation["number"]
     codes = client.codes()
     if code not in codes:

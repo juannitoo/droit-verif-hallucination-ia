@@ -50,8 +50,10 @@ LOWER_REAL = [("ca", "ca_paris", "11/18803", "2013-10-02"),
               ("tj", "tj24322", "25/00578", "2026-02-23")]
 LOWER_FAKE = [("ca", "ca_paris", "99/99999"), ("tj", "tj24322", "99/99999")]
 # (code, numéro, nombre minimal de versions) : des articles dont l'histoire est connue.
+# L'article 1 du Code civil a 40 homonymes dans les autres codes : c'est lui qui trahit une
+# recherche qui ne lit pas tout.
 LEGI_REAL = [("Code du travail", "L3121-2", 2), ("Code civil", "1240", 2),
-             ("Code du travail", "L122-14-4", 7)]
+             ("Code du travail", "L122-14-4", 7), ("Code civil", "1", 2)]
 LEGI_FAKE = [("Code du travail", "L9999-99"), ("Code civil", "9999")]
 # (IDCC, numéro, nombre minimal de versions) : HCR, article 21 remplacé le 13/07/2004.
 KALI_REAL = [("1979", "21", 2)]

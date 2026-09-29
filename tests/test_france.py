@@ -9,7 +9,8 @@ from citecheck.countries.france.codes import ABBREVIATIONS, TITLES, find_code, l
 from citecheck.countries.france.conventions import _key
 from citecheck.reader import NOTES, PAGE, Document
 from citecheck.countries.france import verdict_admin, verdict_judicial
-from citecheck.countries.france.articles import quote_fragments, quote_in, version_at
+from citecheck.countries.france.articles import (check_article, quote_fragments, quote_in,
+                                                  version_at)
 from citecheck.countries.france.extract import extract, normalize_number
 
 PERIGUEUX = ("Voir Conseil d'État du 5 juin 2009, n° 308850, et Cour de cassation, "
@@ -73,6 +74,7 @@ class Articles(unittest.TestCase):
         self.assertEqual(normalize_number("L. 3121-2"), "L3121-2")
         self.assertEqual(normalize_number("R.* 4624-10"), "R4624-10")
         self.assertEqual(normalize_number("1240"), "1240")
+        self.assertEqual(normalize_number("1er"), "1")      # Légifrance écrit « 1 »
 
     def test_quote_matching(self):
         article = "Le temps nécessaire à la restauration [...] est du temps de travail effectif."
@@ -209,6 +211,41 @@ class Scope(unittest.TestCase):
         finally:
             TITLES[:] = saved
             codes._build()
+
+
+class FakeLegifrance:
+    """Codes et articles en mémoire : {titre: {numéro: [versions]}}."""
+
+    def __init__(self, articles):
+        self.articles = articles
+
+    def codes(self):
+        return {title: f"LEGITEXT{i}" for i, title in enumerate(self.articles)}
+
+    def versions(self, title, code_id, number):
+        return self.articles[title].get(number, [])
+
+
+class AmbiguousCode(unittest.TestCase):
+    V = [{"id": "x", "etat": "VIGUEUR", "debut": "2011-03-01", "fin": "2999-01-01"}]
+
+    def check(self, new, old):
+        client = FakeLegifrance({"Code minier (nouveau)": new, "Code minier": old})
+        return check_article(client, {"code": "Code minier", "number": "L111-1"},
+                             "2026-09-30", {})
+
+    def test_found_in_one_says_which(self):
+        verdict, why, _ = self.check({"L111-1": self.V}, {})
+        self.assertEqual(verdict, "ARTICLE_IN_FORCE")
+        self.assertIn("n'existe que dans le Code minier (nouveau)", why)
+
+    def test_found_in_both_does_not_choose(self):
+        verdict, why, _ = self.check({"L111-1": self.V}, {"L111-1": self.V})
+        self.assertEqual(verdict, "DOUBTFUL")
+        self.assertIn("à vous de dire", why)
+
+    def test_found_in_neither(self):
+        self.assertEqual(self.check({}, {})[0], "ARTICLE_NOT_FOUND")
 
 
 class Location(unittest.TestCase):

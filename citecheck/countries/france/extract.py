@@ -216,11 +216,13 @@ def nearest_idcc(text, start, end):
 
 
 def normalize_number(raw):
-    """« L. 3121-2 » -> « L3121-2 », comme l'écrit Légifrance."""
+    """« L. 3121-2 » -> « L3121-2 », « 1er » -> « 1 », comme l'écrit Légifrance."""
     n = unicodedata.normalize("NFKC", raw).replace("‑", "-")
     n = re.sub(r"^([LRDA])[\s.*]+", r"\1", n, flags=re.I)   # « L. » : le point du préfixe seul
     n = re.sub(r"\s+", "", n)                                 # « 25.1 » garde son point
     n = re.sub(r"(bis|ter|quater|quinquies)$", r" \1", n, flags=re.I)
+    if n.lower() == "1er":                                   # Légifrance écrit « 1 »
+        return "1"
     return n[0].upper() + n[1:] if n[0].isalpha() else n
 
 

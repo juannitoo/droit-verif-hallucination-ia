@@ -50,6 +50,13 @@ TITLES = [
     "Livre des procédures fiscales",
 ]
 
+# Un titre écrit seul qui désigne deux codes. « Code minier » tout court vise le plus souvent
+# le code de 2011, mais c'est aussi le titre exact de l'ancien, en partie en vigueur. On ne
+# choisit pas : on cherche dans les deux et on montre ce qu'on a trouvé.
+AMBIGUOUS = {"Code minier": ["Code minier (nouveau)", "Code minier"]}
+# Comment nommer chacun dans le rapport, quand le titre de Légifrance ne suffit pas.
+LABELS = {"Code minier": "ancien Code minier"}
+
 # Abréviations d'usage : (formes affichées à l'utilisateur, motif reconnu, titre exact).
 # Les formes affichées sont ce que l'onglet « Ce qui est vérifié » montre : elles doivent
 # correspondre au motif, un test le contrôle.
