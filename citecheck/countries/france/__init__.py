@@ -1,4 +1,5 @@
-"""France : jurisprudence administrative (ArianeWeb) et judiciaire (Judilibre).
+"""France : jurisprudence administrative (ArianeWeb) et judiciaire (Judilibre), articles
+des codes (Légifrance).
 
 LES TROIS RÈGLES
   1. Chaque base se prouve avant de juger. Des numéros réels doivent être trouvés, des
@@ -13,12 +14,19 @@ LES TROIS RÈGLES
 CE QU'ELLE NE VÉRIFIE PAS
   Que la décision dise ce qu'on lui fait dire. Aucune base ne le sait.
 """
+from datetime import date
+
 from . import sources
+from .articles import check_articles
 from .extract import extract
+from .legifrance import Client, Unavailable
+from .scope import not_checked_summary, scope
 from ...locales import t
 
 NAME = "France"
-KEYS = {"PISTE_API_KEY": "Clé API PISTE (Judilibre)"}
+KEYS = {"PISTE_API_KEY": "Clé API PISTE (Judilibre)",
+        "PISTE_CLIENT_ID": "Identifiant OAuth PISTE (Légifrance)",
+        "PISTE_CLIENT_SECRET": "Secret OAuth PISTE (Légifrance)"}
 KEY_HELP_URL = "https://piste.gouv.fr/"
 NOISE_MAX = 3        # au-delà, un témoin négatif d'ArianeWeb est du bruit anormal
 
@@ -33,8 +41,13 @@ JUDICIAL_REAL = [("13-11.789", "Cass. soc. 08/10/2014"),
 # Pas de « 00-00.000 » : Judilibre a une vraie fiche sous ce numéro de remplissage.
 JUDICIAL_FAKE = [("99-99.999", "pourvoi inventé"),
                  ("98-99.998", "pourvoi inventé")]
+# (code, numéro, nombre minimal de versions) : des articles dont l'histoire est connue.
+LEGI_REAL = [("Code du travail", "L3121-2", 2), ("Code civil", "1240", 2),
+             ("Code du travail", "L122-14-4", 7)]
+LEGI_FAKE = [("Code du travail", "L9999-99"), ("Code civil", "9999")]
 
-__all__ = ["NAME", "KEYS", "KEY_HELP_URL", "extract", "check"]
+__all__ = ["NAME", "KEYS", "KEY_HELP_URL", "extract", "check", "scope",
+           "not_checked_summary"]
 
 
 def verdict_admin(count, dates, cited_date):
@@ -43,15 +56,17 @@ def verdict_admin(count, dates, cited_date):
     if count < 0:
         return "ERROR", "ArianeWeb n'a pas répondu", None
     if count == 0:
-        return "NOT_PUBLISHED", "aucune occurrence dans ArianeWeb : non publiée ou non indexée", None
+        return ("NOT_PUBLISHED", "aucune occurrence dans ArianeWeb : non publiée, non indexée, "
+                "ou inexistante ; à vérifier", None)
     if dates:
         actual = ", ".join(sorted(dates))
         if not cited_date:
             return "EXISTS_DATE_UNCHECKED", f"existe, rendue le {actual} ; aucune date citée", actual
         if cited_date in dates:
-            return "CONFIRMED", "existe, date conforme", cited_date
+            return "CONFIRMED", "existe, à la date citée", cited_date
         return ("WRONG_DATE",
-                f"le numéro EXISTE mais la décision est du {actual}, pas du {cited_date}", actual)
+                f"le numéro existe, mais ArianeWeb date la décision du {actual}, pas du {cited_date}",
+                actual)
     if count <= NOISE_MAX:
         return "DOUBTFUL", f"{count} occurrence(s) seulement, à regarder à la main", None
     return ("EXISTS_DATE_UNCHECKED", f"{count} décisions citent ce numéro, mais la décision "
@@ -60,7 +75,8 @@ def verdict_admin(count, dates, cited_date):
 
 def verdict_judicial(record, cited_date):
     if record is None:
-        return "NOT_PUBLISHED", "aucun pourvoi de ce numéro dans Judilibre", None
+        return ("NOT_PUBLISHED", "aucun pourvoi de ce numéro dans Judilibre : la décision ne "
+                "semble pas publiée ; à vérifier", None)
     if "_err" in record:
         return "ERROR", f"Judilibre n'a pas répondu ({record['_err']})", None
     actual = (record.get("decision_date") or "")[:10]
@@ -68,9 +84,10 @@ def verdict_judicial(record, cited_date):
     if not cited_date:
         return "EXISTS_DATE_UNCHECKED", f"existe, rendu le {actual} ({ident}) ; aucune date citée", actual
     if actual == cited_date:
-        return "CONFIRMED", f"existe, date conforme ({ident})", actual
+        return "CONFIRMED", f"existe, à la date citée ({ident})", actual
     return ("WRONG_DATE",
-            f"le numéro EXISTE mais l'arrêt est du {actual}, pas du {cited_date} ({ident})", actual)
+            f"le numéro existe, mais Judilibre date l'arrêt du {actual}, pas du {cited_date} "
+            f"({ident})", actual)
 
 
 def _line(ok, text):
@@ -107,9 +124,50 @@ def selftest_judicial(key, log):
     return ok
 
 
-def check(citations, keys, log=lambda s: None):
-    """Vérifie chaque citation. Renvoie un résultat par citation, dans l'ordre."""
-    orders = {c["order"] for c in citations}
+def selftest_legifrance(client, log):
+    ok = True
+    try:
+        codes = client.codes()
+        for code, number, minimum in LEGI_REAL:
+            good = code in codes and len(client.versions(code, codes[code], number)) >= minimum
+            ok &= good
+            log(_line(good, f"Légifrance doit trouver {code}, article {number}"))
+        for code, number in LEGI_FAKE:
+            good = code in codes and client.versions(code, codes[code], number) == []
+            ok &= good
+            log(_line(good, f"Légifrance ne doit pas trouver {code}, article {number}"))
+    except Unavailable as e:
+        log(f"        {e}")
+        return False
+    return ok
+
+
+def _check_legislation(articles, keys, day, log):
+    """Résultats (verdict, explication, date) pour les articles, dans l'ordre."""
+    if not articles:
+        return []
+    cid, secret = keys.get("PISTE_CLIENT_ID"), keys.get("PISTE_CLIENT_SECRET")
+    if not (cid and secret):
+        log("Légifrance non interrogé : identifiant ou secret PISTE absent.")
+        why = "identifiant ou secret PISTE absent : Légifrance n'a pas été interrogé"
+        return [("NOT_TESTED", why, None)] * len(articles)
+    client = Client(cid, secret)
+    log("Contrôle de Légifrance (codes) avant de juger :")
+    if not selftest_legifrance(client, log):
+        why = "Légifrance n'a pas passé ses contrôles : aucun verdict possible"
+        return [("NOT_TESTED", why, None)] * len(articles)
+    return check_articles(articles, client, day, log)
+
+
+def check(citations, keys, log=lambda s: None, reference_date=None):
+    """Vérifie chaque citation. Renvoie un résultat par citation, dans l'ordre.
+
+    `reference_date` (AAAA-MM-JJ) : la date à laquelle les articles doivent être lus. Par
+    défaut, aujourd'hui."""
+    day = reference_date or date.today().isoformat()
+    articles = [c for c in citations if c.get("kind") == "article"]
+    legislation = iter(_check_legislation(articles, keys, day, log))
+    orders = {c["order"] for c in citations if c.get("kind") != "article"}
     admin_ok = judicial_ok = False
     admin_why = judicial_why = None
 
@@ -132,7 +190,9 @@ def check(citations, keys, log=lambda s: None):
     results = []
     log("Vérification des citations :")
     for c in citations:
-        if c["order"] == "administrative":
+        if c.get("kind") == "article":
+            v, why, actual = next(legislation)
+        elif c["order"] == "administrative":
             if admin_ok:
                 v, why, actual = verdict_admin(*sources.ariane(c["number"]), c.get("cited_date"))
             else:
@@ -143,5 +203,6 @@ def check(citations, keys, log=lambda s: None):
         else:
             v, why, actual = "NOT_TESTED", judicial_why, None
         results.append({**c, "verdict": v, "explanation": why, "actual_date": actual})
-        log(f"  {c['court']} n° {c['number']} : {t.VERDICTS[v]}")
+        log(f"  {c['court']} {'art.' if c.get('kind') == 'article' else 'n°'} "
+            f"{c['number']} : {t.VERDICTS[v]}")
     return results

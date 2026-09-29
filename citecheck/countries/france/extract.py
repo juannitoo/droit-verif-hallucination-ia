@@ -10,12 +10,18 @@ CE QU'IL SAIT LIRE
   administratif : CE / CAA / TA ... n° 308850            (5 à 7 chiffres après « n° »)
   judiciaire    : Cass. / Civ. 2e / Soc. ... 17-28.268 ou 17-28268
   dates en toutes lettres (« 5 juin 2009 ») et en chiffres (05/06/2009)
+  articles      : « article L. 3121-2 du Code du travail », « art. 1240 C. civ. »,
+                  « C. trav., art. L. 1152-1 », « articles L. 1234-1 et L. 1234-5 du ... »,
+                  « du même code » ; et le texte cité entre guillemets juste à côté
 
 CE QU'IL NE FAIT JAMAIS
   Deviner. Un numéro sans date lisible sort sans date, et le contrôle de date est annoncé
   impossible. Tout ce qu'il n'a pas su rattacher est signalé : un trou est un trou.
 """
 import re
+import unicodedata
+
+from .codes import find_code
 
 MONTHS = {"janvier": 1, "février": 2, "fevrier": 2, "mars": 3, "avril": 4, "mai": 5,
           "juin": 6, "juillet": 7, "août": 8, "aout": 8, "septembre": 9, "octobre": 10,
@@ -82,8 +88,8 @@ def extract(text):
             continue
         seen.add(number)
         d = nearest_date(text, m.start(), m.end())
-        citations.append({"order": "judicial", "court": "Cass",
-                          "number": number, "cited_date": d})
+        citations.append({"kind": "decision", "order": "judicial", "court": "Cass",
+                          "number": number, "cited_date": d, "span": m.span()})
         if not d:
             undated.append(number)
 
@@ -96,8 +102,8 @@ def extract(text):
             continue
         seen.add(number)
         d = nearest_date(text, m.start(), m.end())
-        citations.append({"order": "administrative", "court": "CE",
-                          "number": number, "cited_date": d})
+        citations.append({"kind": "decision", "order": "administrative", "court": "CE",
+                          "number": number, "cited_date": d, "span": m.span()})
         if not d:
             undated.append(number)
 
@@ -108,4 +114,100 @@ def extract(text):
     if set_aside:
         remarks.append(f"{len(set_aside)} numéro(s) écarté(s), à 5-7 chiffres mais près d'une "
                        f"juridiction judiciaire : {', '.join(set_aside)}. À vérifier à la main.")
+    articles, article_remarks = extract_articles(text)
+    # Dans l'ordre du document : c'est l'ordre dans lequel l'avocat relira.
+    both = sorted(citations + articles, key=lambda c: c["span"][0])
+    return both, remarks + article_remarks
+
+
+# Articles de codes
+
+# Un numéro d'article : lettre facultative (L, R, D, A, avec ou sans point, étoile des
+# articles réglementaires), puis des chiffres séparés par des tirets, puis bis/ter...
+NUM = r"(?:[LRDA]\.?\s?\*?\s?)?\d+(?:[-‑]\d+)*(?:\s(?:bis|ter|quater|quinquies))?\b"
+RE_ARTICLES = re.compile(
+    r"\bart(?:icle)?s?\.?\s+(" + NUM + r"(?:\s*(?:,|et|à|ou)\s*" + NUM + r")*)", re.I)
+RE_ONE_NUM = re.compile(NUM, re.I)
+RE_SAME_CODE = re.compile(r"^\W{0,3}(?:du|dudit|de ce)\s+(?:même\s+)?code\b|^\W{0,3}dudit code"
+                          r"|^\W{0,3}du code précité", re.I)
+RE_QUOTE = re.compile(r"«\s*([^»]{20,})\s*»|“([^”]{20,})”|\"([^\"]{20,})\"")
+RE_OTHER_TEXT = re.compile(r"\W{0,3}(?:\w+\s+){0,2}(?:de\s+la\s+|du\s+|de\s+l['’]\s*)?"
+                           r"(?:loi|décret|ordonnance|convention|directive|règlement|arrêté|"
+                           r"accord|traité|constitution)\b", re.I)
+CODE_AFTER = 70     # un nom de code doit suivre le numéro de près
+CODE_BEFORE = 25    # ou le précéder de très près (« C. trav., art. L. 1152-1 »)
+QUOTE_AFTER = 200
+QUOTE_BEFORE = 15   # « ... » (art. L. 1234-5) : le texte précède, collé
+
+
+def normalize_number(raw):
+    """« L. 3121-2 » -> « L3121-2 », comme l'écrit Légifrance."""
+    n = unicodedata.normalize("NFKC", raw).replace("‑", "-")
+    n = re.sub(r"[\s.*]", "", n)
+    n = re.sub(r"(bis|ter|quater|quinquies)$", r" \1", n, flags=re.I)
+    return n[0].upper() + n[1:] if n[0].isalpha() else n
+
+
+def assign_quotes(text, spans):
+    """Rattache chaque passage entre guillemets à UNE seule citation d'article, la plus
+    proche : collé avant (« ... » (art. X)) ou peu après (art. X : « ... »). Renvoie
+    {indice de la citation: texte cité}."""
+    best = {}
+    for m in RE_QUOTE.finditer(text):
+        body = " ".join(next(g for g in m.groups() if g).split())
+        candidates = []
+        for i, (start, end) in enumerate(spans):
+            if m.end() <= start and start - m.end() <= QUOTE_BEFORE:
+                candidates.append((start - m.end(), i))
+            elif m.start() >= end and m.start() - end <= QUOTE_AFTER:
+                candidates.append((m.start() - end, i))
+        if candidates:
+            dist, i = min(candidates)
+            if i not in best or dist < best[i][0]:
+                best[i] = (dist, body)
+    return {i: body for i, (_, body) in best.items()}
+
+
+def extract_articles(text):
+    """Renvoie (citations d'articles, remarques)."""
+    matches = list(RE_ARTICLES.finditer(text))
+    quotes = assign_quotes(text, [(m.start(), m.end()) for m in matches])
+    citations, seen, no_code = [], set(), []
+    last_code = None
+    for index, m in enumerate(matches):
+        after = text[m.end(): m.end() + CODE_AFTER]
+        before = text[max(0, m.start() - CODE_BEFORE): m.start()]
+        code = None
+        found = find_code(after)
+        # Le code doit venir avant toute autre mention d'article (sinon il appartient à la
+        # citation suivante), et aucun autre texte ne doit être nommé entre les deux
+        # (« article 22 de la loi du 6 juillet 1989 » n'est pas un article de code).
+        if (found and not RE_ARTICLES.search(after[:found[1]])
+                and not RE_OTHER_TEXT.search(after[:found[1]])):
+            code = found[0]
+        elif RE_SAME_CODE.search(after) and last_code:
+            code = last_code
+        elif not RE_OTHER_TEXT.match(after):
+            # Code placé avant : il doit être collé à l'article (« C. trav., art. L. 1152-1 »).
+            found = find_code(before, last=True)
+            if found and re.fullmatch(r"[\s,;:]*", before[found[2]:]):
+                code = found[0]
+        numbers = [normalize_number(x) for x in RE_ONE_NUM.findall(m.group(1))]
+        if not code:
+            no_code.extend(numbers)
+            continue
+        last_code = code
+        quote = quotes.get(index) if len(numbers) == 1 else None
+        for number in numbers:
+            if (code, number) in seen:
+                continue
+            seen.add((code, number))
+            citations.append({"kind": "article", "order": "legislation", "court": code,
+                              "code": code, "number": number, "cited_date": None,
+                              "quote": quote, "span": m.span()})
+    remarks = []
+    if no_code:
+        remarks.append(f"{len(no_code)} article(s) cité(s) sans code reconnu : "
+                       f"{', '.join(no_code[:12])}{'...' if len(no_code) > 12 else ''}. "
+                       "Les lois, décrets et conventions ne sont pas encore vérifiés.")
     return citations, remarks

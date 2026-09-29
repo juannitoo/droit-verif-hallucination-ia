@@ -3,6 +3,7 @@
   python -m citecheck                               # the window
   python -m citecheck brief.pdf                     # text report
   python -m citecheck brief.pdf --json              # JSON report, for an AI
+  python -m citecheck brief.pdf --reference-date 2019-03-21   # articles read at that date
   python -m citecheck --number 17-28268 --date 2019-03-21
   python -m citecheck --case cases/perigueux.json   # benchmark on a real case
 """
@@ -11,7 +12,8 @@ import json
 import sys
 
 from . import NAME, __version__, reader, report
-from .engine import check_citations, check_document
+from .countries import COUNTRIES, DEFAULT
+from .engine import check_citations, check_document, valid_date
 from .locales import t
 
 
@@ -23,7 +25,8 @@ def benchmark(path):
     """Replay a real case whose answer is known. Exit code 1 if any verdict differs."""
     with open(path, encoding="utf-8") as f:
         case = json.load(f)
-    r = check_citations(case["citations"], case["source"], case.get("country", "france"), log)
+    r = check_citations(case["citations"], case["source"], case.get("country", "france"), log,
+                        case.get("reference_date"))
     print(report.to_text(r))
     gaps = [c for c in r["citations"]
             if c["verdict"] != "NOT_TESTED" and c["verdict"] != c.get("expected")]
@@ -45,10 +48,23 @@ def main(argv=None):
     ap.add_argument("--date", help="cited date for --number, YYYY-MM-DD")
     ap.add_argument("--order", choices=["administrative", "judicial"],
                     help="order of the decision for --number (guessed from its format)")
+    ap.add_argument("--reference-date", help="date the cited articles must be read at, "
+                    "YYYY-MM-DD (default: today)")
     ap.add_argument("--case", help="benchmark: a case file whose answer is known")
+    ap.add_argument("--scope", action="store_true", help=t.CLI_SCOPE)
     ap.add_argument("--version", action="version", version=f"{NAME} {__version__}")
     a = ap.parse_args(argv)
+    for d in (a.reference_date, a.date):
+        if d and not valid_date(d):
+            ap.error(t.REFERENCE_INVALID)
 
+    if a.scope:
+        for heading, lines in COUNTRIES[DEFAULT].scope():
+            print(heading)
+            for line in lines:
+                print(f"  - {line}")
+            print()
+        return 0
     if not (a.document or a.number or a.case):
         from .gui import run
         return run()
@@ -62,7 +78,7 @@ def main(argv=None):
         r = check_citations([citation], f"n° {a.number}", log=log)
     else:
         try:
-            r = check_document(a.document, log=log)
+            r = check_document(a.document, log=log, reference_date=a.reference_date)
         except reader.Unreadable as e:
             print(t.CLI_UNREADABLE.format(error=e), file=sys.stderr)
             return 2

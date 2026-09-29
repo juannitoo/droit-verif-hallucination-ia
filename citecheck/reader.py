@@ -13,6 +13,12 @@ WHAT IT NEVER DOES
   producing "no citation found": that would be a hole disguised as a result.
 
 Footnotes are read too: that is where legal briefs put their citations.
+
+PAGES
+  Page breaks are kept as "\f" in the text, so a citation can be located. PDF pages are
+  exact. Word and LibreOffice store the page breaks of their last rendering: pages there
+  are approximate. Word footnotes come after the body, after a NOTES mark: their page is
+  unknown. Plain text has no pages.
 """
 import re
 import shutil
@@ -20,9 +26,13 @@ import subprocess
 import unicodedata
 import zipfile
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass
 from pathlib import Path
 
 from .locales import t
+
+PAGE = "\f"
+NOTES = "\x1e"      # separates the body of a Word document from its footnotes
 
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 T = "{urn:oasis:names:tc:opendocument:xmlns:text:1.0}"
@@ -32,12 +42,34 @@ class Unreadable(Exception):
     """The document cannot be read. The message says what to do."""
 
 
+@dataclass
+class Document:
+    text: str
+    pages: str | None      # "exact", "approximate", or None when the format has no pages
+
+    def locate(self, offset):
+        """(page, in_notes) for a position in the text. page is None if unknown."""
+        notes = self.text.find(NOTES)
+        if notes != -1 and offset > notes:
+            return None, True
+        if not self.pages:
+            return None, False
+        return self.text.count(PAGE, 0, offset) + 1, False
+
+    def excerpt(self, start, end, margin=60):
+        a, b = max(0, start - margin), min(len(self.text), end + margin)
+        body = " ".join(self.text[a:b].replace(PAGE, " ").replace(NOTES, " ").split())
+        return ("…" if a else "") + body + ("…" if b < len(self.text) else "")
+
+
 def _docx(path):
     with zipfile.ZipFile(path) as z:
         parts = ["word/document.xml", "word/footnotes.xml", "word/endnotes.xml"]
         xmls = [z.read(p) for p in parts if p in z.namelist()]
     blocks = []
-    for x in xmls:
+    for n, x in enumerate(xmls):
+        if n == 1:
+            blocks.append(NOTES)
         for p in ET.fromstring(x).iter(W + "p"):
             pieces = []
             for e in p.iter():
@@ -45,6 +77,10 @@ def _docx(path):
                     pieces.append(e.text or "")
                 elif e.tag == W + "tab":
                     pieces.append("\t")
+                elif e.tag == W + "lastRenderedPageBreak":
+                    pieces.append(PAGE)
+                elif e.tag == W + "br" and e.get(W + "type") == "page":
+                    pieces.append(PAGE)
                 elif e.tag in (W + "br", W + "cr"):
                     pieces.append("\n")
             blocks.append("".join(pieces))
@@ -61,6 +97,8 @@ def _odt_text(e):
             pieces.append("\t")
         elif f.tag == T + "line-break":
             pieces.append("\n")
+        elif f.tag == T + "soft-page-break":
+            pieces.append(PAGE)
         else:
             pieces.append(_odt_text(f))
         pieces.append(f.tail or "")
@@ -76,16 +114,18 @@ def _odt(path):
     def paragraphs(e):
         if e.tag in (T + "p", T + "h"):
             yield e
+        elif e.tag == T + "soft-page-break":       # a break between two paragraphs
+            yield None
         else:
             for f in e:
                 yield from paragraphs(f)
-    return "\n".join(_odt_text(p) for p in paragraphs(root))
+    return "\n".join(PAGE if p is None else _odt_text(p) for p in paragraphs(root))
 
 
 def _pdf(path):
     try:
         from pypdf import PdfReader
-        return "\n".join((pg.extract_text() or "") for pg in PdfReader(path).pages)
+        return PAGE.join((pg.extract_text() or "") for pg in PdfReader(path).pages)
     except ImportError:
         pass
     if shutil.which("pdftotext"):
@@ -105,8 +145,19 @@ def _normalize(text):
 
 
 READERS = {".docx": _docx, ".odt": _odt, ".pdf": _pdf}
+PAGES = {".pdf": "exact", ".docx": "approximate", ".odt": "approximate"}
 TO_EXPORT = {".pages": "Apple Pages", ".doc": "Word 97-2003", ".gdoc": "Google Docs",
              ".rtf": "RTF", ".wps": "Works"}
+
+
+def read(path):
+    """The document's text, with its page breaks kept. Raises Unreadable."""
+    path = Path(path)
+    text = text_of(path)
+    pages = PAGES.get(path.suffix.lower())
+    if pages == "approximate" and PAGE not in text:
+        pages = None        # no break recorded: better no page than a wrong "page 1"
+    return Document(text, pages)
 
 
 def text_of(path):

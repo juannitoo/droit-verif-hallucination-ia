@@ -4,8 +4,11 @@ import json
 import unittest
 
 from citecheck import report
+from citecheck.countries.france.codes import ABBREVIATIONS, find_code
+from citecheck.reader import NOTES, PAGE, Document
 from citecheck.countries.france import verdict_admin, verdict_judicial
-from citecheck.countries.france.extract import extract
+from citecheck.countries.france.articles import quote_fragments, quote_in, version_at
+from citecheck.countries.france.extract import extract, normalize_number
 
 PERIGUEUX = ("Voir Conseil d'État du 5 juin 2009, n° 308850, et Cour de cassation, "
              "2e civ., 21 mars 2019, n° 17-28268. Aussi CE, 30 novembre 2018, n° 402517 ; "
@@ -32,6 +35,79 @@ class Extraction(unittest.TestCase):
         citations, remarks = extract("Conseil d'État, n° 308850.")
         self.assertIsNone(citations[0]["cited_date"])
         self.assertTrue(remarks)
+
+
+class Articles(unittest.TestCase):
+    TEXT = ("Selon l'article L. 3121-2 du Code du travail, « les temps consacrés aux pauses "
+            "sont considérés comme du temps de travail effectif ». Voir aussi les articles "
+            "L. 1234-1 et L. 1234-5 du même code, l'art. 1240 C. civ. et C. trav., art. "
+            "L. 1152-1. L'article 700 du code de procédure civile s'applique. « Tout fait "
+            "quelconque de l'homme, qui cause à autrui un dommage » (C. civ., art. 1382). "
+            "L'article 22 de la loi du 6 juillet 1989 aussi.")
+
+    def test_codes_and_numbers(self):
+        citations, remarks = extract(self.TEXT)
+        seen = [(c["code"], c["number"]) for c in citations if c["kind"] == "article"]
+        self.assertEqual(seen, [
+            ("Code du travail", "L3121-2"), ("Code du travail", "L1234-1"),
+            ("Code du travail", "L1234-5"), ("Code civil", "1240"),
+            ("Code du travail", "L1152-1"), ("Code de procédure civile", "700"),
+            ("Code civil", "1382")])
+        self.assertTrue(any("22" in r for r in remarks))    # la loi : signalée, pas devinée
+
+    def test_each_quote_goes_to_one_citation(self):
+        citations, _ = extract(self.TEXT)
+        quotes = {c["number"]: c["quote"] for c in citations if c["kind"] == "article"}
+        self.assertTrue(quotes["L3121-2"].startswith("les temps consacrés"))
+        self.assertTrue(quotes["1382"].startswith("Tout fait quelconque"))
+        self.assertIsNone(quotes["700"])
+        self.assertIsNone(quotes["1240"])
+
+    def test_number_normalization(self):
+        self.assertEqual(normalize_number("L. 3121-2"), "L3121-2")
+        self.assertEqual(normalize_number("R.* 4624-10"), "R4624-10")
+        self.assertEqual(normalize_number("1240"), "1240")
+
+    def test_quote_matching(self):
+        article = "Le temps nécessaire à la restauration [...] est du temps de travail effectif."
+        self.assertTrue(quote_in(quote_fragments("le temps nécessaire à la restauration"), article))
+        self.assertTrue(quote_in(quote_fragments(
+            "Le temps nécessaire à la restauration (...) est du temps de travail"), article))
+        self.assertFalse(quote_in(quote_fragments("les pauses ne sont jamais payées"), article))
+        self.assertEqual(quote_fragments("trop court"), [])
+
+    def test_version_at(self):
+        versions = [{"debut": "2008-05-01", "fin": "2016-08-10"},
+                    {"debut": "2016-08-10", "fin": "2999-01-01"}]
+        self.assertEqual(version_at(versions, "2012-01-01")["debut"], "2008-05-01")
+        self.assertEqual(version_at(versions, "2016-08-10")["debut"], "2016-08-10")
+        self.assertIsNone(version_at(versions, "2000-01-01"))
+
+
+class Scope(unittest.TestCase):
+    def test_every_displayed_abbreviation_is_recognized(self):
+        """The "what is checked" tab must not promise an abbreviation we do not read."""
+        for forms, _, title in ABBREVIATIONS:
+            for form in forms:
+                self.assertEqual(find_code(f"art. 1 {form} x")[0], title, form)
+
+
+class Location(unittest.TestCase):
+    def test_pages_and_notes(self):
+        doc = Document(f"page un{PAGE}page deux{PAGE}page trois{NOTES}une note", "exact")
+        self.assertEqual(doc.locate(0), (1, False))
+        self.assertEqual(doc.locate(doc.text.index("deux")), (2, False))
+        self.assertEqual(doc.locate(doc.text.index("trois")), (3, False))
+        self.assertEqual(doc.locate(doc.text.index("note")), (None, True))
+
+    def test_no_pages_means_no_page(self):
+        self.assertEqual(Document("texte brut", None).locate(3), (None, False))
+
+    def test_excerpt(self):
+        doc = Document("a" * 100 + " article 1240 du Code civil " + "b" * 100, "exact")
+        start = doc.text.index("article")
+        ex = doc.excerpt(start, start + 12, margin=10)
+        self.assertTrue(ex.startswith("…") and ex.endswith("…") and "article 1240" in ex)
 
 
 class Verdicts(unittest.TestCase):

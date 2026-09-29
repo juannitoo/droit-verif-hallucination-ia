@@ -4,21 +4,23 @@ Notice destinée à une IA de code (ou à un développeur) qui doit faire tourne
 faire évoluer ce programme. Pour les humains qui veulent seulement s'en servir : le README.
 
 > **En cours de création.** Aucun exécutable n'est publié, et il ne le sera pas avant deux
-> étapes : la vérification des articles de codes et de conventions collectives
-> (Légifrance, fonds LEGI et KALI), puis un audit de sécurité du code. D'ici là, ne rien
+> étapes : la vérification des conventions collectives (Légifrance, fonds KALI ; les codes
+> sont faits), puis un audit de sécurité du code. D'ici là, ne rien
 > compiler ni distribuer.
 
 ## Ce que fait le programme
 
-Il lit un document juridique, relève les citations de jurisprudence, et demande aux bases
-officielles si chaque décision existe, et à quelle date. Il rend un rapport en texte (pour
+Il lit un document juridique, relève les citations de jurisprudence et d'articles de codes,
+et demande aux bases officielles si chaque décision existe, et à quelle date ; si chaque
+article existe, s'il était en vigueur à la date des faits, et si le texte cité entre
+guillemets est bien celui de la version en vigueur à cette date. Il rend un rapport en texte (pour
 un humain) et en JSON (pour qu'une IA corrige ses propres citations).
 
 Il ne contient **aucune IA**, et c'est voulu : un programme qui consulte une base ne peut pas
 inventer. Ne jamais y ajouter un modèle, ni pour extraire les citations, ni pour juger.
 
-Pays couverts : France. Bases : ArianeWeb (Conseil d'État, sans clé) et Judilibre (Cour de
-cassation, clé PISTE de l'utilisateur).
+Pays couverts : France. Bases : ArianeWeb (Conseil d'État, sans clé), Judilibre (Cour de
+cassation) et Légifrance (codes), ces deux dernières avec le compte PISTE de l'utilisateur.
 
 ## Arborescence
 
@@ -58,19 +60,41 @@ python -m venv .venv
 .venv/bin/python -m citecheck conclusions.pdf --json
 ```
 
-La fenêtre a deux onglets : « Vérifier un document » et « Clés d'accès ». La clé Judilibre
-se donne une fois dans le second, qui s'ouvre d'office tant qu'aucune clé n'est enregistrée ;
-elle va dans le trousseau du système. En ligne de commande, on la passe par la variable
-d'environnement `PISTE_API_KEY`. Pour l'obtenir : créer un compte sur
-`piste.gouv.fr`, créer une application **en production** (pas en bac à sable), l'abonner à
-l'API Judilibre en acceptant ses conditions, puis copier la clé API de l'application. Sans
-clé, les décisions judiciaires sortent « non vérifiées », jamais en erreur de l'auteur.
+La fenêtre a trois onglets : « Vérifier un document », « Clés d'accès » et « Ce qui est
+vérifié ». Les clés se donnent une fois dans le deuxième, qui s'ouvre d'office tant qu'il en
+manque une ; elles vont dans le trousseau du système. Le troisième dit à l'utilisateur ce
+que le programme reconnaît (formats de décisions, codes et abréviations) et ce qu'il ne
+vérifie pas ; il est construit à partir des listes que l'extracteur utilise
+(`countries/france/scope.py`), et `python -m citecheck --scope` l'affiche en ligne de
+commande. En ligne de commande, on les passe par des variables
+d'environnement.
+
+| Variable | Sert à | Où la trouver |
+|---|---|---|
+| `PISTE_API_KEY` | Judilibre | la clé API de l'application PISTE |
+| `PISTE_CLIENT_ID` | Légifrance | l'identifiant OAuth de la même application |
+| `PISTE_CLIENT_SECRET` | Légifrance | le secret OAuth de la même application |
+
+Pour les obtenir : créer un compte sur `piste.gouv.fr`, créer une application **en
+production** (pas en bac à sable), l'abonner aux API Judilibre et Légifrance en acceptant
+leurs conditions. Judilibre s'authentifie par la clé API, Légifrance par l'identifiant et le
+secret : ce sont deux mécanismes, sur la même application. Sans clé, les citations
+concernées sortent « non vérifiées », jamais en erreur de l'auteur.
+
+**Où est la citation.** Chaque citation du rapport porte un extrait du texte qui
+l'entoure, et sa page : exacte pour un PDF, approximative pour Word et LibreOffice (ils
+enregistrent les sauts de page de leur dernier affichage), absente pour du texte brut. Une
+citation placée dans une note de bas de page Word est signalée comme telle.
+
+**La date des faits** (champ facultatif de l'onglet Vérifier, ou `--reference-date`) est la
+date à laquelle les articles sont lus. Vide, c'est la date du jour, et le rapport le dit.
 
 ## Vérifier qu'on n'a rien cassé
 
 ```bash
 .venv/bin/python -m unittest discover tests                  # hors réseau
 .venv/bin/python -m citecheck --case cases/perigueux.json   # réseau, doit donner 4/4
+.venv/bin/python -m citecheck --case cases/articles.json    # réseau, doit donner 7/7
 ```
 
 ## Les trois règles, à ne jamais affaiblir
@@ -86,10 +110,20 @@ clé, les décisions judiciaires sortent « non vérifiées », jamais en erreur
 Et une quatrième qui les résume : **le rapport ne dit jamais plus que ce qui a été
 contrôlé.** Une date n'est « conforme » que si la base a la décision elle-même à cette date.
 
+**Le programme pointe ce qui est suspect, il ne donne pas d'avis.** Les verdicts constatent
+(« ne semble pas publiée », « ne semble pas exister », « existe, mais à une autre date ») et
+renvoient à une vérification ; ils ne disent jamais « faux » ni « inventé ». Toute
+formulation nouvelle doit suivre cette règle.
+
 ## Compiler
 
-Le programme se compile avec PyInstaller, **sur le système visé** : on compile pour Windows
-sous Windows, pour macOS sous macOS.
+**Les versions publiées sont compilées par GitHub**, automatiquement, pour Windows, macOS
+et Linux. Elles apparaissent dans **Releases**, dans la colonne de droite de la page du
+dépôt sur GitHub. Un utilisateur n'a rien à compiler : il télécharge le fichier de son
+système. (Pas encore en place : voir l'encadré « En cours de création » en tête.)
+
+Pour compiler soi-même, avec PyInstaller, **sur le système visé** : on compile pour
+Windows sous Windows, pour macOS sous macOS.
 
 ```bash
 .venv/bin/pip install pyinstaller
@@ -120,8 +154,9 @@ dans `cases/`.
 
 ## Ce que le programme ne sait pas encore faire
 
-- Vérifier les **articles** de loi ou de convention collective, et leur version en vigueur à
-  une date donnée (Légifrance, fonds LEGI et KALI).
+- Vérifier les articles de **conventions collectives** (Légifrance, fonds KALI), et ceux des
+  **lois et décrets** non codifiés (« article 22 de la loi du 6 juillet 1989 »). Ils sont
+  signalés dans les remarques du rapport, jamais devinés.
 - Vérifier la **chambre** : une décision peut exister, à la bonne date, mais venir d'une
   chambre sans rapport avec le litige.
 - Dire si la décision **soutient** l'argument. Aucune base ne le sait : c'est le travail du

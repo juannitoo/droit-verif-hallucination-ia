@@ -14,7 +14,7 @@ from tkinter.scrolledtext import ScrolledText
 
 from . import keys, reader, report
 from .countries import COUNTRIES, DEFAULT
-from .engine import check_document
+from .engine import check_document, valid_date
 from .locales import t
 
 LINK = "#1a55a0"
@@ -37,10 +37,13 @@ class Window:
         self.check_tab = ttk.Frame(self.tabs, padding=12)
         self.keys_tab = ttk.Frame(self.tabs, padding=12)
         self.tabs.add(self.check_tab, text=t.TAB_CHECK)
+        self.scope_tab = ttk.Frame(self.tabs, padding=12)
         self.tabs.add(self.keys_tab, text=t.TAB_KEYS)
+        self.tabs.add(self.scope_tab, text=t.TAB_SCOPE)
 
         self._build_check_tab()
         self._build_keys_tab()
+        self._build_scope_tab()
         self.show_key_status()
         if not self._all_keys_present():
             self.tabs.select(self.keys_tab)
@@ -56,20 +59,26 @@ class Window:
         self.doc_label.grid(row=0, column=1, sticky="w", padx=8)
         ttk.Button(tab, text=t.CHOOSE, command=self.choose).grid(row=0, column=2)
 
+        ttk.Label(tab, text=t.REFERENCE_DATE).grid(row=1, column=0, sticky="w", pady=(10, 0))
+        self.reference = ttk.Entry(tab, width=12)
+        self.reference.grid(row=1, column=1, sticky="w", padx=8, pady=(10, 0))
+        ttk.Label(tab, text=t.REFERENCE_HINT, foreground=MUTED).grid(
+            row=2, column=1, columnspan=2, sticky="w", padx=8)
+
         self.key_warning = ttk.Label(tab, text=t.KEYS_MISSING_WARNING, foreground=LINK,
                                      cursor="hand2", wraplength=700)
-        self.key_warning.grid(row=1, column=0, columnspan=3, sticky="w", pady=(10, 0))
+        self.key_warning.grid(row=3, column=0, columnspan=3, sticky="w", pady=(10, 0))
         self.key_warning.bind("<Button-1>", lambda e: self.tabs.select(self.keys_tab))
 
         self.button = ttk.Button(tab, text=t.CHECK, command=self.check, state="disabled")
-        self.button.grid(row=2, column=0, columnspan=3, pady=12)
+        self.button.grid(row=4, column=0, columnspan=3, pady=12)
 
         self.output = ScrolledText(tab, wrap="word", font=("Courier", 10), state="disabled")
-        self.output.grid(row=3, column=0, columnspan=3, sticky="nsew")
-        tab.rowconfigure(3, weight=1)
+        self.output.grid(row=5, column=0, columnspan=3, sticky="nsew")
+        tab.rowconfigure(5, weight=1)
 
         bottom = ttk.Frame(tab)
-        bottom.grid(row=4, column=0, columnspan=3, pady=(10, 0))
+        bottom.grid(row=6, column=0, columnspan=3, pady=(10, 0))
         self.b_txt = ttk.Button(bottom, text=t.SAVE_TXT, state="disabled",
                                 command=lambda: self.save("txt"))
         self.b_json = ttk.Button(bottom, text=t.SAVE_JSON, state="disabled",
@@ -105,6 +114,20 @@ class Window:
         help_link = ttk.Label(tab, text=t.KEY_HELP, foreground=LINK, cursor="hand2")
         help_link.grid(row=row, column=1, sticky="w", padx=8, pady=(12, 0))
         help_link.bind("<Button-1>", lambda e: webbrowser.open(self.country.KEY_HELP_URL))
+
+    # Tab "scope": generated from the country's own lists, so it cannot promise more
+    # than the program does.
+
+    def _build_scope_tab(self):
+        box = ScrolledText(self.scope_tab, wrap="word", font=("TkDefaultFont", 10))
+        box.pack(fill="both", expand=True)
+        box.tag_configure("heading", font=("TkDefaultFont", 11, "bold"), spacing1=10,
+                          spacing3=4)
+        for heading, lines in self.country.scope():
+            box.insert("end", heading + "\n", "heading")
+            for line in lines:
+                box.insert("end", f"  • {line}\n")
+        box.config(state="disabled")
 
     def _all_keys_present(self):
         return all(keys.get(name) for name in self.country.KEYS)
@@ -151,6 +174,10 @@ class Window:
         self.output.config(state="disabled")
 
     def check(self):
+        reference = self.reference.get().strip() or None
+        if reference and not valid_date(reference):
+            self.write(t.REFERENCE_INVALID + "\n", clear=True)
+            return
         self.button.config(state="disabled")
         self.b_txt.config(state="disabled")
         self.b_json.config(state="disabled")
@@ -158,7 +185,8 @@ class Window:
 
         def work():
             try:
-                r = check_document(self.document, log=lambda s: self.queue.put(("line", s)))
+                r = check_document(self.document, log=lambda s: self.queue.put(("line", s)),
+                                   reference_date=reference)
                 self.queue.put(("done", r))
             except reader.Unreadable as e:
                 self.queue.put(("error", str(e)))

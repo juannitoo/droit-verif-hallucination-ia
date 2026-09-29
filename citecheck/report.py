@@ -8,15 +8,18 @@ from collections import Counter
 from datetime import date
 
 from . import NAME, __version__
+from .countries import COUNTRIES
 from .locales import t
 
 
-def build(source, country, results, remarks):
+def build(source, country, results, remarks, reference_date=None):
     return {
         "program": f"{NAME} {__version__}",
         "date": date.today().isoformat(),
         "source": source,
         "country": country,
+        # The date the cited articles were read at; None means "today, by default".
+        "reference_date": reference_date,
         "disclaimer": t.DISCLAIMER,
         "summary": dict(Counter(r["verdict"] for r in results)),
         # `verdict` is a stable code, the same in every language; `verdict_label` is for humans.
@@ -29,16 +32,41 @@ def to_json(report):
     return json.dumps(report, ensure_ascii=False, indent=2)
 
 
+def _where(r):
+    loc = r.get("location")
+    if not loc:
+        return ""
+    if loc["in_notes"]:
+        return t.WHERE_NOTES
+    if loc["page"]:
+        return (t.WHERE_PAGE if loc["page_exact"] else t.WHERE_PAGE_APPROX).format(page=loc["page"])
+    return ""
+
+
 def to_text(report):
     lines = [t.TITLE, t.DOCUMENT_LINE.format(source=report["source"]),
              t.CHECKED_LINE.format(date=report["date"], program=report["program"]), "",
              t.DISCLAIMER, ""]
     cits = report["citations"]
+    if any(c.get("kind") == "article" for c in cits):
+        lines.append(t.REFERENCE_LINE.format(
+            date=report["reference_date"] or report["date"],
+            default="" if report["reference_date"] else t.REFERENCE_DEFAULT))
+        lines.append("")
     if not cits:
         lines.append(t.NO_CITATION)
     for r in cits:
-        lines.append(t.CITATION_LINE.format(court=r["court"], number=r["number"],
-                                            date=r.get("cited_date") or t.NO_DATE))
+        if r.get("kind") == "article":
+            lines.append(t.ARTICLE_LINE.format(code=r["code"], number=r["number"]) + _where(r))
+            if r.get("quote"):
+                q = r["quote"] if len(r["quote"]) <= 160 else r["quote"][:157] + "..."
+                lines.append(t.QUOTE_LINE.format(quote=q))
+        else:
+            lines.append(t.CITATION_LINE.format(court=r["court"], number=r["number"],
+                                                date=r.get("cited_date") or t.NO_DATE)
+                         + _where(r))
+        if r.get("location"):
+            lines.append(t.EXCERPT_LINE.format(excerpt=r["location"]["excerpt"]))
         lines.append(f"    {t.VERDICTS[r['verdict']]} : {r['explanation']}")
         lines.append("")
     if cits:
@@ -55,4 +83,9 @@ def to_text(report):
         lines.append(t.NOTE_NOT_PUBLISHED)
     if report["summary"].get("WRONG_DATE"):
         lines.append(t.NOTE_WRONG_DATE)
+    if report["summary"].get("ARTICLE_OTHER_VERSION"):
+        lines.append(t.NOTE_OTHER_VERSION)
+    lines.append("")
+    lines.append(t.NOT_CHECKED.format(
+        what=COUNTRIES[report["country"]].not_checked_summary()))
     return "\n".join(lines).rstrip() + "\n"

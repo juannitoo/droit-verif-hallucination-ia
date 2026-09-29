@@ -22,12 +22,14 @@ publiques, jamais votre texte.
 
 ## Installer
 
-- **Windows** : l'installeur sera publié dans les *Releases* de ce dépôt.
-- **Mac** : pas d'installeur fourni. Donnez ce dépôt à une IA de code (Claude Code, Codex,
-  ou autre) et demandez-lui de le compiler pour votre Mac. Le fichier
-  `notice-droit-verif-hallucination-ia.md` lui explique tout.
+Pas encore disponible. Quand il le sera, les installeurs pour **Windows**, **Mac** et
+**Linux** seront compilés automatiquement par GitHub et publiés dans **Releases**, dans la
+colonne de droite de cette page.
 
-## Pour les humains
+Pour compiler soi-même : donnez ce dépôt à une IA de code (Claude Code, Codex, ou autre).
+Le fichier `notice-droit-verif-hallucination-ia.md` lui explique tout.
+
+## Démonstration
 
 Explications et démonstration sur des cas réels : [zicalo.com](https://www.zicalo.com/)
 (bientôt).

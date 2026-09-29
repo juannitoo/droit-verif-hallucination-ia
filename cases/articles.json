@@ -1,0 +1,78 @@
+{
+  "country": "france",
+  "source": "Articles dont l'histoire est connue, relevée dans Légifrance le 29/09/2026",
+  "reference_date": "2026-09-29",
+  "context": "Chaque cas illustre un piège : texte d'une version périmée, article pas encore en vigueur, article abrogé, numéro inexistant, citation inventée.",
+  "citations": [
+    {
+      "kind": "article",
+      "order": "legislation",
+      "court": "Code du travail",
+      "code": "Code du travail",
+      "number": "L3121-2",
+      "cited_date": null,
+      "quote": "Même s'ils ne sont pas reconnus comme du temps de travail effectif, ces temps peuvent faire l'objet d'une rémunération",
+      "expected": "ARTICLE_OTHER_VERSION"
+    },
+    {
+      "kind": "article",
+      "order": "legislation",
+      "court": "Code civil",
+      "code": "Code civil",
+      "number": "1382",
+      "cited_date": null,
+      "quote": "Tout fait quelconque de l'homme, qui cause à autrui un dommage, oblige celui par la faute duquel il est arrivé à le réparer.",
+      "expected": "ARTICLE_OTHER_VERSION"
+    },
+    {
+      "kind": "article",
+      "order": "legislation",
+      "court": "Code civil",
+      "code": "Code civil",
+      "number": "1240",
+      "cited_date": null,
+      "quote": "Tout fait quelconque de l'homme, qui cause à autrui un dommage, oblige celui par la faute duquel il est arrivé à le réparer.",
+      "expected": "ARTICLE_IN_FORCE"
+    },
+    {
+      "kind": "article",
+      "order": "legislation",
+      "court": "Code civil",
+      "code": "Code civil",
+      "number": "1240",
+      "cited_date": null,
+      "quote": "Toute faute, même légère, engage la responsabilité de son auteur envers la victime",
+      "expected": "QUOTE_NOT_FOUND"
+    },
+    {
+      "kind": "article",
+      "order": "legislation",
+      "court": "Code de la consommation",
+      "code": "Code de la consommation",
+      "number": "L340-1",
+      "cited_date": null,
+      "quote": null,
+      "expected": "ARTICLE_NOT_IN_FORCE"
+    },
+    {
+      "kind": "article",
+      "order": "legislation",
+      "court": "Code du travail",
+      "code": "Code du travail",
+      "number": "L122-14-4",
+      "cited_date": null,
+      "quote": null,
+      "expected": "ARTICLE_NOT_IN_FORCE"
+    },
+    {
+      "kind": "article",
+      "order": "legislation",
+      "court": "Code du travail",
+      "code": "Code du travail",
+      "number": "L9999-99",
+      "cited_date": null,
+      "quote": null,
+      "expected": "ARTICLE_NOT_FOUND"
+    }
+  ]
+}
