@@ -21,7 +21,7 @@ LA COMPARAISON DU TEXTE CITÉ
 import re
 import unicodedata
 
-from .codes import AMBIGUOUS, LABELS
+from .codes import AMBIGUOUS, LABELS, SUCCESSION
 from .legifrance import Unavailable
 
 MIN_WORDS = 4
@@ -65,6 +65,8 @@ def check_article(client, citation, day, texts):
     l'article n'existe que dans l'un, on le dit ; s'il existe dans plusieurs, on ne choisit
     pas : DOUTEUX, avec ce qu'on a trouvé dans chacun."""
     code, number = citation["code"], citation["number"]
+    if code in SUCCESSION:
+        return _check_succession(client, citation, day, texts)
     if code not in AMBIGUOUS:
         return _check_one(client, citation, day, texts)
     found = [(t, _check_one(client, {**citation, "code": t}, day, texts))
@@ -83,6 +85,40 @@ def check_article(client, citation, day, texts):
     return ("DOUBTFUL", f"{head} ; l'article {number} existe dans les deux, à vous de dire "
             "lequel est visé : " + " ; ".join(f"dans {_the(t)}, {why}"
                                              for t, (_, why, _) in hits), None)
+
+
+IN_FORCE = ("ARTICLE_IN_FORCE", "ARTICLE_OTHER_VERSION", "QUOTE_NOT_FOUND")
+
+
+def _check_succession(client, citation, day, texts):
+    """Un code et ses éditions abrogées (SUCCESSION), du plus récent au plus ancien. Le
+    premier où l'article est en vigueur à la date de référence est celui que le texte
+    applique : on s'arrête là. Sinon on montre ce que chacun contient."""
+    code, number = citation["code"], citation["number"]
+    found = []
+    for title in SUCCESSION[code]:
+        result = _check_one(client, {**citation, "code": title}, day, texts)
+        if result[0] in IN_FORCE:
+            if not found and title == code:
+                return result           # le cas courant : le code nommé, sans bruit
+            head = f"« {code} » : "
+            if found:
+                head += (f"l'article {number} n'est pas en vigueur le {day} dans "
+                         + ", ni dans ".join(_the(t) for t, _ in found) + " ; il l'est ")
+            return result[0], f"{head}dans {_the(title)} : {result[1]}", result[2]
+        found.append((title, result))
+    hits = [(t, r) for t, r in found if r[0] != "ARTICLE_NOT_FOUND"]
+    names = ", ".join(_the(t) for t, _ in found)
+    if not hits:
+        if any(r[0] == "NOT_TESTED" for _, r in found):
+            return "NOT_TESTED", " ; ".join(f"{_the(t)} : {r[1]}" for t, r in found), None
+        return ("ARTICLE_NOT_FOUND", f"aucun article {number} dans {names}, à aucune date : "
+                "il ne semble pas exister ; à vérifier sur Légifrance", None)
+    # « plus en vigueur le <jour> : abrogé le ... » : le jour est déjà dans la phrase de tête.
+    said = [re.sub(rf"^plus en vigueur le {day} : ", "", r[1]) for _, r in hits]
+    return ("ARTICLE_NOT_IN_FORCE", f"« {code} » : cherché dans {names} ; l'article {number} "
+            f"n'est en vigueur le {day} dans aucun : "
+            + " ; ".join(f"dans {_the(t)}, {w}" for (t, _), w in zip(hits, said)), None)
 
 
 def _the(title):

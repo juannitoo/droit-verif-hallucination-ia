@@ -4,7 +4,7 @@ Ce texte est affiché dans l'onglet « Ce qui est vérifié » et résumé en fi
 est construit à partir des listes que l'extracteur utilise vraiment (codes, abréviations) :
 il ne peut pas annoncer une abréviation que le programme ne reconnaît pas.
 """
-from .codes import TITLES, abbreviations_of
+from .codes import ABROGATED, LABELS, SUCCESSION, TITLES, abbreviations_of
 
 DECISIONS = [
     "Conseil d'État : « CE, 5 juin 2009, n° 308850 », « Conseil d'État, n° 308850 ». Le "
@@ -46,6 +46,12 @@ ARTICLES = [
     "versions de l'article. Base interrogée : Légifrance.",
     "Les articles sont lus à la « date des faits » si elle est donnée, sinon à la date du "
     "jour.",
+    "Les codes abrogés sont reconnus : leurs articles sortent « plus en vigueur », avec la "
+    "date. Un code cité sans précision (« Code pénal », « Code des marchés publics ») est "
+    "cherché d'abord dans le code actuel, puis, si l'article n'y est pas en vigueur à la date "
+    "des faits, dans ses éditions abrogées : le rapport dit dans lequel il l'a trouvé. « Code "
+    "forestier » et « Code de justice militaire » désignent le code actuel, bien que ce soient "
+    "les titres exacts des anciens sur Légifrance.",
     "« Code minier » écrit sans précision désigne deux codes, l'ancien et celui de 2011 : "
     "l'article est cherché dans les deux. S'il existe dans les deux, le programme ne choisit "
     "pas, il montre les deux résultats et c'est au lecteur de dire lequel est visé.",
@@ -97,7 +103,11 @@ def scope():
         ("Décisions de justice reconnues", DECISIONS),
         ("Articles de codes reconnus", ARTICLES),
         ("Articles de conventions collectives reconnus", CONVENTIONS),
-        (f"Les {len(TITLES)} codes reconnus, avec leurs abréviations", codes),
+        (f"Les {len(TITLES)} codes en vigueur reconnus, avec leurs abréviations", codes),
+        (f"Les {len(ABROGATED)} codes abrogés reconnus, avec leur date de fin",
+         [f"{t} (abrogé le {d})" for t, d in sorted(ABROGATED.items())]
+         + [f"« {k} » sans précision : cherché dans cet ordre, "
+            + ", puis ".join(LABELS.get(t, t) for t in v) for k, v in SUCCESSION.items()]),
         ("Ce qui n'est PAS vérifié", NOT_CHECKED),
     ]
 

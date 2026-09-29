@@ -6,7 +6,9 @@ Vérifie les citations d'un texte juridique français, sans rien inventer :
   judiciaires, Conseil constitutionnel, Tribunal des conflits, Cour de justice et Tribunal de
   l'Union européenne) : existent-elles, et à la date indiquée ?
 - **les articles de codes et de conventions collectives** : existent-ils, étaient-ils en
-  vigueur à la date des faits, et le texte cité entre guillemets est-il bien le leur ?
+  vigueur à la date des faits, et le texte cité entre guillemets est-il bien le leur ? Les
+  codes abrogés sont reconnus (Code des marchés publics, ancien Code pénal...) : une IA les
+  cite volontiers, elle a appris l'ancien droit.
 
 Les IA inventent des décisions, citent une vraie décision avec une fausse date, ou
 reprennent un article dans une version périmée. Des tribunaux l'ont relevé dans des

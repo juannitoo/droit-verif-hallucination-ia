@@ -47,7 +47,7 @@ ouvre dans son navigateur.
 | `citecheck/locales/fr.py` | tous les textes affichés ; une langue = un fichier |
 | `citecheck/countries/france/` | extraction, bases et verdicts pour la France : `extract.py`, `sources.py` (ArianeWeb, Judilibre), `legifrance.py`, `articles.py` (codes), `conventions.py`, `lower_courts.py` (cours d'appel, tribunaux), `other_courts.py` (Conseil constitutionnel, Tribunal des conflits, Union européenne, lien CEDH), `codes.py` (noms et abréviations), `scope.py` (ce qui est vérifié) |
 | `citecheck/http.py` | le seul point de sortie réseau, qui refuse toute redirection (une redirection emporterait les clés) |
-| `cases/` | bancs d'essai dont la réponse est connue : `perigueux.json` (cas réel jugé), `articles.json`, `conventions.json`, `lower_courts.json`, `other_courts.json` |
+| `cases/` | bancs d'essai dont la réponse est connue : `perigueux.json` (cas réel jugé), `articles.json`, `conventions.json`, `lower_courts.json`, `other_courts.json`, `abrogated_codes.json` et `abrogated_codes_2010.json` (codes abrogés, lus à deux dates) |
 | `tests/` | tests hors réseau |
 
 **Langues du code.** Noms de fichiers, de fonctions, de variables, codes de verdict, clés du
@@ -128,6 +128,8 @@ convention est vérifié, pas ses avenants ni ses accords attachés.
 .venv/bin/python -m citecheck --case cases/conventions.json # réseau, doit donner 6/6
 .venv/bin/python -m citecheck --case cases/lower_courts.json # réseau, doit donner 4/4
 .venv/bin/python -m citecheck --case cases/other_courts.json # réseau, doit donner 10/10
+.venv/bin/python -m citecheck --case cases/abrogated_codes.json      # réseau, 7/7
+.venv/bin/python -m citecheck --case cases/abrogated_codes_2010.json # réseau, 3/3
 ```
 
 ## Les trois règles, à ne jamais affaiblir
@@ -201,7 +203,9 @@ tient sans personne :
 Quand un signalement arrive : ajouter le titre à `TITLES` et son abréviation d'usage à
 `ABBREVIATIONS` dans `codes.py` (jamais un sigle ambigu), passer le compte du test
 `test_every_title_is_recognized_whole` au nouveau total, puis `python3 tests/online_codes.py`
-doit sortir 0.
+doit sortir 0. Un code abrogé va dans `ABROGATED`, avec sa date de fin ; s'il remplace un
+code du même nom, ou porte un titre que l'usage donne au nouveau (« Code forestier »), il va
+aussi dans `SUCCESSION`, du plus récent au plus ancien.
 
 ## Ce que le programme ne sait pas encore faire
 

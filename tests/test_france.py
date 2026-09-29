@@ -5,7 +5,8 @@ import unittest
 
 from citecheck import report
 from citecheck.countries.france import codes
-from citecheck.countries.france.codes import ABBREVIATIONS, TITLES, find_code, learn
+from citecheck.countries.france.codes import (ABBREVIATIONS, ABROGATED, TITLES, find_code,
+                                              learn)
 from citecheck.countries.france.conventions import _key
 from citecheck.reader import NOTES, PAGE, Document
 from citecheck.countries.france import verdict_admin, verdict_judicial
@@ -337,6 +338,23 @@ class Scope(unittest.TestCase):
         for title in TITLES:
             self.assertEqual(find_code(f"art. 1 du {title}, x")[0], title, title)
 
+    def test_every_abrogated_title_is_recognized_whole(self):
+        self.assertEqual(len(ABROGATED), 32)
+        for title in ABROGATED:
+            self.assertEqual(find_code(f"art. 1 du {title}, x")[0], title, title)
+
+    def test_usual_forms_of_old_codes(self):
+        for text, title in [("Code des marchés publics", "Code des marchés publics"),
+                            ("ancien Code pénal", "Code pénal (ancien)"),
+                            ("code forestier", "Code forestier"),
+                            ("Code rural", "Code rural"),
+                            ("Code rural et de la pêche maritime",
+                             "Code rural et de la pêche maritime")]:
+            self.assertEqual(find_code(f"art. 1 du {text}, x")[0], title, text)
+
+    def test_an_abrogated_code_is_not_learned_as_new(self):
+        self.assertEqual(learn(["Code pénal (ancien)", "Code forestier"]), [])
+
     def test_a_code_learned_from_legifrance_is_recognized(self):
         saved = list(TITLES)
         try:
@@ -382,6 +400,41 @@ class AmbiguousCode(unittest.TestCase):
         self.assertIn("à vous de dire", why)
 
     def test_found_in_neither(self):
+        self.assertEqual(self.check({}, {})[0], "ARTICLE_NOT_FOUND")
+
+
+class Succession(unittest.TestCase):
+    """Point C (30/09/2026): a code and its abrogated editions."""
+    NOW = [{"id": "n", "etat": "VIGUEUR", "debut": "2012-07-01", "fin": "2999-01-01"}]
+    OLD = [{"id": "o", "etat": "ABROGE", "debut": "1979-02-07", "fin": "2012-07-01"}]
+
+    def check(self, new, old, code="Code forestier", day="2026-09-30"):
+        client = FakeLegifrance({"Code forestier (nouveau)": new, "Code forestier": old,
+                                 "Code pénal": new, "Code pénal (ancien)": old})
+        return check_article(client, {"code": code, "number": "L124-1"}, day, {})
+
+    def test_the_named_code_in_force_is_silent(self):
+        verdict, why, _ = self.check({"L124-1": self.NOW}, {"L124-1": self.OLD}, "Code pénal")
+        self.assertEqual(verdict, "ARTICLE_IN_FORCE")
+        self.assertNotIn("ancien", why)
+
+    def test_code_forestier_means_the_new_one(self):
+        verdict, why, _ = self.check({"L124-1": self.NOW}, {"L124-1": self.OLD})
+        self.assertEqual(verdict, "ARTICLE_IN_FORCE")
+        self.assertIn("dans le Code forestier (nouveau)", why)
+
+    def test_the_date_of_the_facts_finds_the_old_one(self):
+        verdict, why, _ = self.check({"L124-1": self.NOW}, {"L124-1": self.OLD},
+                                     day="2010-06-01")
+        self.assertEqual(verdict, "ARTICLE_IN_FORCE")
+        self.assertIn("il l'est dans l'ancien Code forestier", why)
+
+    def test_only_in_the_old_one_is_abrogated_not_missing(self):
+        verdict, why, _ = self.check({}, {"L124-1": self.OLD}, "Code pénal")
+        self.assertEqual(verdict, "ARTICLE_NOT_IN_FORCE")
+        self.assertIn("abrogé ou déplacé le 2012-07-01", why)
+
+    def test_in_none(self):
         self.assertEqual(self.check({}, {})[0], "ARTICLE_NOT_FOUND")
 
 

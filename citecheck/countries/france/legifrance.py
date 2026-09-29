@@ -109,10 +109,12 @@ class Client:
             time.sleep(PAUSE)
 
     def codes(self):
-        """{titre exact: identifiant LEGITEXT} des codes en vigueur."""
+        """{titre exact: identifiant LEGITEXT} de tous les codes, en vigueur ET abrogés (108
+        au 29/09/2026) : un article d'un code abrogé doit sortir « abrogé », pas « code
+        inconnu »."""
         if self._codes is None:
             data = self._post("/list/code", {"pageSize": 200, "pageNumber": 1,
-                                             "states": ["VIGUEUR"]})
+                                             "states": ["VIGUEUR", "ABROGE"]})
             self._codes = {c["titre"]: c["cid"] for c in data.get("results") or []}
         return self._codes
 

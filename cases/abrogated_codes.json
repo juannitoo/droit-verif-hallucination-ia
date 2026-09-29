@@ -1,0 +1,72 @@
+{
+  "country": "france",
+  "source": "Codes abrogés : articles connus, lus au 2026-09-29 (relevé dans Légifrance le 29/09/2026)",
+  "options": {
+    "reference_date": "2026-09-29"
+  },
+  "citations": [
+    {
+      "kind": "article",
+      "order": "legislation",
+      "court": "Code des marchés publics",
+      "code": "Code des marchés publics",
+      "number": "28",
+      "cited_date": null,
+      "expected": "ARTICLE_NOT_IN_FORCE"
+    },
+    {
+      "kind": "article",
+      "order": "legislation",
+      "court": "Code des marchés publics",
+      "code": "Code des marchés publics",
+      "number": "9999",
+      "cited_date": null,
+      "expected": "ARTICLE_NOT_FOUND"
+    },
+    {
+      "kind": "article",
+      "order": "legislation",
+      "court": "Code pénal",
+      "code": "Code pénal",
+      "number": "405",
+      "cited_date": null,
+      "expected": "ARTICLE_NOT_IN_FORCE"
+    },
+    {
+      "kind": "article",
+      "order": "legislation",
+      "court": "Code pénal (ancien)",
+      "code": "Code pénal (ancien)",
+      "number": "405",
+      "cited_date": null,
+      "expected": "ARTICLE_NOT_IN_FORCE"
+    },
+    {
+      "kind": "article",
+      "order": "legislation",
+      "court": "Code pénal",
+      "code": "Code pénal",
+      "number": "313-1",
+      "cited_date": null,
+      "expected": "ARTICLE_IN_FORCE"
+    },
+    {
+      "kind": "article",
+      "order": "legislation",
+      "court": "Code forestier",
+      "code": "Code forestier",
+      "number": "L124-1",
+      "cited_date": null,
+      "expected": "ARTICLE_IN_FORCE"
+    },
+    {
+      "kind": "article",
+      "order": "legislation",
+      "court": "Code de procédure civile",
+      "code": "Code de procédure civile",
+      "number": "700",
+      "cited_date": null,
+      "expected": "ARTICLE_IN_FORCE"
+    }
+  ]
+}

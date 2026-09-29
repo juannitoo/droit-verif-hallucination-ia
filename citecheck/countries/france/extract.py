@@ -476,7 +476,9 @@ def extract_articles(text):
     if no_code:
         remarks.append(f"{len(no_code)} article(s) cité(s) sans code reconnu : "
                        f"{', '.join(no_code[:12])}{'...' if len(no_code) > 12 else ''}. "
-                       "Les lois et décrets non codifiés ne sont pas vérifiés.")
+                       "Ce sont souvent des articles de lois ou de décrets non codifiés, que "
+                       "ce programme ne vérifie pas ; ou d'un code qu'il ne reconnaît pas "
+                       "encore.")
     if attached:
         remarks.append(f"{len(attached)} article(s) d'avenant ou d'accord collectif : "
                        f"{', '.join(attached[:12])}. Seul le texte de base des conventions "

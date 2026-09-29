@@ -5,6 +5,13 @@ qu'elle donne en vigueur, sans exception, anciens codes presque vides compris (C
 communes, Code rural (ancien)...) : une IA qui les cite est justement ce qu'on veut voir. Les
 abréviations sont celles de l'usage (C. trav., CSS, CPC...). Une abréviation ambiguë n'est
 pas reconnue plutôt que d'être devinée : « CT » ou « CP » ne désignent rien de sûr.
+
+LES CODES ABROGÉS (point C de l'audit du 30/09/2026)
+  Légifrance les liste à part : 32 codes, avec leur date d'abrogation. Une IA a appris
+  l'ancien droit et les cite volontiers (« article 28 du Code des marchés publics », « article
+  405 du Code pénal »). Sans eux, le programme répondait « article cité sans code reconnu »,
+  ou « ne semble pas exister » dans le code actuel : deux réponses fausses. Reconnus, leurs
+  articles sortent « plus en vigueur, abrogé le ... ».
 """
 import re
 
@@ -50,12 +57,84 @@ TITLES = [
     "Livre des procédures fiscales",
 ]
 
-# Un titre écrit seul qui désigne deux codes. « Code minier » tout court vise le plus souvent
-# le code de 2011, mais c'est aussi le titre exact de l'ancien, en partie en vigueur. On ne
-# choisit pas : on cherche dans les deux et on montre ce qu'on a trouvé.
+# Les codes abrogés, titres exacts de Légifrance (/list/code, état ABROGE, 29/09/2026), avec
+# la date de fin du code. La date qui compte pour un article reste celle de SES versions.
+ABROGATED = {
+    "Code de commerce (ancien)": "2000-09-21",
+    "Code de déontologie de la police nationale": "2014-01-01",
+    "Code de déontologie de la profession de commissaire aux comptes": "2007-03-27",
+    "Code de déontologie des agents de police municipale": "2014-01-01",
+    "Code de déontologie des chirurgiens-dentistes": "2004-08-08",
+    "Code de déontologie des médecins": "1995-09-08",
+    "Code de déontologie des professionnels de l'expertise comptable": "2012-04-01",
+    "Code de déontologie des sages-femmes": "2004-08-08",
+    "Code de déontologie médicale": "2004-08-08",
+    "Code de déontologie vétérinaire": "2003-08-07",
+    "Code de justice militaire": "2007-05-12",
+    "Code de l'Office national interprofessionnel du blé": "2003-09-06",
+    "Code de l'enseignement technique": "2000-06-22",
+    "Code de l'industrie cinématographique": "2010-06-14",
+    "Code de la consommation des boissons et des mesures contre l'alcoolisme applicable dans "
+    "la collectivité territoriale de Mayotte": "2000-06-22",
+    "Code de la nationalité française": "1994-01-01",
+    "Code de la route (ancien)": "2001-06-01",
+    "Code de procédure civile (1807)": "2007-12-22",
+    "Code des caisses d'épargne": "2005-08-25",
+    "Code des douanes de Mayotte": "2026-05-01",
+    "Code des débits de boissons et des mesures contre l'alcoolisme": "2003-05-27",
+    "Code des marchés publics (édition 1964)": "2002-01-01",
+    "Code des marchés publics (édition 2001)": "2004-06-01",
+    "Code des marchés publics (édition 2004)": "2006-09-01",
+    "Code des marchés publics (édition 2006)": "2016-04-01",
+    "Code des tribunaux administratifs et des cours administratives d'appel": "2001-01-01",
+    "Code du blé": "2006-05-26",
+    "Code du travail applicable à Mayotte": "2020-01-01",
+    "Code du vin": "2003-09-06",
+    "Code forestier": "2012-07-01",
+    "Code forestier de Mayotte": "2016-01-01",
+    "Code pénal (ancien)": "1994-03-01",
+}
+
+# Un titre écrit seul qui désigne deux codes EN VIGUEUR. « Code minier » tout court vise le
+# plus souvent le code de 2011, mais c'est aussi le titre exact de l'ancien, en partie en
+# vigueur. On ne choisit pas : on cherche dans les deux et on montre ce qu'on a trouvé.
 AMBIGUOUS = {"Code minier": ["Code minier (nouveau)", "Code minier"]}
+
+# Un titre écrit seul qui désigne un code ET ses éditions abrogées, de la plus récente à la
+# plus ancienne. On cherche dans l'ordre et on s'arrête au premier code où l'article est en
+# vigueur à la date de référence : c'est celui que le texte applique, sans bruit. Sinon, on
+# montre ce que les anciens contiennent.
+#   « Code forestier » et « Code de justice militaire » sont sur Légifrance les titres
+#   exacts des codes ABROGÉS ; l'usage les emploie pour les nouveaux, qui s'appellent
+#   « (nouveau) ». Les prendre à la lettre ferait dire « abrogé » d'un article en vigueur.
+#   « Code rural » : l'actuel s'appelle « Code rural et de la pêche maritime » depuis 2010.
+SUCCESSION = {
+    "Code forestier": ["Code forestier (nouveau)", "Code forestier"],
+    "Code de justice militaire": ["Code de justice militaire (nouveau)",
+                                  "Code de justice militaire"],
+    "Code pénal": ["Code pénal", "Code pénal (ancien)"],
+    "Code de commerce": ["Code de commerce", "Code de commerce (ancien)"],
+    "Code de procédure civile": ["Code de procédure civile", "Code de procédure civile (1807)"],
+    "Code de la route": ["Code de la route", "Code de la route (ancien)"],
+    "Code rural": ["Code rural et de la pêche maritime", "Code rural (ancien)"],
+    "Code des marchés publics": [f"Code des marchés publics (édition {y})"
+                                 for y in (2006, 2004, 2001, 1964)],
+}
+# Formes d'usage qui ne sont le titre d'aucun code : (motif, clé de SUCCESSION ou titre).
+ALIASES = [
+    (r"Code\s+des\s+march[ée]s\s+publics", "Code des marchés publics"),
+    (r"Code\s+rural", "Code rural"),
+    (r"ancien\s+Code\s+p[ée]nal", "Code pénal (ancien)"),
+    (r"ancien\s+Code\s+de\s+commerce", "Code de commerce (ancien)"),
+    (r"ancien\s+Code\s+de\s+proc[ée]dure\s+civile", "Code de procédure civile (1807)"),
+    (r"ancien\s+Code\s+de\s+la\s+route", "Code de la route (ancien)"),
+    (r"ancien\s+Code\s+forestier", "Code forestier"),
+    (r"ancien\s+Code\s+rural", "Code rural (ancien)"),
+    (r"ancien\s+Code\s+de\s+justice\s+militaire", "Code de justice militaire"),
+]
 # Comment nommer chacun dans le rapport, quand le titre de Légifrance ne suffit pas.
-LABELS = {"Code minier": "ancien Code minier"}
+LABELS = {"Code minier": "ancien Code minier", "Code forestier": "ancien Code forestier",
+          "Code de justice militaire": "ancien Code de justice militaire"}
 
 # Abréviations d'usage : (formes affichées à l'utilisateur, motif reconnu, titre exact).
 # Les formes affichées sont ce que l'onglet « Ce qui est vérifié » montre : elles doivent
@@ -123,7 +202,8 @@ def _loose(title):
 def _build():
     global _PATTERNS, RE_CODE
     _PATTERNS = sorted(
-        [(_loose(t), t) for t in TITLES] + [(p, t) for _, p, t in ABBREVIATIONS],
+        [(_loose(t), t) for t in TITLES + list(ABROGATED)]
+        + [(p, t) for _, p, t in ABBREVIATIONS] + ALIASES,
         key=lambda p: -len(p[0]))      # le plus long d'abord : « Code de procédure civile »
                                        # avant « Code civil »
     RE_CODE = re.compile(
@@ -137,7 +217,7 @@ def learn(titles):
     """Ajoute à la reconnaissance les titres que Légifrance connaît et pas nous. Renvoie les
     nouveaux. On n'en retire jamais : un code disparu de Légifrance reste une citation à
     repérer. Les abréviations, elles, ne s'apprennent pas : elles viennent de l'usage."""
-    new = sorted(set(titles) - set(TITLES))
+    new = sorted(set(titles) - set(TITLES) - set(ABROGATED))
     if new:
         TITLES.extend(new)
         _build()
