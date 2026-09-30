@@ -8,7 +8,9 @@ Vérifie les citations d'un texte juridique français, sans rien inventer :
 - **les articles de codes et de conventions collectives** : existent-ils, étaient-ils en
   vigueur à la date des faits, et le texte cité entre guillemets est-il bien le leur ? Les
   codes abrogés sont reconnus (Code des marchés publics, ancien Code pénal...) : une IA les
-  cite volontiers, elle a appris l'ancien droit.
+  cite volontiers, elle a appris l'ancien droit. De même pour les **articles des lois,
+  ordonnances et décrets** non codifiés (loi du 6 juillet 1989 sur les baux, loi du 10
+  juillet 1965 sur la copropriété...).
 
 Les IA inventent des décisions, citent une vraie décision avec une fausse date, ou
 reprennent un article dans une version périmée. Des tribunaux l'ont relevé dans des
@@ -40,8 +42,9 @@ servi lors de la conception.
   pour l'instant) et celles des conseils de prud'hommes (que Judilibre ne publie pas) ;
 - un numéro RG cité sans le nom de la juridiction dans la même phrase (le même numéro
   existe dans plusieurs juridictions) ;
-- les articles de lois et de décrets non codifiés, et ceux des avenants de conventions
-  collectives : ils sont signalés dans le rapport, pas vérifiés ;
+- les articles d'une loi ou d'un décret cité sans numéro ni date, et ceux des arrêtés et
+  des avenants de conventions collectives : ils sont signalés dans le rapport, pas
+  vérifiés ;
 - la chambre, sauf celle de la Cour de cassation, qui est comparée à Judilibre ;
 - le sens d'une décision : si elle soutient l'argument pour lequel elle est citée.
 

@@ -45,9 +45,9 @@ ouvre dans son navigateur.
 | `citecheck/keys.py` | clés : variable d'environnement, sinon trousseau du système |
 | `citecheck/report.py` | rapport texte et JSON |
 | `citecheck/locales/fr.py` | tous les textes affichés ; une langue = un fichier |
-| `citecheck/countries/france/` | extraction, bases et verdicts pour la France : `extract.py`, `sources.py` (ArianeWeb, Judilibre), `legifrance.py`, `articles.py` (codes), `conventions.py`, `lower_courts.py` (cours d'appel, tribunaux judiciaires et de commerce), `other_courts.py` (CAA, base locale, Conseil constitutionnel, Tribunal des conflits, Union européenne, lien CEDH), `codes.py` (noms et abréviations), `scope.py` (ce qui est vérifié) |
+| `citecheck/countries/france/` | extraction, bases et verdicts pour la France : `extract.py`, `sources.py` (ArianeWeb, Judilibre), `legifrance.py`, `articles.py` (codes), `texts.py` (lois, ordonnances, décrets non codifiés), `conventions.py`, `lower_courts.py` (cours d'appel, tribunaux judiciaires et de commerce), `other_courts.py` (CAA, base locale, Conseil constitutionnel, Tribunal des conflits, Union européenne, lien CEDH), `codes.py` (noms et abréviations), `scope.py` (ce qui est vérifié) |
 | `citecheck/http.py` | le seul point de sortie réseau, qui refuse toute redirection (une redirection emporterait les clés) |
-| `cases/` | bancs d'essai dont la réponse est connue : `perigueux.json` (cas réel jugé), `articles.json`, `conventions.json`, `lower_courts.json`, `other_courts.json`, `abrogated_codes.json` et `abrogated_codes_2010.json` (codes abrogés, lus à deux dates), `cgi.json` (suffixes et annexes du CGI), `commercial_courts.json`, `chambers.json` |
+| `cases/` | bancs d'essai dont la réponse est connue : `perigueux.json` (cas réel jugé), `articles.json`, `conventions.json`, `lower_courts.json`, `other_courts.json`, `abrogated_codes.json` et `abrogated_codes_2010.json` (codes abrogés, lus à deux dates), `cgi.json` (suffixes et annexes du CGI), `commercial_courts.json`, `chambers.json`, `texts.json` et `texts_2010.json` |
 | `tests/` | tests hors réseau |
 
 **Langues du code.** Noms de fichiers, de fonctions, de variables, codes de verdict, clés du
@@ -152,6 +152,8 @@ de juridiction et le numéro lui sont envoyés.
 .venv/bin/python -m citecheck --case cases/cgi.json                  # réseau, 7/7
 .venv/bin/python -m citecheck --case cases/commercial_courts.json    # réseau, 9/9
 .venv/bin/python -m citecheck --case cases/chambers.json             # réseau, 6/6
+.venv/bin/python -m citecheck --case cases/texts.json                # réseau, 7/7
+.venv/bin/python -m citecheck --case cases/texts_2010.json           # réseau, 2/2
 ```
 
 ## Les trois règles, à ne jamais affaiblir
@@ -248,9 +250,11 @@ faut corriger.
   2024, 112 105 en 2025, mesuré le 29/09/2026), sans qu'on sache si l'antérieur viendra.
   Depuis 2025, ils sont vérifiés (`lower_courts.py`). Les **prud'hommes**, eux, ne sont pas
   dans Judilibre.
-- Vérifier les articles des **lois et décrets** non codifiés (« article 22 de la loi du 6
-  juillet 1989 ») et des **avenants** de conventions. Ils sont signalés dans les remarques du
-  rapport, jamais devinés.
+- Vérifier les articles d'un texte cité **sans numéro ni date**, des **arrêtés** (souvent
+  plusieurs le même jour, sans numéro) et des **avenants** de conventions : chaque avenant est
+  un texte à part dans Légifrance, cité de façons trop variées (« avenant n° 12 du ... ») pour
+  être identifié sans risque. Ils sont signalés dans les remarques du rapport, jamais
+  devinés.
 - Vérifier la **formation** du Conseil d'État et la chambre des cours d'appel : seule la
   chambre de la Cour de cassation est comparée (`cited_chamber` dans `extract.py`, taxonomie
   de Judilibre dans `CHAMBERS`).

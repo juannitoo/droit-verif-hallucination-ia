@@ -75,7 +75,7 @@ def to_text(report):
              t.CHECKED_LINE.format(date=report["date"], program=report["program"]), "",
              t.DISCLAIMER, ""]
     cits = report["citations"]
-    if any(c.get("kind") in ("article", "convention_article") for c in cits):
+    if any(c.get("kind") in ("article", "convention_article", "text_article") for c in cits):
         lines.append(t.REFERENCE_LINE.format(
             date=report["reference_date"] or report["date"],
             default="" if report["reference_date"] else t.REFERENCE_DEFAULT))
@@ -83,9 +83,11 @@ def to_text(report):
     if not cits:
         lines.append(t.NO_CITATION)
     for r in cits:
-        if r.get("kind") in ("article", "convention_article"):
+        if r.get("kind") in ("article", "convention_article", "text_article"):
             if r["kind"] == "article":
                 head = t.ARTICLE_LINE.format(code=r["code"], number=r["number"])
+            elif r["kind"] == "text_article":
+                head = t.ARTICLE_LINE.format(code=r["court"], number=r["number"])
             else:
                 head = t.CONVENTION_LINE.format(idcc=r.get("idcc") or report.get("idcc") or t.IDCC_UNKNOWN,
                                                 number=r["number"])

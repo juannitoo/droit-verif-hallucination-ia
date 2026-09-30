@@ -59,6 +59,12 @@ DECISIONS = [
 ARTICLES = [
     "« article L. 3121-2 du Code du travail », « art. 1240 C. civ. », « C. trav., art. "
     "L. 1152-1 », « articles L. 1234-1 et L. 1234-5 du même code ».",
+    "Les articles des lois, lois organiques, ordonnances et décrets non codifiés : « article "
+    "22 de la loi n° 89-462 du 6 juillet 1989 », « Loi n° 89-462, art. 22 », « article 14 de "
+    "la loi du 10 juillet 1965 », « article 6 de la même loi ». Le texte est retrouvé par son "
+    "numéro, ou par sa date : une date seule en désigne souvent plusieurs (neuf lois le 6 "
+    "juillet 1989). Le programme ne choisit pas : il cherche l'article dans chacune et dit "
+    "dans laquelle il l'a trouvé. Base interrogée : Légifrance.",
     "Les numéros à suffixes du Code général des impôts : « article 199 undecies B du CGI », "
     "« 46 quater-0 ZZ bis », « 238 bis-0 I » ; et ses annexes : « article 2 de l'annexe III "
     "au CGI », « CGI, ann. III, art. 2 ».",
@@ -104,8 +110,9 @@ NOT_CHECKED = [
     "Conseil d'État",
     "les décisions de la CEDH : la Cour n'autorise pas la recherche dans sa base par un "
     "programme. Elles sont signalées, avec le lien de la recherche, à ouvrir soi-même",
-    "les articles de lois et de décrets non codifiés (« article 22 de la loi du 6 juillet "
-    "1989 ») : signalés, pas vérifiés",
+    "les articles d'un texte cité sans numéro ni date (« l'article 3 du décret »), des "
+    "arrêtés, et des textes antérieurs à 1945 qui n'ont pas de numéro : signalés, pas "
+    "vérifiés",
     "les avenants, accords et textes salariaux attachés aux conventions collectives : "
     "signalés, pas vérifiés (seul le texte de base l'est). Chaque avenant est un texte à part "
     "dans Légifrance, et il se cite de façons trop variées (« avenant n° 12 du ... ») pour "
@@ -144,6 +151,7 @@ def not_checked_summary():
     """Version courte, pour la fin du rapport : le détail est dans l'onglet."""
     return ("RG sans juridiction nommée, tribunaux de commerce avant 2025, prud'hommes, "
             "décisions des TA sans base locale, "
-            "décisions de la CEDH (lien fourni), lois et décrets non codifiés, avenants et accords "
+            "décisions de la CEDH (lien fourni), textes cités sans numéro ni date, arrêtés, "
+            "avenants et accords "
             "attachés aux conventions, "
             "formation hors Cour de cassation, décisions sans numéro, sens des décisions. Détail et raisons : onglet « Ce qui est vérifié »")

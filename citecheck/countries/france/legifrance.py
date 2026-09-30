@@ -28,6 +28,13 @@ CE QU'ON A APPRIS DE L'API (sondée le 29/09/2026)
     « 2010-605 DC » ne trouve rien. La date n'est que dans le titre. Et le champ
     NUM_AFFAIRE, sur CETAT, IGNORE le critère : 571 555 résultats pour n'importe quel
     numéro. Ne jamais s'en servir.
+  - Lois, ordonnances, décrets non codifiés (sondé le 30/09/2026), fonds LODA_ETAT :
+    le champ NUM (« 89-462 ») désigne UN texte ; NUM + NUM_ARTICLE donne les versions de
+    l'article, abrogées comprises ; la fiche d'une version (/consult/getArticle) porte la
+    liste complète. Sans numéro, « loi du 6 juillet 1989 » désigne NEUF lois : on les
+    retrouve par leur date dans le titre (champ TITLE) et le filtre NATURE (LOI, qui couvre
+    aussi les lois organiques, ORDONNANCE, DECRET). Le filtre DATE_SIGNATURE, lui, est
+    ignoré par l'API : il renvoie toutes les lois.
   - /consult/kaliContIdcc donne la convention d'un IDCC et l'identifiant de son texte de
     base ; /consult/kaliText renvoie en un appel tous les articles de ce texte, toutes leurs
     versions et leur contenu. Un IDCC inexistant y provoque une erreur 500, pas une réponse
@@ -192,6 +199,72 @@ class Client:
                 break
         raise Unavailable(f"recherche de la décision {number} incomplète ({read} résultats "
                           f"lus sur {total})")
+
+    def _text_search(self, champs, filtres=(), pagination="DEFAUT"):
+        """Tous les résultats d'une recherche dans LODA_ETAT, ou Unavailable."""
+        results, read = [], 0
+        for page in range(1, MAX_PAGES + 1):
+            data = self._post("/search", {"fond": "LODA_ETAT", "recherche": {
+                "champs": [{"typeChamp": t, "operateur": "ET", "criteres": [
+                    {"typeRecherche": "EXACTE", "valeur": v, "operateur": "ET"}]}
+                    for t, v in champs],
+                "filtres": list(filtres), "pageNumber": page, "pageSize": PAGE_SIZE,
+                "operateur": "ET", "sort": "PERTINENCE", "typePagination": pagination}})
+            page_results = data.get("results") or []
+            total = data.get("totalResultNumber") or 0
+            results += page_results
+            read += len(page_results)
+            if read >= total:
+                return results
+            if not page_results:
+                break
+        raise Unavailable(f"recherche de texte incomplète ({read} résultats lus sur {total})")
+
+    def texts_by_number(self, number):
+        """[(identifiant LEGITEXT, titre)] des textes portant ce numéro (« 89-462 »)."""
+        out = {}
+        for r in self._text_search([("NUM", number)]):
+            t = (r.get("titles") or [{}])[0]
+            if t.get("id"):
+                out[t["id"].split("_")[0]] = _strip_html(t.get("title") or "")
+        return sorted(out.items())
+
+    def texts_by_title(self, words, nature):
+        """[(identifiant, titre)] des textes de cette nature (LOI, ORDONNANCE, DECRET) dont le
+        titre contient ces mots (« 6 juillet 1989 »)."""
+        out = {}
+        for r in self._text_search([("TITLE", words)],
+                                   [{"facette": "NATURE", "valeurs": [nature]}]):
+            t = (r.get("titles") or [{}])[0]
+            if t.get("id"):
+                out[t["id"].split("_")[0]] = _strip_html(t.get("title") or "")
+        return sorted(out.items())
+
+    def text_article_versions(self, text_number, text_id, number):
+        """Toutes les versions de l'article `number` du texte `text_id` (numéro
+        `text_number`), comme versions() pour un code. Liste vide si aucune."""
+        found = set()
+        for r in self._text_search([("NUM", text_number), ("NUM_ARTICLE", number)],
+                                   pagination="ARTICLE"):
+            if not any((t.get("id") or "").split("_")[0] == text_id or t.get("cid") == text_id
+                       for t in r.get("titles") or []):
+                continue
+            for section in r.get("sections") or []:
+                for ext in section.get("extracts") or []:
+                    if ext.get("num") == number and ext.get("id"):
+                        found.add(ext["id"])
+        if not found:
+            return []
+        article = self._post("/consult/getArticle", {"id": sorted(found)[0]}).get("article") or {}
+        complete = [{"id": v.get("id"), "etat": v.get("etat"), "debut": _day(v.get("dateDebut")),
+                     "fin": _day(v.get("dateFin"))}
+                    for v in article.get("articleVersions") or [] if v.get("id")]
+        if len(complete) < len(found):
+            raise Unavailable(f"liste des versions de l'article {number} incohérente")
+        # La fiche liste aussi l'article tel que publié au Journal officiel (JORFARTI...),
+        # sans date : ce n'est pas une version consolidée.
+        complete = [v for v in complete if not v["id"].startswith("JORFARTI")]
+        return sorted(complete, key=lambda v: v["debut"])
 
     def convention(self, idcc):
         """(titre, identifiants des textes de base) de la convention, ou None si Légifrance ne

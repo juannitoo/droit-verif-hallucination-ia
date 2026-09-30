@@ -133,9 +133,17 @@ def _check_one(client, citation, day, texts):
     if code not in codes:
         return "NOT_TESTED", f"{code} : code inconnu de Légifrance", None
     versions = client.versions(code, codes[code], number)
+    return verdict_versions(client, citation, day, texts, versions, f"le {code}")
+
+
+def verdict_versions(client, citation, day, texts, versions, where):
+    """Le verdict d'un article d'après la liste COMPLÈTE de ses versions : existe-t-il, en
+    vigueur à la date de référence, et le texte cité est-il celui de cette version ? `where` :
+    « le Code civil », « la loi n° 89-462 »."""
+    number = citation["number"]
     if not versions:
         return ("ARTICLE_NOT_FOUND",
-                f"aucun article {number} trouvé dans le {code}, à aucune date : il ne semble "
+                f"aucun article {number} trouvé dans {where}, à aucune date : il ne semble "
                 "pas exister ; à vérifier sur Légifrance", None)
 
     current = version_at(versions, day)

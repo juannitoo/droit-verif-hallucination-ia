@@ -1,0 +1,86 @@
+{
+  "country": "france",
+  "source": "Lois et ordonnances non codifiées, lues au 2026-09-30 (relevé dans Légifrance le 30/09/2026)",
+  "options": {
+    "reference_date": "2026-09-30"
+  },
+  "citations": [
+    {
+      "kind": "text_article",
+      "order": "legislation",
+      "court": "Loi n° 89-462",
+      "text_nature": "LOI",
+      "text_number": "89-462",
+      "text_date": "1989-07-06",
+      "number": "22",
+      "cited_date": null,
+      "expected": "ARTICLE_IN_FORCE"
+    },
+    {
+      "kind": "text_article",
+      "order": "legislation",
+      "court": "Loi",
+      "text_nature": "LOI",
+      "text_number": null,
+      "text_date": "1965-07-10",
+      "number": "14",
+      "cited_date": null,
+      "expected": "ARTICLE_IN_FORCE"
+    },
+    {
+      "kind": "text_article",
+      "order": "legislation",
+      "court": "Loi",
+      "text_nature": "LOI",
+      "text_number": null,
+      "text_date": "1989-07-06",
+      "number": "25-3",
+      "cited_date": null,
+      "expected": "ARTICLE_IN_FORCE"
+    },
+    {
+      "kind": "text_article",
+      "order": "legislation",
+      "court": "Loi n° 89-462",
+      "text_nature": "LOI",
+      "text_number": "89-462",
+      "text_date": "1989-07-07",
+      "number": "3",
+      "cited_date": null,
+      "expected": "WRONG_DATE"
+    },
+    {
+      "kind": "text_article",
+      "order": "legislation",
+      "court": "Loi n° 65-557",
+      "text_nature": "LOI",
+      "text_number": "65-557",
+      "text_date": "1965-07-10",
+      "number": "999",
+      "cited_date": null,
+      "expected": "ARTICLE_NOT_FOUND"
+    },
+    {
+      "kind": "text_article",
+      "order": "legislation",
+      "court": "Loi n° 89-9999",
+      "text_nature": "LOI",
+      "text_number": "89-9999",
+      "text_date": "1989-07-06",
+      "number": "1",
+      "cited_date": null,
+      "expected": "TEXT_NOT_FOUND"
+    },
+    {
+      "kind": "text_article",
+      "order": "legislation",
+      "court": "Ordonnance n° 2016-131",
+      "text_nature": "ORDONNANCE",
+      "text_number": "2016-131",
+      "text_date": "2016-02-10",
+      "number": "1",
+      "cited_date": null,
+      "expected": "ARTICLE_IN_FORCE"
+    }
+  ]
+}

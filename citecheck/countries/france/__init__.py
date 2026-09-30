@@ -21,6 +21,7 @@ from datetime import date
 
 from . import codes, other_courts, sources
 from .articles import check_articles
+from .texts import check_text_articles
 from .conventions import check_convention_articles
 from .lower_courts import Courts, check_lower_courts
 from .extract import extract
@@ -73,6 +74,10 @@ LEGI_FAKE = [("Code du travail", "L9999-99"), ("Code civil", "9999")]
 # (IDCC, numéro, nombre minimal de versions) : HCR, article 21 remplacé le 13/07/2004.
 KALI_REAL = [("1979", "21", 2)]
 KALI_FAKE = ["9998"]
+# (numéro du texte, article, nombre minimal de versions) : loi de 1989 sur les baux, loi de
+# 1965 sur la copropriété ; un article et un texte inventés.
+LODA_REAL = [("89-462", "22", 4), ("65-557", "14", 3)]
+LODA_FAKE = [("65-557", "999"), ("89-9999", "1")]
 # (numéro, date) : décisions connues, et numéros inventés (vérifiés vides le 29/09/2026).
 CONSTIT_REAL = [("2010-605", "2010-05-12"), ("2010-14/22", "2010-07-30")]
 CONSTIT_FAKE = ["2010-9999", "2019-9999"]
@@ -421,7 +426,7 @@ def selftest_lower(key, jurisdictions, log):
     return ok
 
 
-def selftest_legifrance(client, log, with_codes, with_conventions):
+def selftest_legifrance(client, log, with_codes, with_conventions, with_texts=False):
     ok = True
     try:
         if with_codes:
@@ -435,6 +440,21 @@ def selftest_legifrance(client, log, with_codes, with_conventions):
                 good = code in codes and client.versions(code, codes[code], number) == []
                 ok &= good
                 log(_line(good, f"Légifrance ne doit pas trouver {code}, article {number}"))
+        if with_texts:
+            for text_number, number, minimum in LODA_REAL:
+                found = client.texts_by_number(text_number)
+                good = (len(found) == 1 and len(client.text_article_versions(
+                    text_number, found[0][0], number)) >= minimum)
+                ok &= good
+                log(_line(good, f"Légifrance doit trouver l'article {number} du texte n° "
+                                f"{text_number}"))
+            for text_number, number in LODA_FAKE:
+                found = client.texts_by_number(text_number)
+                good = not found or client.text_article_versions(
+                    text_number, found[0][0], number) == []
+                ok &= good
+                log(_line(good, f"Légifrance ne doit pas trouver l'article {number} du texte "
+                                f"n° {text_number}"))
         if with_conventions:
             for idcc, number, minimum in KALI_REAL:
                 conv = client.convention(idcc)
@@ -453,7 +473,7 @@ def selftest_legifrance(client, log, with_codes, with_conventions):
     return ok
 
 
-LEGISLATION = ("article", "convention_article")
+LEGISLATION = ("article", "convention_article", "text_article")
 
 
 def _check_legislation(citations, keys, day, idcc, log):
@@ -469,14 +489,18 @@ def _check_legislation(citations, keys, day, idcc, log):
     client = Client(cid, secret)
     kinds = {c["kind"] for c in citations}
     log("Contrôle de Légifrance avant de juger :")
-    if not selftest_legifrance(client, log, "article" in kinds, "convention_article" in kinds):
+    if not selftest_legifrance(client, log, "article" in kinds, "convention_article" in kinds,
+                               "text_article" in kinds):
         why = "Légifrance n'a pas passé ses contrôles : aucun verdict possible"
         return [("NOT_TESTED", why, None)] * len(citations)
     codes = iter(check_articles([c for c in citations if c["kind"] == "article"],
                                 client, day, log))
     conventions = iter(check_convention_articles(
         [c for c in citations if c["kind"] == "convention_article"], client, day, idcc))
-    return [next(codes) if c["kind"] == "article" else next(conventions) for c in citations]
+    laws = iter(check_text_articles(
+        [c for c in citations if c["kind"] == "text_article"], client, day))
+    kinds = {"article": codes, "convention_article": conventions, "text_article": laws}
+    return [next(kinds[c["kind"]]) for c in citations]
 
 
 def prepare(keys, log=lambda s: None):

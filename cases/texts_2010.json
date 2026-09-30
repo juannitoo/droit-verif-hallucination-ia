@@ -1,0 +1,31 @@
+{
+  "country": "france",
+  "source": "Lois et ordonnances non codifiées, lues au 2010-06-01 (relevé dans Légifrance le 30/09/2026)",
+  "options": {
+    "reference_date": "2010-06-01"
+  },
+  "citations": [
+    {
+      "kind": "text_article",
+      "order": "legislation",
+      "court": "Loi n° 89-462",
+      "text_nature": "LOI",
+      "text_number": "89-462",
+      "text_date": "1989-07-06",
+      "number": "22",
+      "cited_date": null,
+      "expected": "ARTICLE_IN_FORCE"
+    },
+    {
+      "kind": "text_article",
+      "order": "legislation",
+      "court": "Ordonnance n° 2016-131",
+      "text_nature": "ORDONNANCE",
+      "text_number": "2016-131",
+      "text_date": "2016-02-10",
+      "number": "1",
+      "cited_date": null,
+      "expected": "ARTICLE_NOT_IN_FORCE"
+    }
+  ]
+}

@@ -526,12 +526,61 @@ def assign_quotes(text, spans):
     return {i: body for i, (_, body) in best.items()}
 
 
+# Lois, ordonnances et décrets non codifiés : « loi n° 89-462 du 6 juillet 1989 », « loi
+# 89-462 », « loi du 6 juillet 1989 », « décret n°67-223 ». Un numéro ou une date est exigé :
+# « la loi » seule ne désigne rien.
+_TEXT_REF = (r"(?P<nature>loi(?:\s+organique)?|ordonnance|d[ée]cret(?:-loi)?)"
+             r"(?:\s*n[°ºo]\s*(?P<num>\d{2,4}-\d{1,5})|\s+(?P<num2>\d{2,4}-\d{1,5}))?"
+             r"(?:\s*,?\s+du\s+(?P<day>1er|\d{1,2})\s+(?P<month>" + "|".join(MONTHS) +
+             r")\s+(?P<year>\d{4}))?")
+RE_TEXT_AFTER = re.compile(r"^\W{0,3}(?:de\s+la\s+|du\s+|de\s+l['’]\s*)?" + _TEXT_REF, re.I)
+RE_TEXT_BEFORE = re.compile(r"(?:^|\W)" + _TEXT_REF + r"[\s,;:]*$", re.I)
+RE_SAME_TEXT = re.compile(r"^\W{0,3}(?:de\s+la\s+(?:même\s+)?|de\s+ladite\s+|de\s+cette\s+|du\s+"
+                          r"(?:même\s+)?|dudit\s+|de\s+ce\s+)(?P<nature>loi|ordonnance|d[ée]cret)"
+                          r"(?:\s+(?:précitée?|susvisée?))?\b", re.I)
+TEXT_BEFORE = 100
+TEXT_NATURES = {"loi": "LOI", "loi organique": "LOI", "ordonnance": "ORDONNANCE",
+                "décret": "DECRET", "decret": "DECRET", "décret-loi": "DECRET",
+                "decret-loi": "DECRET"}
+
+
+def _text_ref(m):
+    """{nature, number, date} d'un texte nommé, ou None s'il n'a ni numéro ni date."""
+    if not m:
+        return None
+    number = m.group("num") or m.group("num2")
+    day = _iso(re.match(r"(\d{1,2})(?:er)?\s+(\S+)\s+(\d{4})",
+                        f"{1 if m.group('day').lower() == '1er' else m.group('day')} "
+                        f"{m.group('month')} {m.group('year')}")) if m.group("day") else None
+    if not number and not day:
+        return None
+    nature = TEXT_NATURES[" ".join(m.group("nature").lower().split())]
+    return {"text_nature": nature, "text_number": number, "text_date": day}
+
+
+MONTH_NAMES = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août",
+               "septembre", "octobre", "novembre", "décembre"]
+
+
+def in_words(iso):
+    """« 1989-07-06 » -> « 6 juillet 1989 », comme dans les titres de Légifrance."""
+    year, month, day = iso.split("-")
+    return f"{'1er' if day == '01' else int(day)} {MONTH_NAMES[int(month) - 1]} {year}"
+
+
+def _text_label(ref):
+    """« Loi n° 89-462 du 6 juillet 1989 », pour le rapport."""
+    name = {"LOI": "Loi", "ORDONNANCE": "Ordonnance", "DECRET": "Décret"}[ref["text_nature"]]
+    return (name + (f" n° {ref['text_number']}" if ref["text_number"] else "")
+            + (f" du {in_words(ref['text_date'])}" if ref["text_date"] else ""))
+
+
 def extract_articles(text):
     """Renvoie (citations d'articles, remarques)."""
     matches = list(RE_ARTICLES.finditer(text))
     quotes = assign_quotes(text, [(m.start(), m.end()) for m in matches])
     citations, seen, no_code, attached = [], set(), [], []
-    last_code = last_idcc = None
+    last_code = last_idcc = last_text = None
     for index, m in enumerate(matches):
         after = text[m.end(): m.end() + CODE_AFTER]
         before = text[max(0, m.start() - CODE_BEFORE): m.start()]
@@ -553,6 +602,27 @@ def extract_articles(text):
                                   "court": f"IDCC {idcc}" if idcc else "convention collective",
                                   "idcc": idcc, "number": number, "cited_date": None,
                                   "quote": quote, "span": m.span()})
+            continue
+
+        # Un article de loi, d'ordonnance ou de décret non codifié.
+        ref = _text_ref(RE_TEXT_AFTER.match(after))
+        same = RE_SAME_TEXT.match(after)
+        if not ref and same and last_text and (TEXT_NATURES[same.group("nature").lower()]
+                                               == last_text["text_nature"]):
+            ref = last_text
+        if not ref and not find_code(before, last=True):
+            ref = _text_ref(RE_TEXT_BEFORE.search(text, max(0, m.start() - TEXT_BEFORE),
+                                                  m.start()))
+        if ref:
+            last_text = ref
+            for number in numbers:
+                key = ("text", ref["text_nature"], ref["text_number"], ref["text_date"], number)
+                if key in seen:
+                    continue
+                seen.add(key)
+                citations.append({"kind": "text_article", "order": "legislation",
+                                  "court": _text_label(ref), **ref, "number": number,
+                                  "cited_date": None, "quote": quote, "span": m.span()})
             continue
 
         code = None
@@ -585,9 +655,9 @@ def extract_articles(text):
     if no_code:
         remarks.append(f"{len(no_code)} article(s) cité(s) sans code reconnu : "
                        f"{', '.join(no_code[:12])}{'...' if len(no_code) > 12 else ''}. "
-                       "Ce sont souvent des articles de lois ou de décrets non codifiés, que "
-                       "ce programme ne vérifie pas ; ou d'un code qu'il ne reconnaît pas "
-                       "encore.")
+                       "Ni code ni texte identifiable à côté : une loi ou un décret cité sans "
+                       "numéro ni date, un arrêté, ou un code que ce programme ne reconnaît "
+                       "pas encore. Non vérifiés.")
     if attached:
         remarks.append(f"{len(attached)} article(s) d'avenant ou d'accord collectif : "
                        f"{', '.join(attached[:12])}. Seul le texte de base des conventions "

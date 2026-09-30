@@ -295,7 +295,9 @@ class Articles(unittest.TestCase):
             ("Code du travail", "L1234-5"), ("Code civil", "1240"),
             ("Code du travail", "L1152-1"), ("Code de procédure civile", "700"),
             ("Code civil", "1382")])
-        self.assertTrue(any("22" in r for r in remarks))    # la loi : signalée, pas devinée
+        # La loi : relevée comme article de loi, jamais attribuée à un code.
+        self.assertEqual([(c["text_date"], c["number"]) for c in citations
+                          if c["kind"] == "text_article"], [("1989-07-06", "22")])
 
     def test_each_quote_goes_to_one_citation(self):
         citations, _ = extract(self.TEXT)
@@ -574,6 +576,93 @@ class Succession(unittest.TestCase):
 
     def test_in_none(self):
         self.assertEqual(self.check({}, {})[0], "ARTICLE_NOT_FOUND")
+
+
+class UncodifiedTexts(unittest.TestCase):
+    """Articles of laws, ordinances and decrees that are not in a code."""
+    V = [{"id": "x", "etat": "VIGUEUR", "debut": "2014-03-27", "fin": "2999-01-01"}]
+
+    class Fake:
+        def __init__(self, texts):
+            self.texts = texts      # {id: (title, {article: versions})}
+
+        def texts_by_number(self, number):
+            return [(i, t) for i, (t, _) in self.texts.items() if f"n° {number} " in t]
+
+        def texts_by_title(self, words, nature):
+            return [(i, t) for i, (t, _) in self.texts.items() if words in t]
+
+        def text_article_versions(self, text_number, text_id, number):
+            return self.texts[text_id][1].get(number, [])
+
+    def check(self, texts, **citation):
+        from citecheck.countries.france.texts import check_text_article
+        c = {"kind": "text_article", "text_nature": "LOI", "text_number": None,
+             "text_date": None, "number": "22", **citation}
+        return check_text_article(self.Fake(texts), c, "2026-09-30", {})
+
+    def test_by_number(self):
+        texts = {"A": ("Loi n° 89-462 du 6 juillet 1989 tendant", {"22": self.V})}
+        self.assertEqual(self.check(texts, text_number="89-462")[0], "ARTICLE_IN_FORCE")
+        verdict, why, _ = self.check(texts, text_number="89-462", text_date="1989-07-07")
+        self.assertEqual(verdict, "WRONG_DATE")
+        self.assertIn("datée du 1989-07-06, pas du 1989-07-07", why)
+        self.assertEqual(self.check(texts, text_number="89-9999")[0], "TEXT_NOT_FOUND")
+        self.assertEqual(self.check(texts, text_number="89-462", number="999")[0],
+                         "ARTICLE_NOT_FOUND")
+
+    def test_by_date_shows_which_one(self):
+        texts = {"A": ("Loi n° 89-461 du 6 juillet 1989 modifiant", {}),
+                 "B": ("Loi n° 89-462 du 6 juillet 1989 tendant", {"22": self.V}),
+                 "C": ("Loi n° 90-1 du 2 janvier 1990 modifiant la loi n° 89-462 du 6 juillet "
+                       "1989", {"22": self.V})}
+        verdict, why, _ = self.check(texts, text_date="1989-07-06")
+        self.assertEqual(verdict, "ARTICLE_IN_FORCE")
+        self.assertIn("désigne 2 textes", why)          # C is not OF that date
+        self.assertIn("il n'existe que dans la loi n° 89-462", why)
+
+    def test_by_date_does_not_choose(self):
+        texts = {"A": ("Loi n° 89-461 du 6 juillet 1989 x", {"22": self.V}),
+                 "B": ("Loi n° 89-462 du 6 juillet 1989 y", {"22": self.V})}
+        verdict, why, _ = self.check(texts, text_date="1989-07-06")
+        self.assertEqual(verdict, "DOUBTFUL")
+        self.assertIn("à vous de dire", why)
+
+    def test_a_text_later_than_the_facts(self):
+        from citecheck.countries.france.texts import check_text_article
+        texts = {"A": ("Ordonnance n° 2016-131 du 10 février 2016 portant", {"1": [
+            {"id": "x", "etat": "VIGUEUR", "debut": "2016-10-01", "fin": "2999-01-01"}]})}
+        c = {"kind": "text_article", "text_nature": "ORDONNANCE", "text_number": "2016-131",
+             "text_date": None, "number": "1"}
+        verdict, why, _ = check_text_article(self.Fake(texts), c, "2010-06-01", {})
+        self.assertEqual(verdict, "ARTICLE_NOT_IN_FORCE")
+        self.assertIn("le texte n'existait pas encore le 2010-06-01", why)
+        self.assertIn("en vigueur depuis le 2016-10-01", why)
+        self.assertIn("l'ordonnance n° 2016-131", why)
+
+    def test_nature_must_match(self):
+        texts = {"A": ("Décret n° 89-462 du 6 juillet 1989 x", {"22": self.V})}
+        self.assertEqual(self.check(texts, text_number="89-462")[0], "TEXT_NOT_FOUND")
+
+    def test_extraction(self):
+        for text, ref in [
+                ("Article 22 de la loi n° 89-462 du 6 juillet 1989.", ("LOI", "89-462", "1989-07-06")),
+                ("article 14 de la loi du 10 juillet 1965.", ("LOI", None, "1965-07-10")),
+                ("Loi n° 89-462 du 6 juillet 1989, art. 22.", ("LOI", "89-462", "1989-07-06")),
+                ("article 1er de l'ordonnance n° 2016-131 du 10 février 2016",
+                 ("ORDONNANCE", "2016-131", "2016-02-10")),
+                ("article 5 du décret n°67-223 du 17 mars 1967", ("DECRET", "67-223", "1967-03-17")),
+                ("article 3 de la loi 89-462", ("LOI", "89-462", None)),
+                ("article 1er de la loi organique n° 2009-1523 du 10 décembre 2009",
+                 ("LOI", "2009-1523", "2009-12-10"))]:
+            c = extract(text)[0][0]
+            self.assertEqual((c["kind"], c["text_nature"], c["text_number"], c["text_date"]),
+                             ("text_article",) + ref, text)
+        self.assertEqual(extract("l'article 22 de la loi prévoit")[0], [])
+        cits = extract("article 5 du décret n°67-223, puis l'article 6 du même décret, et "
+                       "l'article 7 de la même loi.")[0]
+        self.assertEqual([(c["text_number"], c["number"]) for c in cits],
+                         [("67-223", "5"), ("67-223", "6")])     # « même loi » : pas un décret
 
 
 class Location(unittest.TestCase):
