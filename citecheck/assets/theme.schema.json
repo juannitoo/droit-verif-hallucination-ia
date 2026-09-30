@@ -1,0 +1,87 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Thème de droit-verif-hallucination-ia",
+  "description": "Décrit theme.json pour que VS Code affiche un carré de couleur cliquable devant chaque couleur.",
+  "type": "object",
+  "definitions": {
+    "couleur": {
+      "type": "object",
+      "required": ["couleur"],
+      "properties": {
+        "couleur": {
+          "type": "string",
+          "format": "color-hex",
+          "pattern": "^#[0-9a-fA-F]{6}$",
+          "description": "Cliquez sur le petit carré de couleur juste avant la valeur pour la choisir à la souris."
+        },
+        "role": {
+          "type": "string",
+          "description": "Où cette couleur apparaît dans l'interface (texte d'explication, sans effet)."
+        }
+      }
+    }
+  },
+  "properties": {
+    "mode_d_emploi": { "type": "string" },
+    "couleurs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": { "$ref": "#/definitions/couleur" }
+      }
+    },
+    "barre_d_etat": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/couleur" }
+    },
+    "arrondis": {
+      "type": "object",
+      "description": "Arrondi des coins, en pixels (0 = coins carrés).",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["px"],
+        "properties": {
+          "px":   { "type": "integer", "minimum": 0, "description": "Rayon de l'arrondi des coins, en pixels. 0 = coins carrés." },
+          "role": { "type": "string", "description": "Où cet arrondi s'applique (texte d'explication, sans effet)." }
+        }
+      }
+    },
+    "marges_interieures": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["px"],
+        "properties": {
+          "px":   { "type": "integer", "minimum": 0, "description": "Espace en pixels." },
+          "role": { "type": "string", "description": "Où cet espace s'applique (texte d'explication, sans effet)." }
+        }
+      }
+    },
+    "epaisseurs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["px"],
+        "properties": {
+          "px":   { "type": "integer", "minimum": 0, "maximum": 16, "description": "Épaisseur en pixels (16 au maximum : la hauteur du curseur)." },
+          "role": { "type": "string", "description": "Où cette épaisseur s'applique (texte d'explication, sans effet)." }
+        }
+      }
+    },
+    "polices": {
+      "type": "object",
+      "properties": {
+        "famille": { "type": "string", "description": "Nom de la police (ex. Roboto, Segoe UI)." },
+        "small":   { "type": "integer", "description": "Petits textes : aides grises, boutons Mini / Plein." },
+        "body":    { "type": "integer", "description": "Texte normal : libellés, champs, boutons, conversation." },
+        "title":   { "type": "integer", "description": "Noms des onglets." }
+      }
+    },
+    "espacements": {
+      "type": "object",
+      "description": "Marges en pixels, du plus petit au plus grand.",
+      "additionalProperties": { "type": "integer" }
+    },
+    "taille_icones": { "type": "integer", "description": "Taille des icônes des boutons, en pixels." }
+  }
+}

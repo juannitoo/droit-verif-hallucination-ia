@@ -32,6 +32,8 @@ et Kimi K3 le 29 septembre 2026, puis par Grok 4.7 le 30 septembre 2026 (sécuri
 des fichiers reçus, ce qui part sur le réseau, rapport sans extraits, base locale). Il reste
 à le vérifier sur des cas réels qui n'ont pas servi lors de la conception.
 
+Code écrit avec Claude Opus 5.5 (Claude Code, Anthropic), sous la direction de Jean BALANGUE.
+
 ## Ce qu'il ne vérifie pas
 
 - les décisions des tribunaux administratifs : aucune base en ligne ne permet à un

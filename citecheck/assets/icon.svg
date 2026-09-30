@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Icône de droit-verif-hallucination-ia : fichier source, à retoucher dans Illustrator.
+  Fond : carré arrondi, dégradé du bleu d'accent (#3885eb) au bleu foncé (#065285) du thème.
+  Balance : icône « scale » de Lucide 1.45.0 (licence ISC, voir icons/LICENSE-lucide.txt),
+  tracé d'origine sur une grille 24 × 24, agrandi ici, trait blanc arrondi.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="degrade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3885eb"/>
+      <stop offset="1" stop-color="#065285"/>
+    </linearGradient>
+  </defs>
+  <g id="fond">
+    <rect x="40" y="40" width="944" height="944" rx="230" ry="230" fill="url(#degrade)"/>
+  </g>
+  <g id="balance" transform="translate(512 512) scale(37.8) translate(-12 -12)"
+     fill="none" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"
+     stroke-linejoin="round">
+    <path id="fut" d="M12 3v18"/>
+    <path id="plateau-droit" d="m19 8 3 8a5 5 0 0 1-6 0zV7"/>
+    <path id="fleau" d="M3 7h1a17 17 0 0 0 8-2 17 17 0 0 0 8 2h1"/>
+    <path id="plateau-gauche" d="m5 8 3 8a5 5 0 0 1-6 0zV7"/>
+    <path id="pied" d="M7 21h10"/>
+  </g>
+</svg>

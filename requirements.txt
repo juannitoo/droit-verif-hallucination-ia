@@ -2,3 +2,4 @@
 # (pip-audit). Les versions exactes, avec empreintes, sont figées au moment de compiler.
 pypdf>=6.19.0
 keyring>=25.7.0
+customtkinter==5.2.2     # la fenêtre, avec le style de l'assistant vocal (même version)

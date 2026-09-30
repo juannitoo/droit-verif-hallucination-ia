@@ -1,24 +1,30 @@
-"""The window, in two tabs: "check" (pick a document, read the report) and "keys" (enter
-your access keys once). On first launch, with no key saved, it opens on the keys tab.
+"""The window, in three tabs: "check" (pick a document, read the report), "keys" (enter your
+access keys once) and "scope" (what is checked, and what is not). On first launch, with no
+key saved, it opens on the keys tab.
 
-tkinter ships with Python: no extra dependency, and it behaves the same on Windows and
-macOS. The check runs in a separate thread so the window does not freeze during network
-calls.
+customtkinter, on top of the tkinter that ships with Python, with the voice assistant's look
+(theme.py, assets/theme.json). The check runs in a separate thread so the window does not
+freeze during network calls.
 """
 import queue
+import sys
 import threading
 import tkinter as tk
 import webbrowser
-from tkinter import filedialog, ttk
-from tkinter.scrolledtext import ScrolledText
+from tkinter import filedialog
 
-from . import keys, reader, report
+import customtkinter as ctk
+
+from . import keys, reader, report, theme
 from .countries import COUNTRIES, DEFAULT
 from .engine import check_document, valid_date
 from .locales import t
 
-LINK = "#1a55a0"
-MUTED = "#555"
+# Before any widget: customtkinter widgets read the theme when they are built.
+theme.apply()
+C = theme.COLORS
+XS, SM, MD, LG = (theme.SPACING[k] for k in ("xs", "sm", "md", "lg"))
+WRAP = 820          # px: help texts wrap at the width of the tab
 
 
 class Window:
@@ -28,147 +34,263 @@ class Window:
         self.document = None
         self.last = None
         self.queue = queue.Queue()
+        self.f_small = theme.font("small")
+        self.f_body = theme.font("body")
+        self.f_bold = theme.font("body", "bold")
+        self.f_title = theme.font("title", "bold")
+        self.f_mono = ctk.CTkFont(family="Consolas", size=theme.FONT_SIZES["body"] - 1)
         root.title(t.TITLE)
-        root.geometry("820x640")
-        root.minsize(600, 440)
+        self._set_icon()
+        root.geometry("960x700")
+        root.minsize(640, 480)
+        root.grid_rowconfigure(0, weight=1)
+        root.grid_columnconfigure(0, weight=1)
 
-        self.tabs = ttk.Notebook(root)
-        self.tabs.pack(fill="both", expand=True, padx=8, pady=8)
-        self.check_tab = ttk.Frame(self.tabs, padding=12)
-        self.keys_tab = ttk.Frame(self.tabs, padding=12)
-        self.tabs.add(self.check_tab, text=t.TAB_CHECK)
-        self.scope_tab = ttk.Frame(self.tabs, padding=12)
-        self.tabs.add(self.keys_tab, text=t.TAB_KEYS)
-        self.tabs.add(self.scope_tab, text=t.TAB_SCOPE)
+        self.tabs = ctk.CTkTabview(root)
+        self.tabs.grid(row=0, column=0, padx=SM, pady=SM, sticky="nsew")
+        for name in (t.TAB_CHECK, t.TAB_KEYS, t.TAB_SCOPE):
+            self.tabs.add(name)
+        self.tabs._segmented_button.configure(font=self.f_title)
+        # CTkTabview has no option for the room around a tab's name: it goes on the label.
+        for button in self.tabs._segmented_button._buttons_dict.values():
+            button._text_label.configure(
+                padx=button._apply_widget_scaling(theme.PADDINGS["onglets_menu"]))
+        self.check_tab = self.tabs.tab(t.TAB_CHECK)
+        self.keys_tab = self.tabs.tab(t.TAB_KEYS)
+        self.scope_tab = self.tabs.tab(t.TAB_SCOPE)
 
         self._build_check_tab()
         self._build_keys_tab()
         self._build_scope_tab()
         self.show_key_status()
         if not self._all_keys_present():
-            self.tabs.select(self.keys_tab)
+            self.tabs.set(t.TAB_KEYS)
+
+    def _set_icon(self):
+        """The blue scales (assets/make_icon.py), instead of customtkinter's own square. A
+        .ico on Windows, sharp at every size; a PNG elsewhere."""
+        try:
+            if sys.platform == "win32":
+                self.root.iconbitmap(str(theme.ASSETS / "icon.ico"))
+                # Tk takes the 16-px image and Windows enlarges it: blurred at 200 %.
+                # Once the window exists, hand Windows the sizes it asks for on this screen.
+                self.root.after(300, self._win_icon_exact)
+            else:
+                self._icon = tk.PhotoImage(master=self.root, file=str(theme.ASSETS / "icon.png"))
+                self.root.iconphoto(True, self._icon)
+        except tk.TclError:
+            pass            # no icon is better than no window
+
+    def _win_icon_exact(self):
+        import ctypes
+        user32 = ctypes.windll.user32
+        user32.LoadImageW.restype = ctypes.c_void_p
+        user32.GetParent.restype = ctypes.c_void_p
+        user32.SendMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p,
+                                        ctypes.c_void_p]
+        try:
+            hwnd = user32.GetParent(self.root.winfo_id())
+            dpi = user32.GetDpiForWindow(ctypes.c_void_p(hwnd)) or 96
+            path = str(theme.ASSETS / "icon.ico")
+            # WM_SETICON, ICON_SMALL (title bar) then ICON_BIG (taskbar, Alt+Tab)
+            for kind, metric in ((0, 49), (1, 11)):     # SM_CXSMICON, SM_CXICON
+                size = user32.GetSystemMetricsForDpi(metric, dpi)
+                handle = user32.LoadImageW(None, path, 1, size, size, 0x10)  # LR_LOADFROMFILE
+                if handle:
+                    user32.SendMessageW(ctypes.c_void_p(hwnd), 0x80, ctypes.c_void_p(kind),
+                                        ctypes.c_void_p(handle))
+        except (AttributeError, OSError):
+            pass            # Windows older than 10: Tk's icon stays
+
+    # Small helpers, in the voice assistant's vocabulary
+
+    def _hint(self, parent, text, **kw):
+        """Grey help text under a field."""
+        return ctk.CTkLabel(parent, text=text, font=self.f_small, text_color=C["text_muted"],
+                            wraplength=WRAP, justify="left", anchor="w", **kw)
+
+    def _neutral(self, parent, text="", icon=None, **kw):
+        """Secondary button, grey: the accent colour is kept for the main actions."""
+        kw.setdefault("fg_color", C["neutral"])
+        kw.setdefault("hover_color", C["neutral_hover"])
+        kw.setdefault("height", 32)
+        if icon:
+            kw.update(image=theme.icon(self.root, icon), compound="left")
+        return ctk.CTkButton(parent, text=text, font=self.f_body, **kw)
+
+    def _link(self, parent, text, command):
+        label = ctk.CTkLabel(parent, text=text, font=theme.font("body", underline=True),
+                             text_color=C["accent_text"], cursor="hand2")
+        label.bind("<Button-1>", lambda e: command())
+        return label
+
+    def _separator(self, parent, row):
+        # A plain tk Frame: a 1-px CTkFrame draws nothing (its canvas needs room to round).
+        tk.Frame(parent, height=1, bg=C["border"]).grid(
+            row=row, column=0, columnspan=4, sticky="ew", padx=SM, pady=(LG, 0))
 
     # Tab "check"
 
     def _build_check_tab(self):
         tab = self.check_tab
-        tab.columnconfigure(1, weight=1)
+        tab.grid_columnconfigure(1, weight=1)
 
-        ttk.Label(tab, text=t.DOCUMENT).grid(row=0, column=0, sticky="w")
-        self.doc_label = ttk.Label(tab, text=t.NO_DOCUMENT)
-        self.doc_label.grid(row=0, column=1, sticky="w", padx=8)
-        ttk.Button(tab, text=t.CHOOSE, command=self.choose).grid(row=0, column=2)
+        ctk.CTkLabel(tab, text=t.DOCUMENT, font=self.f_bold).grid(
+            row=0, column=0, sticky="w", padx=(SM, 0), pady=(SM, 0))
+        self.doc_label = ctk.CTkLabel(tab, text=t.NO_DOCUMENT, text_color=C["text_muted"],
+                                      anchor="w")
+        self.doc_label.grid(row=0, column=1, sticky="ew", padx=SM, pady=(SM, 0))
+        self._neutral(tab, t.CHOOSE, icon="folder-open", command=self.choose).grid(
+            row=0, column=2, padx=(0, SM), pady=(SM, 0))
 
-        ttk.Label(tab, text=t.REFERENCE_DATE).grid(row=1, column=0, sticky="w", pady=(10, 0))
-        self.reference = ttk.Entry(tab, width=12)
-        self.reference.grid(row=1, column=1, sticky="w", padx=8, pady=(10, 0))
-        ttk.Label(tab, text=t.REFERENCE_HINT, foreground=MUTED).grid(
-            row=2, column=1, columnspan=2, sticky="w", padx=8)
-        ttk.Label(tab, text=t.IDCC).grid(row=3, column=0, sticky="w", pady=(10, 0))
-        self.idcc = ttk.Entry(tab, width=12)
-        self.idcc.grid(row=3, column=1, sticky="w", padx=8, pady=(10, 0))
-        ttk.Label(tab, text=t.IDCC_HINT, foreground=MUTED).grid(
-            row=4, column=1, columnspan=2, sticky="w", padx=8)
+        ctk.CTkLabel(tab, text=t.REFERENCE_DATE, font=self.f_bold).grid(
+            row=1, column=0, sticky="w", padx=(SM, 0), pady=(MD, 0))
+        self.reference = ctk.CTkEntry(tab, width=130, placeholder_text="AAAA-MM-JJ")
+        self.reference.grid(row=1, column=1, sticky="w", padx=SM, pady=(MD, 0))
+        self._hint(tab, t.REFERENCE_HINT).grid(row=2, column=1, columnspan=2, sticky="w",
+                                               padx=SM)
+        ctk.CTkLabel(tab, text=t.IDCC, font=self.f_bold).grid(
+            row=3, column=0, sticky="w", padx=(SM, 0), pady=(SM, 0))
+        self.idcc = ctk.CTkEntry(tab, width=130)
+        self.idcc.grid(row=3, column=1, sticky="w", padx=SM, pady=(SM, 0))
+        self._hint(tab, t.IDCC_HINT).grid(row=4, column=1, columnspan=2, sticky="w", padx=SM)
 
-        self.key_warning = ttk.Label(tab, text=t.KEYS_MISSING_WARNING, foreground=LINK,
-                                     cursor="hand2", wraplength=700)
-        self.key_warning.grid(row=5, column=0, columnspan=3, sticky="w", pady=(10, 0))
-        self.key_warning.bind("<Button-1>", lambda e: self.tabs.select(self.keys_tab))
+        # The yellow banner of the voice assistant, clickable: it leads to the keys tab.
+        self.key_warning = ctk.CTkFrame(tab, fg_color=C["warning_bg"])
+        self.key_warning.grid(row=5, column=0, columnspan=3, sticky="ew", padx=SM,
+                              pady=(MD, 0))
+        banner = ctk.CTkLabel(self.key_warning, text=t.KEYS_MISSING_WARNING,
+                              text_color=C["warning_text"], wraplength=WRAP, justify="left",
+                              anchor="w", cursor="hand2")
+        banner.pack(fill="x", padx=MD, pady=SM)
+        banner.bind("<Button-1>", lambda e: self.tabs.set(t.TAB_KEYS))
 
-        self.button = ttk.Button(tab, text=t.CHECK, command=self.check, state="disabled")
-        self.button.grid(row=6, column=0, columnspan=3, pady=12)
+        self.button = ctk.CTkButton(tab, text=t.CHECK, font=self.f_bold, height=36,
+                                    width=200, command=self.check)
+        self._ready(False)
+        self.button.grid(row=6, column=0, columnspan=3, pady=MD)
 
-        self.output = ScrolledText(tab, wrap="word", font=("Courier", 10), state="disabled")
-        self.output.grid(row=7, column=0, columnspan=3, sticky="nsew")
-        tab.rowconfigure(7, weight=1)
+        self.output = ctk.CTkTextbox(tab, wrap="word", font=self.f_mono, state="disabled")
+        self.output.grid(row=7, column=0, columnspan=3, sticky="nsew", padx=SM)
+        tab.grid_rowconfigure(7, weight=1)
 
-        bottom = ttk.Frame(tab)
-        bottom.grid(row=8, column=0, columnspan=3, pady=(10, 0))
-        self.b_txt = ttk.Button(bottom, text=t.SAVE_TXT, state="disabled",
-                                command=lambda: self.save("txt"))
-        self.b_json = ttk.Button(bottom, text=t.SAVE_JSON, state="disabled",
-                                 command=lambda: self.save("json"))
-        self.b_txt.pack(side="left", padx=4)
-        self.b_json.pack(side="left", padx=4)
+        bottom = ctk.CTkFrame(tab, fg_color="transparent")
+        bottom.grid(row=8, column=0, columnspan=3, sticky="ew", padx=SM, pady=(SM, 0))
+        self.b_txt = self._neutral(bottom, t.SAVE_TXT, state="disabled",
+                                   command=lambda: self.save("txt"))
+        self.b_json = self._neutral(bottom, t.SAVE_JSON, state="disabled",
+                                    command=lambda: self.save("json"))
+        self.b_txt.pack(side="left", padx=(0, SM))
+        self.b_json.pack(side="left", padx=(0, LG))
         # Checked by default: a saved report travels, often to an online AI.
         self.no_excerpts = tk.BooleanVar(value=True)
-        ttk.Checkbutton(tab, text=t.NO_EXCERPTS, variable=self.no_excerpts).grid(
-            row=9, column=0, columnspan=3, pady=(8, 0))
-        ttk.Label(tab, text=t.NO_EXCERPTS_HINT, foreground=MUTED, wraplength=740,
-                  justify="center").grid(row=10, column=0, columnspan=3)
+        ctk.CTkCheckBox(bottom, text=t.NO_EXCERPTS, variable=self.no_excerpts,
+                        font=self.f_body).pack(side="left")
+        self._hint(tab, t.NO_EXCERPTS_HINT).grid(row=9, column=0, columnspan=3, sticky="w",
+                                                 padx=SM, pady=(XS, SM))
 
     # Tab "keys"
 
     def _build_keys_tab(self):
         tab = self.keys_tab
-        tab.columnconfigure(1, weight=1)
-        ttk.Label(tab, text=t.KEYS_EXPLANATION, wraplength=740, justify="left").grid(
-            row=0, column=0, columnspan=3, sticky="w", pady=(0, 12))
+        tab.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(tab, text=t.KEYS_EXPLANATION, wraplength=WRAP, justify="left",
+                     anchor="w").grid(row=0, column=0, columnspan=4, sticky="w", padx=SM,
+                                      pady=(SM, MD))
 
         self.fields = {}
         row = 1
         for name, label in self.country.KEYS.items():
-            ttk.Label(tab, text=label).grid(row=row, column=0, sticky="w", pady=(10, 0))
-            field = ttk.Entry(tab, show="•")
-            field.grid(row=row, column=1, sticky="ew", padx=8, pady=(10, 0))
-            buttons = ttk.Frame(tab)
-            buttons.grid(row=row, column=2, pady=(10, 0))
-            ttk.Button(buttons, text=t.KEY_SAVE,
-                       command=lambda n=name: self.save_key(n)).pack(side="left")
-            ttk.Button(buttons, text=t.KEY_DELETE,
-                       command=lambda n=name: self.delete_key(n)).pack(side="left")
-            status = ttk.Label(tab, foreground=MUTED)
-            status.grid(row=row + 1, column=1, sticky="w", padx=8)
+            ctk.CTkLabel(tab, text=label, font=self.f_bold).grid(
+                row=row, column=0, sticky="w", padx=(SM, 0), pady=(SM, 0))
+            field = ctk.CTkEntry(tab, show="●")
+            field.grid(row=row, column=1, sticky="ew", padx=SM, pady=(SM, 0))
+            buttons = ctk.CTkFrame(tab, fg_color="transparent")
+            buttons.grid(row=row, column=2, sticky="w", padx=(0, SM), pady=(SM, 0))
+            self._reveal(buttons, field).pack(side="left", padx=(0, XS))
+            ctk.CTkButton(buttons, text=t.KEY_SAVE, font=self.f_body, height=32,
+                          command=lambda n=name: self.save_key(n)).pack(side="left",
+                                                                        padx=(0, XS))
+            self._neutral(buttons, icon="trash", width=36, hover_color=C["danger"],
+                          command=lambda n=name: self.delete_key(n)).pack(side="left")
+            status = ctk.CTkLabel(tab, text="", font=self.f_small, anchor="w")
+            status.grid(row=row + 1, column=1, sticky="w", padx=SM)
             self.fields[name] = (field, status)
             row += 2
 
-        help_link = ttk.Label(tab, text=t.KEY_HELP, foreground=LINK, cursor="hand2")
-        help_link.grid(row=row, column=1, sticky="w", padx=8, pady=(12, 0))
-        help_link.bind("<Button-1>", lambda e: webbrowser.open(self.country.KEY_HELP_URL))
+        self._link(tab, t.KEY_HELP, lambda: webbrowser.open(self.country.KEY_HELP_URL)).grid(
+            row=row, column=1, sticky="w", padx=SM, pady=(MD, 0))
         row += 1
 
         # Optional settings (a local database's address): not secret, shown in clear.
         self.settings = {}
         for name, label in getattr(self.country, "SETTINGS", {}).items():
-            ttk.Separator(tab).grid(row=row, column=0, columnspan=3, sticky="ew", pady=(18, 0))
-            ttk.Label(tab, text=label).grid(row=row + 1, column=0, sticky="w", pady=(10, 0))
-            field = ttk.Entry(tab)
+            self._separator(tab, row)
+            ctk.CTkLabel(tab, text=label, font=self.f_bold, text_color=C["accent_text"],
+                         wraplength=260, justify="left").grid(
+                row=row + 1, column=0, sticky="w", padx=(SM, 0), pady=(MD, 0))
+            field = ctk.CTkEntry(tab, placeholder_text="https://…")
             field.insert(0, keys.get(name) or "")
-            field.grid(row=row + 1, column=1, sticky="ew", padx=8, pady=(10, 0))
-            buttons = ttk.Frame(tab)
-            buttons.grid(row=row + 1, column=2, pady=(10, 0))
-            ttk.Button(buttons, text=t.SETTING_SAVE,
-                       command=lambda n=name: self.save_setting(n)).pack(side="left")
-            ttk.Button(buttons, text=t.KEY_DELETE,
-                       command=lambda n=name: self.delete_setting(n)).pack(side="left")
-            status = ttk.Label(tab, foreground=MUTED)
-            status.grid(row=row + 2, column=1, sticky="w", padx=8)
-            ttk.Label(tab, text=self.country.SETTINGS_HELP.get(name, ""), wraplength=740,
-                      justify="left", foreground=MUTED).grid(
-                row=row + 3, column=0, columnspan=3, sticky="w", pady=(6, 0))
+            field.grid(row=row + 1, column=1, sticky="ew", padx=SM, pady=(MD, 0))
+            buttons = ctk.CTkFrame(tab, fg_color="transparent")
+            buttons.grid(row=row + 1, column=2, sticky="w", padx=(0, SM), pady=(MD, 0))
+            ctk.CTkButton(buttons, text=t.SETTING_SAVE, font=self.f_body, height=32,
+                          command=lambda n=name: self.save_setting(n)).pack(side="left",
+                                                                            padx=(0, XS))
+            self._neutral(buttons, icon="trash", width=36, hover_color=C["danger"],
+                          command=lambda n=name: self.delete_setting(n)).pack(side="left")
+            status = ctk.CTkLabel(tab, text="", font=self.f_small, anchor="w",
+                                  wraplength=WRAP - 260, justify="left")
+            status.grid(row=row + 2, column=1, columnspan=2, sticky="w", padx=SM)
+            self._hint(tab, self.country.SETTINGS_HELP.get(name, "")).grid(
+                row=row + 3, column=0, columnspan=4, sticky="w", padx=SM, pady=(SM, 0))
             self.settings[name] = (field, status)
             row += 4
+
+    def _ready(self, on):
+        """The Vérifier button: blue with white text when it can be clicked, all grey when
+        it cannot (customtkinter only greys the text, which looked like a bug on blue)."""
+        self.button.configure(state="normal" if on else "disabled",
+                              fg_color=C["accent"] if on else C["neutral"])
+
+    def _reveal(self, parent, entry):
+        """The eye button of a secret field: shows or hides what was typed."""
+        shown = [False]
+
+        def toggle():
+            shown[0] = not shown[0]
+            entry.configure(show="" if shown[0] else "●")
+            button.configure(image=theme.icon(self.root, "eye-off" if shown[0] else "eye"))
+        button = self._neutral(parent, icon="eye", width=36, command=toggle)
+        return button
 
     # Tab "scope": generated from the country's own lists, so it cannot promise more
     # than the program does.
 
     def _build_scope_tab(self):
-        box = ScrolledText(self.scope_tab, wrap="word", font=("TkDefaultFont", 10))
-        box.pack(fill="both", expand=True)
-        box.tag_configure("heading", font=("TkDefaultFont", 11, "bold"), spacing1=10,
-                          spacing3=4)
+        box = ctk.CTkTextbox(self.scope_tab, wrap="word", font=self.f_body)
+        box.pack(fill="both", expand=True, padx=SM, pady=SM)
+        # CTkTextbox refuses a font on a tag (it could not rescale it): the tag goes on the
+        # tk Text inside.
+        box._textbox.tag_configure("heading", font=self.f_title, foreground=C["accent_text"],
+                                   spacing1=MD, spacing3=XS)
+        # A long line wraps under its own text, not under the bullet.
+        box._textbox.tag_configure("item", lmargin1=SM, spacing3=XS,
+                                   lmargin2=SM + self.f_body.measure("•  "))
         for heading, lines in self.country.scope():
             box.insert("end", heading + "\n", "heading")
             for line in lines:
-                box.insert("end", f"  • {line}\n")
-        box.config(state="disabled")
+                box.insert("end", f"•  {line}\n", "item")
+        box.configure(state="disabled")
 
     def _all_keys_present(self):
         return all(keys.get(name) for name in self.country.KEYS)
 
     def show_key_status(self):
         for name, (field, status) in self.fields.items():
-            status.config(text=t.KEY_PRESENT if keys.get(name) else t.KEY_MISSING)
+            present = keys.get(name)
+            status.configure(text=t.KEY_PRESENT if present else t.KEY_MISSING,
+                             text_color=C["success_text"] if present else C["text_muted"])
         if self._all_keys_present():
             self.key_warning.grid_remove()
         else:
@@ -183,7 +305,7 @@ class Window:
         if keys.save(name, value):
             self.show_key_status()
         else:
-            status.config(text=t.KEY_NO_KEYRING)
+            status.configure(text=t.KEY_NO_KEYRING, text_color=C["danger_text"])
 
     def delete_key(self, name):
         keys.delete(name)
@@ -196,17 +318,19 @@ class Window:
         problem = value and (check(value) if check else
                              None if value.startswith("https://") else t.SETTING_BAD_URL)
         if problem:
-            status.config(text=problem)
+            status.configure(text=problem, text_color=C["danger_text"])
             return
         if not value:
             return self.delete_setting(name)
-        status.config(text=t.SETTING_SAVED if keys.save(name, value) else t.SETTING_NO_KEYRING)
+        saved = keys.save(name, value)
+        status.configure(text=t.SETTING_SAVED if saved else t.SETTING_NO_KEYRING,
+                         text_color=C["success_text"] if saved else C["danger_text"])
 
     def delete_setting(self, name):
         field, status = self.settings[name]
         keys.delete(name)
         field.delete(0, "end")
-        status.config(text=t.SETTING_EMPTY)
+        status.configure(text=t.SETTING_EMPTY, text_color=C["text_muted"])
 
     # Checking
 
@@ -215,16 +339,16 @@ class Window:
             (t.FORMATS, "*.pdf *.docx *.odt *.txt *.md")])
         if path:
             self.document = path
-            self.doc_label.config(text=path)
-            self.button.config(state="normal")
+            self.doc_label.configure(text=path, text_color=C["text"])
+            self._ready(True)
 
     def write(self, text, clear=False):
-        self.output.config(state="normal")
+        self.output.configure(state="normal")
         if clear:
             self.output.delete("1.0", "end")
         self.output.insert("end", text)
         self.output.see("end")
-        self.output.config(state="disabled")
+        self.output.configure(state="disabled")
 
     def check(self):
         reference = self.reference.get().strip() or None
@@ -235,9 +359,9 @@ class Window:
         if idcc and not idcc.isdigit():
             self.write(t.IDCC_INVALID + "\n", clear=True)
             return
-        self.button.config(state="disabled")
-        self.b_txt.config(state="disabled")
-        self.b_json.config(state="disabled")
+        self._ready(False)
+        self.b_txt.configure(state="disabled")
+        self.b_json.configure(state="disabled")
         self.write(t.IN_PROGRESS + "\n\n", clear=True)
 
         def work():
@@ -261,14 +385,14 @@ class Window:
                     self.write(content + "\n")
                 elif kind == "error":
                     self.write("\n" + content + "\n")
-                    self.button.config(state="normal")
+                    self._ready(True)
                     return
                 else:
                     self.last = content
                     self.write(report.to_text(content), clear=True)
-                    self.button.config(state="normal")
-                    self.b_txt.config(state="normal")
-                    self.b_json.config(state="normal")
+                    self._ready(True)
+                    self.b_txt.configure(state="normal")
+                    self.b_json.configure(state="normal")
                     return
         except queue.Empty:
             pass
@@ -286,7 +410,7 @@ class Window:
 
 
 def run():
-    root = tk.Tk()
+    root = ctk.CTk()
     Window(root)
     root.mainloop()
     return 0

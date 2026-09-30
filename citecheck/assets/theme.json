@@ -1,0 +1,69 @@
+{
+  "$schema": "./theme.schema.json",
+  "mode_d_emploi": "Mêmes couleurs que l'assistant vocal. Dans VS Code, un petit carré de couleur apparaît devant chaque code #...... : cliquez dessus pour choisir la couleur à la souris. Le texte « role » dit où la couleur apparaît. Enregistrez, puis relancez le programme pour voir le résultat.",
+
+  "couleurs": {
+    "Fonds": {
+      "bg":            { "couleur": "#1e1e26", "role": "Fond de la fenêtre : la bande tout autour des onglets" },
+      "surface":       { "couleur": "#16161d", "role": "Fond des onglets (Vérifier, Clés d'accès, Ce qui est vérifié)" },
+      "surface_2":     { "couleur": "#282833", "role": "Barre des onglets" },
+      "input":         { "couleur": "#1e1e26", "role": "Fond des champs de saisie, du rapport et de la liste de ce qui est vérifié" }
+    },
+    "Bordures": {
+      "border":        { "couleur": "#363644", "role": "Contour des champs, séparateurs, barres de défilement" },
+      "border_strong": { "couleur": "#5a5a6e", "role": "Contour de la case à cocher vide, survol des barres de défilement" }
+    },
+    "Texte": {
+      "text":          { "couleur": "#e7e7ef", "role": "Texte normal" },
+      "text_muted":    { "couleur": "#9696a8", "role": "Textes d'aide gris sous les champs, état des clés" },
+      "text_disabled": { "couleur": "#6e6e80", "role": "Texte grisé (bouton désactivé) et texte d'exemple dans les champs vides" },
+      "text_on_accent":{ "couleur": "#ffffff", "role": "Texte et icônes posés sur les boutons, coche de la case" }
+    },
+    "Couleur principale": {
+      "accent":        { "couleur": "#3885eb", "role": "Boutons principaux (Vérifier, Enregistrer la clé…), onglet actif, case cochée" },
+      "accent_hover":  { "couleur": "#065285", "role": "Les mêmes boutons quand la souris passe dessus" },
+      "accent_text":   { "couleur": "#a5b4fc", "role": "Titres de section, liens (Obtenir une clé), titres de la liste de ce qui est vérifié" }
+    },
+    "Petits boutons gris": {
+      "neutral":       { "couleur": "#2e2e3a", "role": "Boutons secondaires : Choisir, Enregistrer le rapport, œil, Effacer" },
+      "neutral_hover": { "couleur": "#3b3b4a", "role": "Les mêmes boutons quand la souris passe dessus" }
+    },
+    "Rouge (danger)": {
+      "danger":        { "couleur": "#b42318", "role": "Survol des boutons Effacer" },
+      "danger_text":   { "couleur": "#f87171", "role": "Messages d'erreur (date ou IDCC invalide, adresse refusée)" }
+    },
+    "Vert (succès)": {
+      "success_text":  { "couleur": "#4ade80", "role": "Clé enregistrée, adresse enregistrée" }
+    },
+    "Jaune (avertissement)": {
+      "warning_bg":    { "couleur": "#3a2a0c", "role": "Fond du bandeau « Une clé d'accès manque »" },
+      "warning_text":  { "couleur": "#fbbf24", "role": "Texte de ce bandeau" }
+    }
+  },
+
+  "arrondis": {
+    "boutons":                { "px": 4, "role": "Boutons, barre des onglets" },
+    "panneaux":               { "px": 5, "role": "Panneaux, bandeau, rapport, liste de ce qui est vérifié" },
+    "champs":                 { "px": 4, "role": "Champs de saisie" },
+    "cases":                  { "px": 4, "role": "Case à cocher" },
+    "interrupteurs_curseurs": { "px": 8, "role": "Barres de défilement" }
+  },
+
+  "marges_interieures": {
+    "onglets_menu": { "px": 8, "role": "Espace ajouté à gauche et à droite du nom de chaque onglet" }
+  },
+
+  "polices": {
+    "famille": "Roboto",
+    "small": 12,
+    "body": 14,
+    "title": 18
+  },
+  "espacements": {
+    "xs": 4,
+    "sm": 8,
+    "md": 16,
+    "lg": 24
+  },
+  "taille_icones": 16
+}
