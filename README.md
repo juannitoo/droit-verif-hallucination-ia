@@ -22,6 +22,9 @@ Il pointe ce qui est suspect, il ne donne pas d'avis. Il ne dit pas si une déci
 l'argument : ça reste le travail de l'avocat. Ce qu'il reconnaît, et ce qu'il ne vérifie
 pas, est listé dans l'onglet « Ce qui est vérifié » du programme.
 
+**Juristes : tout ce qu'il vérifie, avec des exemples, et pourquoi certaines choses ne
+le sont pas : [la notice pour les juristes](citecheck/countries/france/README.md).**
+
 ## État
 
 Programme en construction. Pas encore d'exécutable à télécharger. Audité par Claude Opus 5.5
