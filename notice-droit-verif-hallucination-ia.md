@@ -45,9 +45,9 @@ ouvre dans son navigateur.
 | `citecheck/keys.py` | clés : variable d'environnement, sinon trousseau du système |
 | `citecheck/report.py` | rapport texte et JSON |
 | `citecheck/locales/fr.py` | tous les textes affichés ; une langue = un fichier |
-| `citecheck/countries/france/` | extraction, bases et verdicts pour la France : `extract.py`, `sources.py` (ArianeWeb, Judilibre), `legifrance.py`, `articles.py` (codes), `conventions.py`, `lower_courts.py` (cours d'appel, tribunaux), `other_courts.py` (Conseil constitutionnel, Tribunal des conflits, Union européenne, lien CEDH), `codes.py` (noms et abréviations), `scope.py` (ce qui est vérifié) |
+| `citecheck/countries/france/` | extraction, bases et verdicts pour la France : `extract.py`, `sources.py` (ArianeWeb, Judilibre), `legifrance.py`, `articles.py` (codes), `conventions.py`, `lower_courts.py` (cours d'appel, tribunaux judiciaires et de commerce), `other_courts.py` (Conseil constitutionnel, Tribunal des conflits, Union européenne, lien CEDH), `codes.py` (noms et abréviations), `scope.py` (ce qui est vérifié) |
 | `citecheck/http.py` | le seul point de sortie réseau, qui refuse toute redirection (une redirection emporterait les clés) |
-| `cases/` | bancs d'essai dont la réponse est connue : `perigueux.json` (cas réel jugé), `articles.json`, `conventions.json`, `lower_courts.json`, `other_courts.json`, `abrogated_codes.json` et `abrogated_codes_2010.json` (codes abrogés, lus à deux dates), `cgi.json` (suffixes et annexes du CGI) |
+| `cases/` | bancs d'essai dont la réponse est connue : `perigueux.json` (cas réel jugé), `articles.json`, `conventions.json`, `lower_courts.json`, `other_courts.json`, `abrogated_codes.json` et `abrogated_codes_2010.json` (codes abrogés, lus à deux dates), `cgi.json` (suffixes et annexes du CGI), `commercial_courts.json` |
 | `tests/` | tests hors réseau |
 
 **Langues du code.** Noms de fichiers, de fonctions, de variables, codes de verdict, clés du
@@ -131,6 +131,7 @@ convention est vérifié, pas ses avenants ni ses accords attachés.
 .venv/bin/python -m citecheck --case cases/abrogated_codes.json      # réseau, 7/7
 .venv/bin/python -m citecheck --case cases/abrogated_codes_2010.json # réseau, 3/3
 .venv/bin/python -m citecheck --case cases/cgi.json                  # réseau, 7/7
+.venv/bin/python -m citecheck --case cases/commercial_courts.json    # réseau, 9/9
 ```
 
 ## Les trois règles, à ne jamais affaiblir
@@ -225,10 +226,10 @@ faut corriger.
   Légifrance, fonds CETAT, champ NUM_DEC, trouve « 17NC01414 » et rien pour un numéro
   inventé ; la couverture reste à mesurer.
 - Vérifier la **CEDH** : impossible sans l'accord de la Cour (voir plus haut).
-- Les **tribunaux de commerce** : Judilibre les publie depuis 2025 (juridiction `tcom`,
-  141 tribunaux, mesuré le 29/09/2026). Même mécanisme que les tribunaux judiciaires ; la
-  difficulté est que leurs numéros n'ont pas de format commun (« 2024F00234 »,
-  « 2023040843 »). Les **prud'hommes**, eux, ne sont pas dans Judilibre.
+- Les **tribunaux de commerce** avant 2025 : Judilibre n'en publie rien (5 décisions en
+  2024, 112 105 en 2025, mesuré le 29/09/2026), sans qu'on sache si l'antérieur viendra.
+  Depuis 2025, ils sont vérifiés (`lower_courts.py`). Les **prud'hommes**, eux, ne sont pas
+  dans Judilibre.
 - Vérifier les articles des **lois et décrets** non codifiés (« article 22 de la loi du 6
   juillet 1989 ») et des **avenants** de conventions. Ils sont signalés dans les remarques du
   rapport, jamais devinés.

@@ -1,4 +1,5 @@
-"""Cours d'appel et tribunaux judiciaires, cités par leur numéro RG, vérifiés dans Judilibre.
+"""Cours d'appel, tribunaux judiciaires et tribunaux de commerce, cités par leur numéro RG,
+vérifiés dans Judilibre.
 
 UN RG N'EST PAS UNIQUE
   Chaque juridiction a sa propre numérotation : « 11/18803 » existe à Paris, à Lyon, à
@@ -25,6 +26,18 @@ LA COUVERTURE, CALCULÉE ET NON ÉCRITE EN DUR
   Dans tous ces cas, une décision introuvable sort « non vérifiable », jamais « ne semble
   pas publiée » : l'absence n'y prouve rien. Et même dans une période couverte, certaines
   matières ne sont pas diffusées : le rapport dit « à vérifier ».
+
+LES TRIBUNAUX DE COMMERCE (sondés le 29/09/2026)
+  141 juridictions, dont 12 « tribunaux des activités économiques » (Paris, Nanterre,
+  Lyon...) : « T. com. Paris » désigne le TAE de Paris. Judilibre ne publie RIEN avant 2025
+  (5 décisions en 2024, 112 105 en 2025), et 12 tribunaux presque rien (Agen, Niort,
+  Périgueux...) : la couverture mesurée s'en charge. On ne sait pas si l'antérieur viendra.
+  Trois formes de numéro : « 2025J05588 », « 2026004078 », « J2026000698 ». La recherche de
+  Judilibre ne trouve pas celles qui ont une lettre : on liste les décisions du tribunal au
+  jour cité (sources.judilibre_on_day). Un tel numéro absent ce jour-là ne peut donc pas
+  être cherché aux autres dates, et le rapport le dit.
+  Le numéro porte l'année d'enregistrement de l'affaire : une décision datée d'avant est
+  impossible, et c'est signalé sans rien demander au réseau.
 """
 import re
 import unicodedata
@@ -34,13 +47,15 @@ from . import sources
 
 COMPLETE_SHARE = 0.6
 RECENT_DAYS = 183
-KIND = {"ca": "cour d'appel", "tj": "tribunal judiciaire"}
+KIND = {"ca": "cour d'appel", "tj": "tribunal judiciaire", "tcom": "tribunal de commerce"}
+RE_TCOM_YEAR = re.compile(r"^[A-Z]?((?:19|20)\d\d)")
 
 
 def _simplify(name):
     name = unicodedata.normalize("NFKD", name.lower())
     name = "".join(ch for ch in name if not unicodedata.combining(ch))
-    name = re.sub(r"^(?:cour d'appel|tribunal judiciaire)\s*(?:de |d'|du )?", "", name.strip())
+    name = re.sub(r"^(?:cour d'appel|tribunal judiciaire|tribunal de commerce|tribunal des "
+                  r"activites economiques)\s*(?:de |d'|du )?", "", name.strip())
     return " ".join(re.sub(r"[-'’]", " ", name).split())
 
 
@@ -81,15 +96,33 @@ class Courts:
         return self._first_complete[location]
 
 
+def registered_year(citation):
+    """L'année d'enregistrement que porte un numéro de tribunal de commerce, ou None."""
+    if citation.get("jurisdiction") != "tcom":
+        return None
+    m = RE_TCOM_YEAR.match(citation["number"])
+    return m.group(1) if m else None
+
+
 def check_lower_court(courts, citation):
     jurisdiction, number = citation["jurisdiction"], citation["number"]
     cited = citation.get("cited_date")
+    year = registered_year(citation)
+    if year and cited and cited[:4] < year:
+        return ("DATE_BEFORE_NUMBER", f"le numéro {number} porte l'année d'enregistrement "
+                f"{year}, et la décision est citée au {cited}, avant : l'un des deux semble "
+                "inexact ; à vérifier", None)
     found = courts.location(jurisdiction, citation["place"])
     if found is None:
         return ("NOT_TESTED", f"{KIND[jurisdiction]} « {citation['place']} » non reconnue "
                 "sans ambiguïté parmi les juridictions de Judilibre", None)
     code, label = found
-    dates = sources.judilibre_rg(number, jurisdiction, code, courts.key)
+    searchable = jurisdiction != "tcom" or number.isdigit()
+    dates = []
+    if jurisdiction == "tcom" and cited:
+        dates = sources.judilibre_on_day(number, jurisdiction, code, cited, courts.key)
+    if searchable and not dates:
+        dates = sources.judilibre_rg(number, jurisdiction, code, courts.key)
     if isinstance(dates, dict):
         return "ERROR", f"Judilibre n'a pas répondu ({dates['_err']})", None
     if dates:
@@ -104,12 +137,24 @@ def check_lower_court(courts, citation):
     first, counts = courts.first_complete_year(jurisdiction, code)
     recent = cited and (date.today() - date.fromisoformat(cited)).days < RECENT_DAYS
     if cited and first and cited[:4] >= first and not recent:
+        if not searchable:
+            return ("NOT_PUBLISHED", f"{label} : aucune décision sous ce numéro le {cited} "
+                    "dans Judilibre. Judilibre ne permet pas de chercher un numéro qui "
+                    "contient une lettre aux autres dates : la date est peut-être inexacte, ou "
+                    "la décision non publiée ; à vérifier", None)
         return ("NOT_PUBLISHED", f"{label} : aucune décision sous ce RG dans Judilibre, qui "
                 f"publie largement les décisions de cette juridiction depuis {first} : la "
                 "décision ne semble pas publiée (certaines matières ne sont pas diffusées) ; "
                 "à vérifier", None)
+    if not cited and not searchable:
+        return ("UNVERIFIABLE_PERIOD", f"{label} : aucune date citée, et Judilibre ne permet "
+                "pas de chercher un numéro qui contient une lettre sans sa date : l'absence "
+                "ne prouve rien", None)
     year = cited[:4] if cited else None
-    if recent:
+    if jurisdiction == "tcom" and year and year < "2025":
+        why = ("Judilibre ne publie les décisions des tribunaux de commerce que depuis 2025 "
+               f"({counts.get(year, 0)} pour ce tribunal en {year})")
+    elif recent:
         why = "la décision a moins de six mois, et Judilibre publie avec retard"
     elif year:
         why = (f"les décisions de {year} de cette juridiction ne sont publiées qu'en partie "

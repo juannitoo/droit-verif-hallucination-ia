@@ -100,7 +100,7 @@ class SeenNotChecked(unittest.TestCase):
             "CA Paris, 2 octobre 2013. Cass. Com., 3 mars 2020.")
         self.assertEqual(seen, [("unnumbered", "CE", None, "2009-10-30"),
                                 ("unnumbered", "Cass.", None, "2013-07-10"),
-                                ("unnumbered", "T. com.", None, "2026-01-09"),
+                                ("lower", "T. com. Paris", "2024F00234", "2026-01-09"),
                                 ("unnumbered", "CA", None, "2013-10-02"),
                                 ("unnumbered", "Cass.", None, "2020-03-03")])
         self.assertFalse(any("None" in r for r in remarks))
@@ -136,6 +136,35 @@ class SeenNotChecked(unittest.TestCase):
                                           "cited_date": "2009-10-30",
                                           "verdict": "MANUAL_CHECK", "explanation": "e"}], [])
         self.assertIn("CE, décision du 2009-10-30 (aucun numéro lu)", report.to_text(r))
+
+
+class CommercialCourts(unittest.TestCase):
+    def test_extraction(self):
+        citations, _ = extract(
+            "T. com. Paris, 9 janvier 2026, RG 2024F00234. Le tribunal de commerce de "
+            "Bordeaux, le 9 janvier 2026, n° 2025J00123. TAE Nanterre, 3 mars 2026, "
+            "J2026000698. Tribunal des activités économiques de Lyon, 5 mai 2026, n° "
+            "2026004078. Appelez le 2026004078. T. com. Castres, 6 juillet 2026.")
+        self.assertEqual([(c["order"], c["court"], c["number"], c["cited_date"])
+                          for c in citations], [
+            ("lower", "T. com. Paris", "2024F00234", "2026-01-09"),
+            ("lower", "T. com. Bordeaux", "2025J00123", "2026-01-09"),
+            ("lower", "T. com. Nanterre", "J2026000698", "2026-03-03"),
+            ("lower", "T. com. Lyon", "2026004078", "2026-05-05"),
+            ("unnumbered", "T. com.", None, "2026-07-06")])
+
+    def test_date_before_the_registration_year(self):
+        from citecheck.countries.france.lower_courts import check_lower_court
+        c = {"jurisdiction": "tcom", "place": "Paris", "number": "2025F00234",
+             "cited_date": "2024-03-12"}
+        verdict, why, _ = check_lower_court(None, c)     # no network needed
+        self.assertEqual(verdict, "DATE_BEFORE_NUMBER")
+        self.assertIn("2025", why)
+
+    def test_tae_is_found_under_its_city(self):
+        from citecheck.countries.france.lower_courts import _simplify
+        self.assertEqual(_simplify("Tribunal des activités économiques de Paris"), "paris")
+        self.assertEqual(_simplify("Tribunal de commerce d'Arras"), "arras")
 
 
 class ConstitutionalConflictsEu(unittest.TestCase):

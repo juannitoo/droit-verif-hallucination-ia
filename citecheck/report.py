@@ -44,7 +44,9 @@ def without_excerpts(report):
         # officiel de Judilibre quand il a été trouvé.
         place = r.pop("place", None)
         if place:
-            r["court"] = r["court"].split(" ", 1)[0]
+            court = r["court"]
+            r["court"] = (court[:-len(place)] if court.endswith(place)
+                          else court.split(" ", 1)[0]).strip()
             r["explanation"] = (r.get("explanation") or "").replace(place, "…")
         if r.get("location"):
             r["location"] = {k: v for k, v in r["location"].items() if k != "excerpt"}
@@ -93,12 +95,13 @@ def to_text(report):
                 lines.append(t.QUOTE_LINE.format(quote=q))
         else:
             if r.get("number") is None:
-                line = t.UNNUMBERED_LINE
+                head = t.UNNUMBERED_LINE.format(court=r["court"], date=r["cited_date"])
             else:
                 line = t.RG_LINE if r.get("order") == "lower" else t.CITATION_LINE
-            lines.append(line.format(court=r["court"], number=r["number"],
-                                     date=r.get("cited_date") or t.NO_DATE)
-                         + _where(r))
+                head = line.format(court=r["court"], number=r["number"],
+                                   date=t.CITED_ON.format(date=r["cited_date"])
+                                   if r.get("cited_date") else t.NO_DATE)
+            lines.append(head + _where(r))
         if (r.get("location") or {}).get("excerpt"):
             lines.append(t.EXCERPT_LINE.format(excerpt=r["location"]["excerpt"]))
         lines.append(f"    {t.VERDICTS[r['verdict']]} : {r['explanation']}")

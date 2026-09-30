@@ -1,0 +1,96 @@
+{
+  "country": "france",
+  "source": "Tribunaux de commerce : numéros à lettre et tout en chiffres, dates vraies et fausses, avant 2025 (relevé dans Judilibre le 29/09/2026)",
+  "citations": [
+    {
+      "kind": "decision",
+      "order": "lower",
+      "jurisdiction": "tcom",
+      "court": "T. com. Bourg-en-Bresse",
+      "place": "Bourg-en-Bresse",
+      "number": "2025J05588",
+      "cited_date": "2026-09-18",
+      "expected": "CONFIRMED"
+    },
+    {
+      "kind": "decision",
+      "order": "lower",
+      "jurisdiction": "tcom",
+      "court": "T. com. Arras",
+      "place": "Arras",
+      "number": "2026004078",
+      "cited_date": "2026-09-18",
+      "expected": "CONFIRMED"
+    },
+    {
+      "kind": "decision",
+      "order": "lower",
+      "jurisdiction": "tcom",
+      "court": "T. com. Paris",
+      "place": "Paris",
+      "number": "J2026000698",
+      "cited_date": "2026-09-18",
+      "expected": "CONFIRMED"
+    },
+    {
+      "kind": "decision",
+      "order": "lower",
+      "jurisdiction": "tcom",
+      "court": "T. com. Arras",
+      "place": "Arras",
+      "number": "2026004078",
+      "cited_date": "2026-02-17",
+      "expected": "WRONG_DATE"
+    },
+    {
+      "kind": "decision",
+      "order": "lower",
+      "jurisdiction": "tcom",
+      "court": "T. com. Bourg-en-Bresse",
+      "place": "Bourg-en-Bresse",
+      "number": "2025J05588",
+      "cited_date": "2026-02-17",
+      "expected": "NOT_PUBLISHED"
+    },
+    {
+      "kind": "decision",
+      "order": "lower",
+      "jurisdiction": "tcom",
+      "court": "T. com. Bourg-en-Bresse",
+      "place": "Bourg-en-Bresse",
+      "number": "2025J99999",
+      "cited_date": "2026-01-15",
+      "expected": "NOT_PUBLISHED"
+    },
+    {
+      "kind": "decision",
+      "order": "lower",
+      "jurisdiction": "tcom",
+      "court": "T. com. Paris",
+      "place": "Paris",
+      "number": "2023F00001",
+      "cited_date": "2023-05-10",
+      "expected": "UNVERIFIABLE_PERIOD"
+    },
+    {
+      "kind": "decision",
+      "order": "lower",
+      "jurisdiction": "tcom",
+      "court": "T. com. Bourg-en-Bresse",
+      "place": "Bourg-en-Bresse",
+      "number": "2025J05588",
+      "cited_date": "2024-06-01",
+      "expected": "DATE_BEFORE_NUMBER"
+    },
+    {
+      "kind": "decision",
+      "order": "lower",
+      "jurisdiction": "tcom",
+      "court": "T. com. Bourg-en-Bresse",
+      "place": "Bourg-en-Bresse",
+      "number": "2025J05588",
+      "cited_date": null,
+      "expected": "UNVERIFIABLE_PERIOD"
+    }
+  ]
+}

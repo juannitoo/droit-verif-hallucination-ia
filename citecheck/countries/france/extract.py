@@ -97,6 +97,14 @@ RE_CONSTIT = re.compile(r"\b(\d{2,4}-\d{1,5}(?:/\d{1,5})*)\s+"
                         r"(DC|QPC|LP|FNR|LOM|ORGA|RIP|PDR|REF|ELEC|AN|SEN|L|D|I)\b")
 CONSTIT_ALONE = {"DC", "QPC"}
 RE_CONFLICTS = re.compile(r"\bn[°ºo]\s*(C?\s?\d{4,5})\b|\b(C\d{4})\b")
+# Tribunaux de commerce, et « tribunaux des activités économiques » (Paris, Nanterre, Lyon...
+# depuis 2025). Le numéro n'est lu que si le tribunal est nommé dans la même phrase.
+RE_TCOM_COURT = re.compile(
+    r"\bT\.\s?com\.|\bTAE\b|\bT\.\s?A\.\s?E\.|\b[Tt]ribunal\s+de\s+commerce\b"
+    r"|\b[Tt]ribunal\s+des\s+activit[ée]s\s+[ée]conomiques\b")
+RE_TCOM_CITY = re.compile(r"\s*,?\s*(?:de\s+|d['’]\s*|du\s+)?")
+# « 2025J05588 », « 2026004078 », « J2026000698 » : l'année d'enregistrement en tête.
+RE_TCOM_NUMBER = re.compile(r"\b((?:19|20)\d\d[A-Z]\d{5}|[A-Z]?(?:19|20)\d{8})\b")
 # Numéro de CAA : l'année, deux lettres de la cour, cinq chiffres. Aucune autre juridiction
 # n'a cette forme.
 RE_CAA = re.compile(r"\b(\d{2}[A-Z]{2}\d{5})\b")
@@ -105,7 +113,7 @@ MARK_ANY = [("CE", MARK_ADMIN), ("Cass.", MARK_JUDICIAL),
             ("CA", re.compile(r"\bCA\b|\b[Cc]our\s+d['’]\s*appel\b")),
             ("TJ", re.compile(r"\b(?:TJ|TGI)\b|\b[Tt]ribunal\s+(?:judiciaire|de\s+grande\s+"
                               r"instance)\b")),
-            ("T. com.", re.compile(r"\bT\.\s?com\.|\b[Tt]ribunal\s+de\s+commerce\b")),
+            ("T. com.", RE_TCOM_COURT),
             ("CPH", re.compile(r"\bCPH\b|\b[Cc]onseil\s+de\s+prud['’]\s*hommes\b"))
             ] + MARK_OTHER
 UNNUMBERED_GAP = 60   # entre la juridiction et la date : « CE, Ass., sect., »
@@ -163,6 +171,15 @@ def assign_dates(text, spans, used=None):
     if used is not None:
         used.update(where for _, _, where in best.values())
     return {start: day for start, (_, day, _) in best.items()}
+
+
+def _court_in_sentence(text, start, rx):
+    """La dernière mention de la juridiction `rx` avant `start`, dans la même phrase."""
+    lo = max(0, start - WINDOW)
+    for end in RE_SENTENCE_END.finditer(text, lo, start):
+        lo = end.end()
+    found = list(rx.finditer(text, lo, start))
+    return found[-1] if found else None
 
 
 def unnumbered(text, used):
@@ -230,10 +247,12 @@ def extract(text):
           if m.group(1) == "C" or order_of(text, m.start(), None) == EU]
     caa = list(RE_CAA.finditer(text))
     rgs = list(RE_RG.finditer(text))
+    tcom = [(m, court) for m in RE_TCOM_NUMBER.finditer(text)
+            for court in [_court_in_sentence(text, m.start(), RE_TCOM_COURT)] if court]
     used = set()
     dates = assign_dates(text, [m.span() for m in
-                                appeals + requests + rgs + conflicts + constit + eu + caa],
-                         used)
+                                appeals + requests + rgs + conflicts + constit + eu + caa]
+                         + [m.span() for m, _ in tcom], used)
     seen = set()        # (numéro, date) : un même numéro cité à deux dates = deux citations
 
     def add(order, court, number, m):
@@ -256,6 +275,15 @@ def extract(text):
             f"{m.group(1)}-{int(m.group(2))}/{m.group(3)}", m)
     for m in caa:
         add("other", "CAA", m.group(1), m)
+    for m, court in tcom:
+        city = _city(text[court.end():][len(RE_TCOM_CITY.match(text, court.end()).group(0)):])
+        d = dates.get(m.start())
+        if ("tcom", city, m.group(1), d) in seen:
+            continue
+        seen.add(("tcom", city, m.group(1), d))
+        citations.append({"kind": "decision", "order": "lower", "jurisdiction": "tcom",
+                          "court": f"T. com. {city}".strip(), "place": city,
+                          "number": m.group(1), "cited_date": d, "span": m.span()})
 
     for m in appeals:
         number, d = m.group(1), dates.get(m.start())

@@ -123,3 +123,30 @@ def judilibre_rg(number, jurisdiction, location, key):
     target = normalize(number)
     return sorted({(r.get("decision_date") or "")[:10] for r in data.get("results") or []
                    if target in [normalize(x) for x in (r.get("numbers") or [])]})
+
+
+EXPORT_BATCH = 100
+EXPORT_MAX_BATCHES = 10      # 1 000 décisions un même jour : Paris en publie une quarantaine
+
+
+def judilibre_on_day(number, jurisdiction, location, day, key):
+    """Les tribunaux de commerce (sondé le 29/09/2026) : la recherche de Judilibre ne trouve
+    PAS les numéros qui contiennent une lettre (« 2026F01098 » : 0 résultat, la décision est
+    pourtant publiée). On liste donc les décisions de CE tribunal à CE jour (/export, 0,2 s)
+    et on compare les numéros nous-mêmes. Renvoie [day] ou [], ou {'_err': ...}."""
+    target = normalize(number)
+    try:
+        for batch in range(EXPORT_MAX_BATCHES):
+            data = _judilibre_get("export", {
+                "jurisdiction": jurisdiction, "location": location, "date_start": day,
+                "date_end": day, "batch_size": EXPORT_BATCH, "batch": batch}, key)
+            for r in data.get("results") or []:
+                if target in [normalize(x) for x in (r.get("numbers") or [])]:
+                    return [(r.get("decision_date") or day)[:10]]
+            if data.get("next_batch") is None:
+                return []
+    except urllib.error.HTTPError as e:
+        return {"_err": f"HTTP {e.code}"}
+    except Exception as e:
+        return {"_err": type(e).__name__}
+    return {"_err": f"plus de {EXPORT_BATCH * EXPORT_MAX_BATCHES} décisions ce jour-là"}

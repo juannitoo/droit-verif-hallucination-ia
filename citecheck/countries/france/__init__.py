@@ -51,6 +51,10 @@ JUDICIAL_FAKE = [("99-99.999", "pourvoi inventé"),
 LOWER_REAL = [("ca", "ca_paris", "11/18803", "2013-10-02"),
               ("tj", "tj24322", "25/00578", "2026-02-23")]
 LOWER_FAKE = [("ca", "ca_paris", "99/99999"), ("tj", "tj24322", "99/99999")]
+# Tribunaux de commerce : un numéro à lettre (trouvé en listant le jour) et un tout en
+# chiffres (trouvé aussi par la recherche) ; et des numéros inventés, le même jour.
+TCOM_REAL = [("0101", "2025J05588", "2026-09-18"), ("6201", "2026004078", "2026-09-18")]
+TCOM_FAKE = [("0101", "2025J99999", "2026-09-18"), ("6201", "2026009999", "2026-09-18")]
 # (code, numéro, nombre minimal de versions) : des articles dont l'histoire est connue.
 # L'article 1 du Code civil a 40 homonymes dans les autres codes : c'est lui qui trahit une
 # recherche qui ne lit pas tout.
@@ -156,8 +160,6 @@ NOT_YET = {
            "encore ; aucune base n'a été interrogée",
     "TA": "décision d'un tribunal administratif, que ce programme ne vérifie pas encore ; "
           "aucune base n'a été interrogée",
-    "T. com.": "décision d'un tribunal de commerce, que ce programme ne vérifie pas encore ; "
-               "aucune base n'a été interrogée",
     "CPH": "décision d'un conseil de prud'hommes : Judilibre ne les publie pas, aucune base "
            "n'a été interrogée",
 }
@@ -283,6 +285,17 @@ def selftest_lower(key, jurisdictions, log):
         good = sources.judilibre_rg(number, jurisdiction, location, key) == []
         ok &= good
         log(_line(good, f"Judilibre ne doit pas trouver {location} RG {number}"))
+    if "tcom" in jurisdictions:
+        for location, number, day in TCOM_REAL:
+            good = sources.judilibre_on_day(number, "tcom", location, day, key) == [day]
+            ok &= good
+            log(_line(good, f"Judilibre doit trouver le tribunal de commerce {location}, "
+                            f"n° {number} du {day}"))
+        for location, number, day in TCOM_FAKE:
+            good = sources.judilibre_on_day(number, "tcom", location, day, key) == []
+            ok &= good
+            log(_line(good, f"Judilibre ne doit pas trouver le tribunal de commerce "
+                            f"{location}, n° {number}"))
     return ok
 
 

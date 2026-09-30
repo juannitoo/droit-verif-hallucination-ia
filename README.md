@@ -3,8 +3,8 @@
 Vérifie les citations d'un texte juridique français, sans rien inventer :
 
 - **les décisions de justice** (Conseil d'État, Cour de cassation, cours d'appel, tribunaux
-  judiciaires, Conseil constitutionnel, Tribunal des conflits, Cour de justice et Tribunal de
-  l'Union européenne) : existent-elles, et à la date indiquée ?
+  judiciaires, tribunaux de commerce, Conseil constitutionnel, Tribunal des conflits, Cour de
+  justice et Tribunal de l'Union européenne) : existent-elles, et à la date indiquée ?
 - **les articles de codes et de conventions collectives** : existent-ils, étaient-ils en
   vigueur à la date des faits, et le texte cité entre guillemets est-il bien le leur ? Les
   codes abrogés sont reconnus (Code des marchés publics, ancien Code pénal...) : une IA les
@@ -32,8 +32,8 @@ servi lors de la conception.
   décisions citées sans numéro : le rapport les signale, à vérifier à la main ;
 - les décisions de la CEDH : la Cour n'autorise pas la recherche dans sa base par un
   programme. Le rapport les signale, avec le lien de la recherche à ouvrir soi-même ;
-- les tribunaux de commerce (publiés par Judilibre depuis 2025 : pas encore fait) et les
-  conseils de prud'hommes (que Judilibre ne publie pas) : signalés, à vérifier à la main ;
+- les décisions des tribunaux de commerce antérieures à 2025 (Judilibre n'en publie pas,
+  pour l'instant) et celles des conseils de prud'hommes (que Judilibre ne publie pas) ;
 - un numéro RG cité sans le nom de la juridiction dans la même phrase (le même numéro
   existe dans plusieurs juridictions) ;
 - les articles de lois et de décrets non codifiés, et ceux des avenants de conventions

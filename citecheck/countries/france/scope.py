@@ -19,6 +19,13 @@ DECISIONS = [
     "Le programme mesure, pour la juridiction citée, le nombre de décisions publiées par année. "
     "Une décision introuvable dans une période publiée en partie, ou datée de moins de six "
     "mois (délai de publication), sort « non vérifiable » : l'absence n'y prouve rien.",
+    "Tribunaux de commerce et tribunaux des activités économiques : « T. com. Bordeaux, 9 "
+    "janvier 2026, n° 2025J00123 », « TAE Paris, RG 2026F01098 ». Le tribunal doit être nommé "
+    "dans la même phrase. Base interrogée : Judilibre, qui ne publie leurs décisions que "
+    "depuis 2025 : rien avant, pour l'instant. Un numéro qui contient une lettre ne se "
+    "cherche qu'au jour cité (Judilibre ne l'indexe pas) : sans date, il n'est pas "
+    "vérifiable. Le numéro porte l'année d'enregistrement de l'affaire : une décision citée "
+    "à une date antérieure est signalée.",
     "Conseil constitutionnel : « Cons. const., 12 mai 2010, n° 2010-605 DC », « 2010-14/22 "
     "QPC ». Base interrogée : Légifrance.",
     "Tribunal des conflits : « T. confl., 17 juin 2013, n° C3911 », « TC, n° 4112 », « n° "
@@ -75,8 +82,8 @@ CONVENTIONS = [
 NOT_CHECKED = [
     "un numéro RG sans cour d'appel ni tribunal judiciaire nommé dans la même phrase : un RG "
     "seul n'identifie pas une décision",
-    "les tribunaux de commerce : Judilibre les publie depuis 2025, mais leur vérification "
-    "n'est pas encore écrite. Leurs décisions sont signalées « à vérifier à la main »",
+    "les décisions des tribunaux de commerce antérieures à 2025 : Judilibre n'en publie pas, "
+    "pour l'instant. Elles sortent « non vérifiable »",
     "les conseils de prud'hommes : Judilibre ne les publie pas (leurs jugements frappés "
     "d'appel sont vérifiés, eux, au niveau de la cour d'appel). Signalés « à vérifier à la "
     "main »",
@@ -117,7 +124,7 @@ def scope():
 
 def not_checked_summary():
     """Version courte, pour la fin du rapport : le détail est dans l'onglet."""
-    return ("RG sans juridiction nommée, tribunaux de commerce, prud'hommes, "
+    return ("RG sans juridiction nommée, tribunaux de commerce avant 2025, prud'hommes, "
             "décisions des CAA et TA, "
             "décisions de la CEDH (lien fourni), lois et décrets non codifiés, avenants et accords "
             "attachés aux conventions, "

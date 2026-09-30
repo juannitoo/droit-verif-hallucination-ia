@@ -18,7 +18,8 @@ VERDICTS = {
     "ARTICLE_NOT_IN_FORCE": "ARTICLE PAS EN VIGUEUR à la date de référence",
     "ARTICLE_NOT_FOUND": "CET ARTICLE NE SEMBLE PAS EXISTER dans ce texte",
     "CONVENTION_NOT_FOUND": "CET IDCC NE SEMBLE CORRESPONDRE À AUCUNE CONVENTION",
-    "UNVERIFIABLE_PERIOD": "non vérifiable : période publiée en partie",
+    "DATE_BEFORE_NUMBER": "DATE ANTÉRIEURE AU NUMÉRO",
+    "UNVERIFIABLE_PERIOD": "non vérifiable",
     "MANUAL_CHECK": "À VÉRIFIER À LA MAIN",
     "NOT_TESTED": "non vérifiée",
     "ERROR": "erreur technique, non vérifiée",
@@ -36,9 +37,9 @@ NO_CITATION = ("Aucune citation juridique relevée dans ce document. Soit il n'e
 # Rapport
 DOCUMENT_LINE = "Document : {source}"
 CHECKED_LINE = "Vérifié le {date} par {program}"
-CITATION_LINE = "{court} n° {number}, cité au {date}"
+CITATION_LINE = "{court} n° {number}, {date}"
 UNNUMBERED_LINE = "{court}, décision du {date} (aucun numéro lu)"
-RG_LINE = "{court}, RG {number}, cité au {date}"
+RG_LINE = "{court}, RG {number}, {date}"
 ARTICLE_LINE = "{code}, article {number}"
 CONVENTION_LINE = "Convention collective IDCC {idcc}, article {number}"
 IDCC_UNKNOWN = "non indiqué"
@@ -50,7 +51,8 @@ WHERE_PAGE_APPROX = " (vers la page {page})"
 WHERE_NOTES = " (dans les notes de bas de page)"
 REFERENCE_LINE = "Date de référence pour les articles : {date}{default}"
 REFERENCE_DEFAULT = " (date du jour, faute de date des faits)"
-NO_DATE = "sans date"
+NO_DATE = "sans date citée"
+CITED_ON = "cité au {date}"
 SUMMARY = "Bilan :"
 REMARK = "Remarque : {text}"
 FOUND = "{n} citation(s) relevée(s)."
