@@ -20,7 +20,7 @@ CE QU'ELLE NE VÉRIFIE PAS
 import re
 from datetime import date
 
-from . import codes, decision_quotes, links, other_courts, sources, wire
+from . import codes, decision_quotes, links, other_courts, piste, sources, wire
 from .articles import check_articles
 from .texts import check_text_articles
 from .conventions import check_convention_articles
@@ -377,37 +377,41 @@ def _local_base(citations, keys, log):
 
 def _check_other(citations, keys, log):
     """Résultats pour le Conseil constitutionnel, le Tribunal des conflits et l'Union
-    européenne, dans l'ordre."""
-    results, client = {}, None
+    européenne, dans l'ordre. Les bases sont contrôlées tout de suite ; les citations se
+    vérifient à la demande, une à une."""
+    ready, client = {}, None       # juridiction -> (base, recherche), ou pourquoi pas
     for order in OTHER_BASES:
-        mine = [i for i, c in enumerate(citations) if c["order"] == order]
+        mine = [c for c in citations if c["order"] == order]
         if not mine:
             continue
         base, search, real, fake, needs_keys = OTHER_BASES[order]
         if needs_keys:
             cid, secret = keys.get("PISTE_CLIENT_ID"), keys.get("PISTE_CLIENT_SECRET")
             if not (cid and secret):
-                why = "identifiant ou secret PISTE absent : Légifrance n'a pas été interrogé"
-                results.update({i: ("NOT_TESTED", why, None) for i in mine})
+                ready[order] = ("identifiant ou secret PISTE absent : Légifrance n'a pas été "
+                                "interrogé")
                 continue
             client = client or Client(cid, secret)
-        name = f"{base.split(' (')[0]} ({citations[mine[0]]['court']})"   # « CELLAR (CJUE) »
-        if not _checked(name, lambda out: selftest_other(base, search, real, fake, client,
-                                                         out), log):
-            why = f"{base} n'a pas passé ses contrôles : aucun verdict possible"
-            results.update({i: ("NOT_TESTED", why, None) for i in mine})
-            continue
-        for i in mine:
-            c = citations[i]
-            try:
-                days = search(client, c["number"])
-                if order in PARTIAL and not days:
-                    results[i] = ("UNVERIFIABLE_PERIOD", PARTIAL[order], None)
-                else:
-                    results[i] = verdict_dates(days, c.get("cited_date"), base)
-            except Unavailable as e:
-                results[i] = ("ERROR", f"{base} n'a pas répondu ({e})", None)
-    return [results[i] for i in range(len(citations))]
+        name = f"{base.split(' (')[0]} ({mine[0]['court']})"   # « CELLAR (CJUE) »
+        if _checked(name, lambda out: selftest_other(base, search, real, fake, client, out),
+                    log):
+            ready[order] = (base, search)
+        else:
+            ready[order] = f"{base} n'a pas passé ses contrôles : aucun verdict possible"
+
+    def one(c):
+        state = ready[c["order"]]
+        if isinstance(state, str):
+            return "NOT_TESTED", state, None
+        base, search = state
+        try:
+            days = search(client, c["number"])
+        except Unavailable as e:
+            return "ERROR", f"{base} n'a pas répondu ({e})", None
+        if c["order"] in PARTIAL and not days:
+            return "UNVERIFIABLE_PERIOD", PARTIAL[c["order"]], None
+        return verdict_dates(days, c.get("cited_date"), base)
+    return (one(c) for c in citations)
 
 
 def selftest_admin(log):
@@ -543,7 +547,8 @@ def _check_legislation(citations, keys, day, idcc, log):
     laws = iter(check_text_articles(
         [c for c in citations if c["kind"] == "text_article"], client, day))
     kinds = {"article": codes, "convention_article": conventions, "text_article": laws}
-    return [next(kinds[c["kind"]]) for c in citations]
+    # Les contrôles sont faits ; les citations, elles, se vérifient à la demande.
+    return (next(kinds[c["kind"]]) for c in citations)
 
 
 def prepare(keys, log=lambda s: None):
@@ -579,6 +584,7 @@ def check(citations, keys, log=lambda s: None, options=None):
     `options` :
       reference_date  AAAA-MM-JJ, la date à laquelle les articles sont lus (défaut : jour)
       idcc            l'IDCC à utiliser pour une convention citée sans IDCC"""
+    piste.reset()
     refused = [wire.refusal(c) for c in citations]
     checked = iter(_check([c for c, why in zip(citations, refused) if not why], keys, log,
                           options))
@@ -647,7 +653,8 @@ def _check(citations, keys, log, options):
     legifrance = Client(cid, secret) if cid and secret else None
     results = []
     log("Vérification des citations :")
-    for c in citations:
+    stopped = False                 # « PISTE a limité les requêtes » : dit une seule fois
+    for n, c in enumerate(citations, 1):
         # Un verdict : (verdict, explication, date réelle), et le lien de ce qui a été
         # trouvé quand il y en a un.
         if c.get("kind") in LEGISLATION:
@@ -679,16 +686,22 @@ def _check(citations, keys, log, options):
         if c.get("kind") not in LEGISLATION:
             found = decision_quotes.check(c, found, keys, legifrance)
         v, why, actual, *link = found
-        if v == "ERROR":
+        if v == "ERROR" and piste.limited() and _base_of(c) in ("Légifrance", "Judilibre"):
+            if not stopped:
+                log(f"{piste.LIMITED} : les citations suivantes de Légifrance et de Judilibre "
+                    "ne sont pas vérifiées.")
+                stopped = True
+        elif v == "ERROR":
             # La base a répondu à ses contrôles, puis a flanché sur cette citation.
             from ...report import citation_label
             log(f"{_base_of(c)} : n'a pas fonctionné correctement pour "
                 f"{citation_label(c)}.")
         results.append({**c, "verdict": v, "explanation": why, "actual_date": actual,
                         "link": link[0] if link else None})
+        step = f"  [{n}/{len(citations)}]"
         if c.get("number") is None:
-            log(f"  {c['court']}, {c.get('cited_date')}, sans numéro : {t.VERDICTS[v]}")
+            log(f"{step} {c['court']}, {c.get('cited_date')}, sans numéro : {t.VERDICTS[v]}")
         else:
-            log(f"  {c['court']} {'art.' if c.get('kind') in LEGISLATION else 'n°'} "
+            log(f"{step} {c['court']} {'art.' if c.get('kind') in LEGISLATION else 'n°'} "
                 f"{c['number']} : {t.VERDICTS[v]}")
     return results

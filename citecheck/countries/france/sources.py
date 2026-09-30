@@ -14,7 +14,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from . import links
+from . import links, piste
 from ... import NAME, __version__
 from ...http import urlopen
 
@@ -68,13 +68,16 @@ def judilibre(number, key):
     req = urllib.request.Request(url, headers={
         "KeyId": key, "Accept": "application/json", "User-Agent": USER_AGENT})
     try:
+        piste.wait()
         data = _get_json(req)
+    except piste.Limited as e:
+        return {"_err": str(e)}
     except urllib.error.HTTPError as e:
+        if piste.refused(e.code):
+            return {"_err": piste.LIMITED}
         return {"_err": f"HTTP {e.code}" + (" (clé refusée)" if e.code in (401, 403) else "")}
     except Exception as e:
         return {"_err": type(e).__name__}
-    finally:
-        time.sleep(PAUSE)
     target = normalize(number)
     for res in data.get("results", []):
         if target in [normalize(x) for x in (res.get("numbers") or [])]:
@@ -91,10 +94,13 @@ def _judilibre_get(route, params, key):
     url = f"{API}/{route}?" + urllib.parse.urlencode(params, doseq=True)
     req = urllib.request.Request(url, headers={
         "KeyId": key, "Accept": "application/json", "User-Agent": USER_AGENT})
+    piste.wait()
     try:
         return _get_json(req)
-    finally:
-        time.sleep(PAUSE)
+    except urllib.error.HTTPError as e:
+        if piste.refused(e.code):
+            raise piste.Limited()
+        raise
 
 
 def locations(jurisdiction, key):
@@ -119,6 +125,8 @@ def judilibre_rg(number, jurisdiction, location, key):
     try:
         data = _judilibre_get("search", {"query": number, "jurisdiction": jurisdiction,
                                          "location": location, "page_size": 20}, key)
+    except piste.Limited as e:
+        return {"_err": str(e)}
     except urllib.error.HTTPError as e:
         return {"_err": f"HTTP {e.code}"}
     except Exception as e:
@@ -150,6 +158,8 @@ def judilibre_on_day(number, jurisdiction, location, day, key):
                                         links.judilibre(r.get("id"))})
             if data.get("next_batch") is None:
                 return links.Found()
+    except piste.Limited as e:
+        return {"_err": str(e)}
     except urllib.error.HTTPError as e:
         return {"_err": f"HTTP {e.code}"}
     except Exception as e:

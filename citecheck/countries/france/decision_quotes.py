@@ -23,7 +23,7 @@ Seul l'identifiant de la décision part sur le réseau, jamais le passage cité.
 """
 import re
 
-from . import sources
+from . import piste, sources
 from .articles import _norm, quote_fragments
 
 
@@ -88,8 +88,9 @@ def check(citation, result, keys, client=None):
     try:
         text, base = source_text(link, keys, client)
     except Exception as e:      # Unavailable, HTTP, réseau : une base muette ne conclut rien
+        said = str(e) if isinstance(e, piste.Limited) else type(e).__name__
         return (verdict, f"{why} ; passage cité non contrôlé (la base n'a pas répondu : "
-                f"{type(e).__name__})", actual, link)
+                f"{said})", actual, link)
     if text is None:
         return verdict, f"{why} ; passage cité non contrôlé ({base})", actual, link
     missing = _missing(fragments, text)

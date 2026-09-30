@@ -1308,5 +1308,48 @@ class DecisionQuotes(unittest.TestCase):
                                            "passage prévu par la loi")
 
 
+class PisteCeiling(unittest.TestCase):
+    """PISTE gives the keys of Légifrance and Judilibre: a ceiling on the pace, and a full stop
+    at its first « too many requests »."""
+
+    def setUp(self):
+        from citecheck.countries.france import piste
+        piste.reset()
+        self.addCleanup(piste.reset)
+
+    def test_requests_are_spaced_by_the_ceiling(self):
+        from unittest import mock
+        from citecheck.countries.france import piste
+        naps = []
+        with mock.patch.object(piste, "PER_MINUTE", 30), \
+                mock.patch.object(piste.time, "sleep", naps.append), \
+                mock.patch.object(piste.time, "monotonic", return_value=1000.0), \
+                mock.patch.object(piste, "_next", 0.0):
+            piste.wait()
+            piste.wait()
+            piste.wait()
+        self.assertEqual(naps, [2.0, 4.0])      # 30 per minute: one every 2 seconds
+
+    def test_the_first_429_stops_every_piste_request(self):
+        import io, urllib.error
+        from unittest import mock
+        from citecheck.countries.france import legifrance, piste, sources
+        from citecheck.countries.france.legifrance import Client, Unavailable
+        refusal = urllib.error.HTTPError("https://api.piste.gouv.fr", 429, "Too Many", {},
+                                         io.BytesIO(b""))
+        with mock.patch.object(piste, "PER_MINUTE", 60000), \
+                mock.patch.object(sources, "urlopen", side_effect=refusal) as judilibre, \
+                mock.patch.object(legifrance, "urlopen", side_effect=refusal) as lf:
+            self.assertEqual(sources.judilibre("17-28268", "k"), {"_err": piste.LIMITED})
+            self.assertTrue(piste.limited())
+            with self.assertRaises(Unavailable) as said:
+                Client("id", "secret").codes()
+            self.assertIn("PISTE a limité", str(said.exception))
+            self.assertEqual(judilibre.call_count, 1)
+            self.assertEqual(lf.call_count, 0)              # nothing more was sent
+        piste.reset()
+        self.assertFalse(piste.limited())                    # the next check tries again
+
+
 if __name__ == "__main__":
     unittest.main()

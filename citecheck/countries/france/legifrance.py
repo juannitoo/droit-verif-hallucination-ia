@@ -44,18 +44,17 @@ Seuls le numéro d'article et le nom du code partent sur le réseau. Jamais le t
 document.
 """
 import json
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
 
 from ... import NAME, __version__
+from . import piste
 from ...http import urlopen
 
 OAUTH = "https://oauth.piste.gouv.fr/api/oauth/token"
 API = "https://api.piste.gouv.fr/dila/legifrance/lf-engine-app"
 USER_AGENT = f"{NAME}/{__version__}"
-PAUSE = 0.3
 TIMEOUT = 40
 PAGE_SIZE = 100
 MAX_PAGES = 5         # 500 résultats ; mesuré le 30/09 : 41 « 1 », 44 « L111-1 »
@@ -86,9 +85,14 @@ class Client:
         req = urllib.request.Request(OAUTH, data=body, headers={
             "Content-Type": "application/x-www-form-urlencoded", "User-Agent": USER_AGENT})
         try:
+            piste.wait()
             with urlopen(req, timeout=TIMEOUT) as r:
                 token = json.loads(r.read().decode()).get("access_token")
+        except piste.Limited as e:
+            raise Unavailable(str(e), 429)
         except urllib.error.HTTPError as e:
+            if piste.refused(e.code):
+                raise Unavailable(piste.LIMITED, 429)
             raise Unavailable(f"HTTP {e.code} sur l'authentification"
                               + (" (identifiants refusés)" if e.code in (400, 401) else ""))
         except Exception as e:
@@ -104,16 +108,19 @@ class Client:
             "Authorization": f"Bearer {self._token}", "Content-Type": "application/json",
             "Accept": "application/json", "User-Agent": USER_AGENT})
         try:
+            piste.wait()
             with urlopen(req, timeout=TIMEOUT) as r:
                 return json.loads(r.read().decode("utf-8", "replace"))
+        except piste.Limited as e:
+            raise Unavailable(str(e), 429)
         except urllib.error.HTTPError as e:
+            if piste.refused(e.code):
+                raise Unavailable(piste.LIMITED, 429)
             raise Unavailable(f"HTTP {e.code}" + (" (accès refusé : l'application PISTE "
                               "est-elle abonnée à Légifrance ?)" if e.code == 403 else ""),
                               e.code)
         except Exception as e:
             raise Unavailable(type(e).__name__)
-        finally:
-            time.sleep(PAUSE)
 
     def codes(self):
         """{titre exact: identifiant LEGITEXT} de tous les codes, en vigueur ET abrogés (108

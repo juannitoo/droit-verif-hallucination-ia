@@ -85,10 +85,9 @@ def check_convention_article(client, citation, day, default_idcc):
 
 
 def check_convention_articles(citations, client, day, default_idcc):
-    results = []
+    """Vérifie une liste de citations d'articles de conventions, une à une, à la demande : chaque citation s'affiche dès qu'elle est vérifiée."""
     for c in citations:
         try:
-            results.append(check_convention_article(client, c, day, default_idcc))
+            yield check_convention_article(client, c, day, default_idcc)
         except Unavailable as e:
-            results.append(("ERROR", f"Légifrance n'a pas répondu ({e})", None))
-    return results
+            yield "ERROR", f"Légifrance n'a pas répondu ({e})", None

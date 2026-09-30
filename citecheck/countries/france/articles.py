@@ -198,11 +198,10 @@ def verdict_versions(client, citation, day, texts, versions, where, link=links.c
 
 
 def check_articles(citations, client, day, log):
-    """Vérifie une liste de citations d'articles. Lève Unavailable si Légifrance tombe."""
-    texts, results = {}, []
+    """Vérifie une liste de citations d'articles, une à une, à la demande : chaque citation s'affiche dès qu'elle est vérifiée."""
+    texts = {}
     for c in citations:
         try:
-            results.append(check_article(client, c, day, texts))
+            yield check_article(client, c, day, texts)
         except Unavailable as e:
-            results.append(("ERROR", f"Légifrance n'a pas répondu ({e})", None))
-    return results
+            yield "ERROR", f"Légifrance n'a pas répondu ({e})", None

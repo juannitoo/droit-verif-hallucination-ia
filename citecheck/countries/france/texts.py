@@ -126,11 +126,10 @@ def check_text_article(client, citation, day, texts):
 
 
 def check_text_articles(citations, client, day):
-    """Vérifie une liste de citations d'articles de lois, ordonnances et décrets."""
-    texts, results = {}, []
+    """Vérifie une liste de citations d'articles de lois, ordonnances et décrets, une à une, à la demande : chaque citation s'affiche dès qu'elle est vérifiée."""
+    texts = {}
     for c in citations:
         try:
-            results.append(check_text_article(client, c, day, texts))
+            yield check_text_article(client, c, day, texts)
         except Unavailable as e:
-            results.append(("ERROR", f"Légifrance n'a pas répondu ({e})", None))
-    return results
+            yield "ERROR", f"Légifrance n'a pas répondu ({e})", None

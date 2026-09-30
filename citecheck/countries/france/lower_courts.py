@@ -43,7 +43,7 @@ import re
 import unicodedata
 from datetime import date
 
-from . import links, sources
+from . import links, piste, sources
 
 COMPLETE_SHARE = 0.6
 RECENT_DAYS = 183
@@ -171,10 +171,10 @@ def check_lower_court(courts, citation):
 
 
 def check_lower_courts(citations, courts):
-    results = []
+    """Vérifie une liste de décisions de cours d'appel et de tribunaux, une à une, à la demande : chaque citation s'affiche dès qu'elle est vérifiée."""
     for c in citations:
         try:
-            results.append(check_lower_court(courts, c))
+            yield check_lower_court(courts, c)
         except Exception as e:
-            results.append(("ERROR", f"Judilibre n'a pas répondu ({type(e).__name__})", None))
-    return results
+            why = str(e) if isinstance(e, piste.Limited) else type(e).__name__
+            yield "ERROR", f"Judilibre n'a pas répondu ({why})", None
