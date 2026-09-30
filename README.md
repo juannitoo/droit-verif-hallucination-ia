@@ -22,8 +22,20 @@ Il pointe ce qui est suspect, il ne donne pas d'avis. Il ne dit pas si une déci
 l'argument : ça reste le travail de l'avocat. Ce qu'il reconnaît, et ce qu'il ne vérifie
 pas, est listé dans l'onglet « Ce qui est vérifié » du programme.
 
-**Juristes : tout ce qu'il vérifie, avec des exemples, et pourquoi certaines choses ne
-le sont pas : [la notice pour les juristes](citecheck/countries/france/README.md).**
+**Hommes de loi : tout ce qu'il vérifie, avec des exemples, et pourquoi certaines choses ne
+le sont pas : [la notice pour les hommes de loi](citecheck/countries/france/README.md).**
+
+Pour juger sur pièces :
+
+- fichier de test : [conclusions-test.pdf](exemples/conclusions-test.pdf), des conclusions
+  fictives de deux pages, avec des citations exactes, inventées ou mal datées (dont celles
+  relevées par le TJ de Périgueux) ;
+- fichiers générés suite au test :
+  - [conclusions-test-citations-vérifiées.pdf](exemples/conclusions-test-citations-v%C3%A9rifi%C3%A9es.pdf) :
+    le document lui-même, chaque citation surlignée de la couleur de son verdict et
+    cliquable, avec en première page le mode d'emploi des couleurs ;
+  - [rapport-citations.pdf](exemples/rapport-citations.pdf) : le rapport, tableau et détail
+    de chaque citation, enregistré sans extraits (ni phrase ni nom du document).
 
 ## État
 
