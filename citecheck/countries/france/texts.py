@@ -17,6 +17,7 @@ document.
 """
 import re
 
+from . import links
 from .articles import verdict_versions
 from .extract import MONTHS, in_words
 from .legifrance import Unavailable
@@ -76,7 +77,7 @@ def candidates(client, citation):
 
 
 def check_text_article(client, citation, day, texts):
-    """(verdict, explication, date de début de la version retenue)."""
+    """(verdict, explication, date de début de la version retenue[, lien])."""
     nature, number = citation["text_nature"], citation["number"]
     cited_text = label(nature, citation.get("text_number"), citation.get("text_date"))
     bare = re.sub(r"^(?:la |le |l')", "", cited_text)   # « loi n° 89-462 du 6 juillet 1989 »
@@ -89,7 +90,8 @@ def check_text_article(client, citation, day, texts):
     for text_id, _, text_number, text_day in found:
         versions = client.text_article_versions(text_number, text_id, number)
         name = label(nature, text_number, text_day)
-        result = verdict_versions(client, citation, day, texts, versions, name)
+        result = verdict_versions(client, citation, day, texts, versions, name,
+                                  links.text_article)
         if result[0] == "ARTICLE_NOT_IN_FORCE" and day < text_day:
             # Le texte lui-même est postérieur aux faits : le dire, c'est plus fort que « pas
             # encore en vigueur » (une IA applique le droit actuel à des faits anciens).
@@ -97,7 +99,7 @@ def check_text_article(client, citation, day, texts):
             result = ("ARTICLE_NOT_IN_FORCE", f"le texte n'existait pas encore le {day} : "
                       f"{name} lui est postérieur{'e' if nature in FEMININE else ''}"
                       + (f" ; son article {number} est en vigueur depuis le {start.group(1)}"
-                         if start else ""), None)
+                         if start else ""), None, *result[3:])
         results.append((name, text_day, result))
 
     if len(results) == 1:
@@ -107,7 +109,7 @@ def check_text_article(client, citation, day, texts):
             pronoun = "elle est datée" if female else "il est daté"
             return ("WRONG_DATE", f"{name[0].upper()}{name[1:]} existe, mais {pronoun} du "
                     f"{text_day}, pas du {cited_day} ; pour l'article {number} : {result[1]}",
-                    result[2])
+                    result[2], *result[3:])
         return result
 
     head = (f"« {bare} » désigne {len(results)} textes dans Légifrance : l'article "
@@ -117,8 +119,8 @@ def check_text_article(client, citation, day, texts):
         return ("ARTICLE_NOT_FOUND", f"{head} ; aucun ne le contient, à aucune date : il ne "
                 "semble pas exister ; à vérifier sur Légifrance", None)
     if len(hits) == 1:
-        name, (verdict, why, start) = hits[0]
-        return verdict, f"{head} ; il n'existe que dans {name} : {why}", start
+        name, (verdict, why, start, *link) = hits[0]
+        return verdict, f"{head} ; il n'existe que dans {name} : {why}", start, *link
     return ("DOUBTFUL", f"{head} ; il existe dans {len(hits)} d'entre eux, à vous de dire "
             "lequel est visé : " + " ; ".join(f"dans {n}, {r[1]}" for n, r in hits), None)
 

@@ -179,9 +179,9 @@ class Client:
         data = self._post("/consult/getArticle", {"id": article_id})
         return ((data.get("article") or {}).get("texte") or "").strip()
 
-    def decision_titles(self, fond, number):
-        """Les titres des décisions portant ce numéro dans ce fonds (CONSTIT, CETAT). Liste
-        vide si aucune. Tout est lu, ou rien n'est conclu."""
+    def decisions(self, fond, number):
+        """[(titre, identifiant)] des décisions portant ce numéro dans ce fonds (CONSTIT,
+        CETAT). Liste vide si aucune. Tout est lu, ou rien n'est conclu."""
         titles, read = [], 0
         for page in range(1, MAX_PAGES + 1):
             data = self._post("/search", {"fond": fond, "recherche": {
@@ -192,7 +192,8 @@ class Client:
             results = data.get("results") or []
             total = data.get("totalResultNumber") or 0
             read += len(results)
-            titles += [t.get("title") or "" for r in results for t in (r.get("titles") or [])[:1]]
+            titles += [(t.get("title") or "", t.get("id") or "")
+                       for r in results for t in (r.get("titles") or [])[:1]]
             if read >= total:
                 return titles
             if not results:
@@ -319,11 +320,13 @@ class Client:
 
 
 def _day(ms):
-    """Date Légifrance (millisecondes depuis 1970) en AAAA-MM-JJ."""
+    """Date Légifrance (millisecondes depuis 1970) en AAAA-MM-JJ. Par addition, pas par
+    fromtimestamp : sous Windows, celui-ci refuse les dates d'avant 1970 (Code civil, 1804)."""
     if ms is None:
         return ""
-    from datetime import datetime, timezone
-    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).date().isoformat()
+    from datetime import datetime, timedelta, timezone
+    epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    return (epoch + timedelta(milliseconds=ms)).date().isoformat()
 
 
 def _strip_html(html):

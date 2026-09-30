@@ -2,4 +2,6 @@
 # (pip-audit). Les versions exactes, avec empreintes, sont figées au moment de compiler.
 pypdf>=6.19.0
 keyring>=25.7.0
+pdfminer.six>=20260107   # la place de chaque lettre, pour le PDF annoté (licence MIT)
+fpdf2>=2.8.9             # le rapport en PDF (licence LGPL ; n'y entre que du texte)
 customtkinter==5.2.2     # la fenêtre, avec le style de l'assistant vocal (même version)

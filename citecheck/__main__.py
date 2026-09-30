@@ -3,6 +3,8 @@
   python -m citecheck                               # the window
   python -m citecheck brief.pdf                     # text report
   python -m citecheck brief.pdf --json              # JSON report, for an AI
+  python -m citecheck brief.pdf --pdf               # + brief-citations-vérifiées.pdf
+  python -m citecheck brief.docx -o rapport.pdf     # the report as a PDF
   python -m citecheck brief.pdf --reference-date 2019-03-21   # articles read at that date
   python -m citecheck --number 17-28268 --date 2019-03-21
   python -m citecheck --case cases/perigueux.json   # benchmark on a real case
@@ -11,7 +13,9 @@ import argparse
 import json
 import sys
 
-from . import NAME, __version__, reader, report
+from pathlib import Path
+
+from . import NAME, __version__, annotate, reader, report, report_pdf
 from .countries import COUNTRIES, DEFAULT
 from .engine import check_citations, check_document, valid_date
 from .locales import t
@@ -43,7 +47,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog=NAME, description=t.CLI_DESCRIPTION)
     ap.add_argument("document", nargs="?", help=".pdf .docx .odt .txt .md")
     ap.add_argument("--json", action="store_true", help="JSON report, for an AI")
-    ap.add_argument("-o", "--output", help="write the report to this file")
+    ap.add_argument("-o", "--output", help="write the report to this file; a name ending "
+                    "in .pdf gives the report as a PDF")
     ap.add_argument("--number", help="check a single decision number")
     ap.add_argument("--date", help="cited date for --number, YYYY-MM-DD")
     ap.add_argument("--order", choices=["administrative", "judicial"],
@@ -55,6 +60,9 @@ def main(argv=None):
     ap.add_argument("--with-excerpts", action="store_true",
                     help="keep excerpts of the document in the report (default: none, only "
                     "numbers, dates and verdicts, as the window does)")
+    ap.add_argument("--pdf", action="store_true",
+                    help="also write the annotated PDF next to the document: each citation "
+                    "highlighted in the colour of its verdict, and linked to what was found")
     ap.add_argument("--case", help="benchmark: a case file whose answer is known")
     ap.add_argument("--scope", action="store_true", help=t.CLI_SCOPE)
     ap.add_argument("--version", action="version", version=f"{NAME} {__version__}")
@@ -90,11 +98,20 @@ def main(argv=None):
         except reader.Unreadable as e:
             print(t.CLI_UNREADABLE.format(error=e), file=sys.stderr)
             return 2
+        if a.pdf and Path(a.document).suffix.lower() == ".pdf":
+            target = annotate.output_name(Path(a.document))
+            placed, missed = annotate.annotate(a.document, target, r)
+            log(t.PDF_SAVED.format(path=target, placed=placed)
+                + (t.PDF_MISSED.format(n=missed) if missed else ""))
+        elif a.pdf:
+            log(t.PDF_ONLY)
 
     if not a.with_excerpts:
         r = report.without_excerpts(r)
     out = report.to_json(r) if a.json else report.to_text(r)
-    if a.output:
+    if a.output and a.output.lower().endswith(".pdf"):
+        report_pdf.write(r, a.output)
+    elif a.output:
         with open(a.output, "w", encoding="utf-8") as f:
             f.write(out)
     else:

@@ -43,7 +43,7 @@ import re
 import unicodedata
 from datetime import date
 
-from . import sources
+from . import links, sources
 
 COMPLETE_SHARE = 0.6
 RECENT_DAYS = 183
@@ -129,12 +129,14 @@ def check_lower_court(courts, citation):
         return "ERROR", f"Judilibre n'a pas répondu ({dates['_err']})", None
     if dates:
         listed = ", ".join(dates)
+        link = links.link_for(dates, cited)
         if not cited:
-            return "EXISTS_DATE_UNCHECKED", f"{label} : existe, rendue le {listed} ; aucune date citée", listed
+            return ("EXISTS_DATE_UNCHECKED", f"{label} : existe, rendue le {listed} ; aucune "
+                    "date citée", listed, link)
         if cited in dates:
-            return "CONFIRMED", label, cited
+            return "CONFIRMED", label, cited, link
         return ("WRONG_DATE", f"{label} : le RG existe, mais Judilibre date la décision du "
-                f"{listed}, pas du {cited}", listed)
+                f"{listed}, pas du {cited}", listed, link)
 
     first, counts = courts.first_complete_year(jurisdiction, code)
     recent = cited and (date.today() - date.fromisoformat(cited)).days < RECENT_DAYS

@@ -1,4 +1,4 @@
-Icônes : Lucide 1.45.0 — https://lucide.dev
+Icônes : Lucide 1.45.0 (https://lucide.dev)
 
 ISC License
 

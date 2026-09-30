@@ -315,15 +315,15 @@ def extract(text):
     dates = assign_dates(text, [m.span() for m in
                                 appeals + requests + rgs + conflicts + constit + eu + caa]
                          + [m.span() for m, _ in tcom], used)
-    seen = set()        # (numéro, date) : un même numéro cité à deux dates = deux citations
+    seen = Seen()       # (numéro, date) : un même numéro cité à deux dates = deux citations
 
     def add(order, court, number, m):
         d = dates.get(m.start())
-        if (order, number, d) in seen:
+        if seen.again((order, number, d), m.span()):
             return
-        seen.add((order, number, d))
         citations.append({"kind": "decision", "order": order, "court": court,
                           "number": number, "cited_date": d, "span": m.span()})
+        seen[(order, number, d)] = citations[-1]
 
     for m in conflicts:
         add("conflicts", "T. confl.", re.sub(r"\s", "", m.group(1) or m.group(2)).upper(), m)
@@ -340,24 +340,24 @@ def extract(text):
     for m, court in tcom:
         city = _city(text[court.end():][len(RE_TCOM_CITY.match(text, court.end()).group(0)):])
         d = dates.get(m.start())
-        if ("tcom", city, m.group(1), d) in seen:
+        if seen.again(("tcom", city, m.group(1), d), m.span()):
             continue
-        seen.add(("tcom", city, m.group(1), d))
         citations.append({"kind": "decision", "order": "lower", "jurisdiction": "tcom",
                           "court": f"T. com. {city}".strip(), "place": city,
                           "number": m.group(1), "cited_date": d, "span": m.span()})
+        seen[("tcom", city, m.group(1), d)] = citations[-1]
 
     for m in appeals:
         number, d = m.group(1), dates.get(m.start())
-        if (number, d) in seen:
+        if seen.again((number, d), m.span()):
             continue
-        seen.add((number, d))
         citations.append({"kind": "decision", "order": "judicial", "court": "Cass",
                           "number": number, "cited_date": d, "span": m.span(),
                           "chamber": cited_chamber(
                               text, m.start(), m.end(),
                               min((a.start() for a in appeals if a.start() > m.start()),
                                   default=None))})
+        seen[(number, d)] = citations[-1]
         if not d:
             undated.append(number)
 
@@ -373,20 +373,20 @@ def extract(text):
             # Hors champ : montré, jamais envoyé dans ArianeWeb.
             if slash:
                 number += slash.group(0)
-            if ("other", number, d) in seen:
+            span = (m.start(), slash.end() if slash else m.end())
+            if seen.again(("other", number, d), span):
                 continue
-            seen.add(("other", number, d))
             citations.append({"kind": "decision", "order": "ta" if order == "TA" else "other",
                               "court": order if order != "administrative"
                               else "juridiction non nommée",
-                              "number": number, "cited_date": d,
-                              "span": (m.start(), slash.end() if slash else m.end())})
+                              "number": number, "cited_date": d, "span": span})
+            seen[("other", number, d)] = citations[-1]
             continue
-        if (number, d) in seen:
+        if seen.again((number, d), m.span()):
             continue
-        seen.add((number, d))
         citations.append({"kind": "decision", "order": "administrative", "court": "CE",
                           "number": number, "cited_date": d, "span": m.span()})
+        seen[(number, d)] = citations[-1]
         if not d:
             undated.append(number)
 
@@ -413,10 +413,10 @@ def extract(text):
         # Déjà citée avec son numéro à cette date : c'est la même décision, reprise.
         if day in numbered_days:
             continue
-        if ("unnumbered", court, day) not in seen:
-            seen.add(("unnumbered", court, day))
+        if not seen.again(("unnumbered", court, day), span):
             citations.append({"kind": "decision", "order": "unnumbered", "court": court,
                               "number": None, "cited_date": day, "span": span})
+            seen[("unnumbered", court, day)] = citations[-1]
 
     articles, article_remarks = extract_articles(text)
     # Dans l'ordre du document : c'est l'ordre dans lequel l'avocat relira.
@@ -575,11 +575,24 @@ def _text_label(ref):
             + (f" du {in_words(ref['text_date'])}" if ref["text_date"] else ""))
 
 
+class Seen(dict):
+    """Les citations déjà relevées, par clé. Une citation reprise plus loin dans le document
+    n'est vérifiée qu'une fois ; les places de ses reprises sont gardées (« repeats ») pour
+    que le PDF annoté les marque aussi."""
+
+    def again(self, key, span):
+        """True si `key` est déjà relevée : la reprise est notée, rien d'autre à faire."""
+        if key in self:
+            self[key].setdefault("repeats", []).append(span)
+            return True
+        return False
+
+
 def extract_articles(text):
     """Renvoie (citations d'articles, remarques)."""
     matches = list(RE_ARTICLES.finditer(text))
     quotes = assign_quotes(text, [(m.start(), m.end()) for m in matches])
-    citations, seen, no_code, attached = [], set(), [], []
+    citations, seen, no_code, attached = [], Seen(), [], []
     last_code = last_idcc = last_text = None
     for index, m in enumerate(matches):
         after = text[m.end(): m.end() + CODE_AFTER]
@@ -595,13 +608,13 @@ def extract_articles(text):
             idcc = last_idcc if same and last_idcc else nearest_idcc(text, m.start(), m.end())
             last_idcc = idcc or last_idcc
             for number in numbers:
-                if ("idcc", idcc, number) in seen:
+                if seen.again(("idcc", idcc, number), m.span()):
                     continue
-                seen.add(("idcc", idcc, number))
                 citations.append({"kind": "convention_article", "order": "legislation",
                                   "court": f"IDCC {idcc}" if idcc else "convention collective",
                                   "idcc": idcc, "number": number, "cited_date": None,
                                   "quote": quote, "span": m.span()})
+                seen[("idcc", idcc, number)] = citations[-1]
             continue
 
         # Un article de loi, d'ordonnance ou de décret non codifié.
@@ -617,12 +630,12 @@ def extract_articles(text):
             last_text = ref
             for number in numbers:
                 key = ("text", ref["text_nature"], ref["text_number"], ref["text_date"], number)
-                if key in seen:
+                if seen.again(key, m.span()):
                     continue
-                seen.add(key)
                 citations.append({"kind": "text_article", "order": "legislation",
                                   "court": _text_label(ref), **ref, "number": number,
                                   "cited_date": None, "quote": quote, "span": m.span()})
+                seen[key] = citations[-1]
             continue
 
         code = None
@@ -645,12 +658,12 @@ def extract_articles(text):
             continue
         last_code = code
         for number in numbers:
-            if (code, number) in seen:
+            if seen.again((code, number), m.span()):
                 continue
-            seen.add((code, number))
             citations.append({"kind": "article", "order": "legislation", "court": code,
                               "code": code, "number": number, "cited_date": None,
                               "quote": quote, "span": m.span()})
+            seen[(code, number)] = citations[-1]
     remarks = []
     if no_code:
         remarks.append(f"{len(no_code)} article(s) cité(s) sans code reconnu : "
@@ -696,7 +709,7 @@ def _city(text):
 
 
 def extract_lower_courts(text, rgs, dates):
-    citations, seen, no_court = [], set(), []
+    citations, seen, no_court = [], Seen(), []
     for m in rgs:
         number = m.group(1)
         lo = max(0, m.start() - WINDOW)
@@ -710,13 +723,13 @@ def extract_lower_courts(text, rgs, dates):
         kind = courts[-1].group("kind").lower()
         jurisdiction = "ca" if kind.startswith(("ca", "cour")) else "tj"
         d = dates.get(m.start())
-        if (jurisdiction, city, number, d) in seen:
+        if seen.again((jurisdiction, city, number, d), m.span()):
             continue
-        seen.add((jurisdiction, city, number, d))
         label = ("CA " if jurisdiction == "ca" else "TJ ") + city
         citations.append({"kind": "decision", "order": "lower", "court": label,
                           "jurisdiction": jurisdiction, "place": city, "number": number,
                           "cited_date": d, "span": m.span()})
+        seen[(jurisdiction, city, number, d)] = citations[-1]
     remarks = []
     if no_court:
         remarks.append(f"{len(no_court)} numéro(s) RG sans cour d'appel ni tribunal judiciaire "

@@ -19,6 +19,7 @@ LES NUMÉROS
 """
 import re
 
+from . import links
 from .articles import _period, quote_fragments, quote_in, version_at
 from .legifrance import Unavailable
 
@@ -56,25 +57,31 @@ def check_convention_article(client, citation, day, default_idcc):
             why = f"pas encore en vigueur le {day} : entre en vigueur le {versions[0]['debut']}"
         else:
             why = f"plus en vigueur le {day} : dernière version terminée le {versions[-1]['fin']}"
-        return "ARTICLE_NOT_IN_FORCE", f"{why} (IDCC {idcc}{source})", None
+        near = versions[0] if day < versions[0]["debut"] else versions[-1]
+        return ("ARTICLE_NOT_IN_FORCE", f"{why} (IDCC {idcc}{source})", None,
+                links.convention_article(near["id"]))
 
     extension = EXTENSION.get(current["etat"])
     base = (f"en vigueur le {day} (IDCC {idcc}{source}, version {_period(current)}"
             + (f", {extension}" if extension else "")
             + (f" ; {len(versions)} versions" if len(versions) > 1 else "") + ")")
+    here = links.convention_article(current["id"])
     fragments = quote_fragments(citation.get("quote") or "")
     if not fragments:
-        return "ARTICLE_IN_FORCE", base, current["debut"]
+        return "ARTICLE_IN_FORCE", base, current["debut"], here
     if quote_in(fragments, current["texte"]):
-        return "ARTICLE_IN_FORCE", base + " ; texte cité conforme à cette version", current["debut"]
+        return ("ARTICLE_IN_FORCE", base + " ; texte cité conforme à cette version",
+                current["debut"], here)
     for v in reversed([v for v in versions if v is not current]):
         if quote_in(fragments, v["texte"]):
             return ("ARTICLE_OTHER_VERSION",
                     f"le texte cité est celui de la version {_period(v)}, pas de celle en "
-                    f"vigueur le {day} (IDCC {idcc}, version {_period(current)})", v["debut"])
+                    f"vigueur le {day} (IDCC {idcc}, version {_period(current)})", v["debut"],
+                    links.convention_article(v["id"]))
     return ("QUOTE_NOT_FOUND",
             f"{base} ; mais le texte cité ne se retrouve dans aucune version de l'article "
-            "(paraphrase, texte d'un avenant, ou texte inventé : à vérifier)", current["debut"])
+            "(paraphrase, texte d'un avenant, ou texte inventé : à vérifier)", current["debut"],
+            here)
 
 
 def check_convention_articles(citations, client, day, default_idcc):

@@ -2,7 +2,7 @@
 from datetime import date
 from pathlib import Path
 
-from . import keys, reader, report
+from . import annotate, keys, reader, report
 from .countries import COUNTRIES, DEFAULT
 from .locales import t
 
@@ -32,9 +32,20 @@ def check_document(path, country_code=DEFAULT, log=lambda s: None, options=None)
     log(t.FOUND.format(n=len(citations)))
     for c in citations:
         start, end = c.pop("span")
+        repeats = c.pop("repeats", [])
         page, in_notes = doc.locate(start)
+        # « text » et « nth » : de quoi retrouver la citation sur sa page, pour le PDF
+        # annoté. Comme l'extrait, ils viennent du document : un rapport « sans extraits »
+        # les retire.
         c["location"] = {"page": page, "page_exact": doc.pages == "exact",
-                         "in_notes": in_notes, "excerpt": doc.excerpt(start, end)}
+                         "in_notes": in_notes, "excerpt": doc.excerpt(start, end),
+                         **annotate.anchor(doc.text, start, end)}
+        if repeats:
+            # Les reprises de la même citation, plus loin : vérifiées une fois, annotées
+            # partout.
+            c["location"]["repeats"] = [
+                {"page": doc.locate(a)[0], **annotate.anchor(doc.text, a, b)}
+                for a, b in repeats]
     results = country.check(citations, available_keys(country), log, options)
     return report.build(Path(path).name, country_code, results, remarks, options)
 

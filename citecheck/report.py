@@ -5,6 +5,7 @@ report back to the AI that wrote the document and it corrects its citations.
 """
 import json
 import re
+import textwrap
 from collections import Counter
 from datetime import date
 
@@ -81,7 +82,8 @@ def without_excerpts(report):
             r["court"] = (court[:-len(place)] if court.endswith(place)
                           else court.split(" ", 1)[0]).strip()
         if r.get("location"):
-            r["location"] = {k: v for k, v in r["location"].items() if k != "excerpt"}
+            r["location"] = {k: v for k, v in r["location"].items()
+                             if k in ("page", "page_exact", "in_notes")}
         out["citations"].append(r)
     out["excerpts_removed"] = True
     return out
@@ -91,54 +93,121 @@ def to_json(report):
     return json.dumps(report, ensure_ascii=False, indent=2)
 
 
-def _where(r):
+LEGISLATION = ("article", "convention_article", "text_article")
+
+# Le feu de chaque verdict, le même dans le rapport et dans le PDF annoté : vert (bleu à
+# l'écran) ce qui est confirmé, rouge ce qui semble inventé, gris ce qui n'a pas été vérifié,
+# et orange tout le reste. Un verdict douteux n'est jamais « confirmé ».
+CONFIRMED, CHECK, INVENTED, UNCHECKED = "ok", "check", "invented", "unchecked"
+LIGHTS = {
+    "CONFIRMED": CONFIRMED, "ARTICLE_IN_FORCE": CONFIRMED,
+    "NOT_PUBLISHED": INVENTED, "TEXT_NOT_FOUND": INVENTED, "ARTICLE_NOT_FOUND": INVENTED,
+    "CONVENTION_NOT_FOUND": INVENTED,
+    "NOT_TESTED": UNCHECKED, "ERROR": UNCHECKED, "UNVERIFIABLE_PERIOD": UNCHECKED,
+    "MANUAL_CHECK": UNCHECKED,
+}
+
+
+def light(verdict):
+    return LIGHTS.get(verdict, CHECK)
+
+
+def citation_label(r, report=None):
+    """« Cass. n° 17-28268, cité au 2019-03-21 », « Code civil, article 1240 »."""
+    if r.get("kind") == "article":
+        return t.ARTICLE_LINE.format(code=r["code"], number=r["number"])
+    if r.get("kind") == "text_article":
+        return t.ARTICLE_LINE.format(code=r["court"], number=r["number"])
+    if r.get("kind") == "convention_article":
+        idcc = r.get("idcc") or (report or {}).get("idcc") or t.IDCC_UNKNOWN
+        return t.CONVENTION_LINE.format(idcc=idcc, number=r["number"])
+    if r.get("number") is None:
+        return t.UNNUMBERED_LINE.format(court=r["court"], date=r["cited_date"])
+    line = t.RG_LINE if r.get("order") == "lower" else t.CITATION_LINE
+    return line.format(court=r["court"], number=r["number"],
+                       date=t.CITED_ON.format(date=r["cited_date"])
+                       if r.get("cited_date") else t.NO_DATE)
+
+
+def page_label(r):
     loc = r.get("location")
     if not loc:
         return ""
     if loc["in_notes"]:
-        return t.WHERE_NOTES
+        return t.PAGE_NOTES
     if loc["page"]:
-        return (t.WHERE_PAGE if loc["page_exact"] else t.WHERE_PAGE_APPROX).format(page=loc["page"])
+        return (t.PAGE_EXACT if loc["page_exact"] else t.PAGE_APPROX).format(page=loc["page"])
     return ""
 
 
+# Le tableau : une ligne par citation, les cellules longues passent à la ligne. Le détail
+# (explication, lien, extrait) suit, sous le même numéro.
+COLUMNS = ((t.COL_NUMBER, 3), (t.COL_PAGE, 7), (t.COL_CITATION, 38), (t.COL_VERDICT, 32))
+
+
+WIDTH = 94      # la largeur du tableau : le rapport entier tient dans une fenêtre de
+                # bloc-notes, sans ligne qui file à droite
+
+
+def _para(text, indent=""):
+    """Un paragraphe, coupé à la largeur du rapport."""
+    return textwrap.wrap(text, WIDTH, initial_indent=indent, subsequent_indent=indent,
+                         break_on_hyphens=False) or [""]
+
+
+def _wrap(text, width):
+    return textwrap.wrap(text, width, break_long_words=True, break_on_hyphens=False) or [""]
+
+
+def _table(rows):
+    """En ASCII (+ - |), pas en traits de tableau (┼ ─ │) : une police qui n'a pas ces traits
+    les emprunte à une autre, plus large, et le tableau se décale (vu dans VS Code)."""
+    widths = [w for _, w in COLUMNS]
+
+    def rule(fill="-"):
+        return "+" + "+".join(fill * (w + 2) for w in widths) + "+"
+
+    def line(cells):
+        cells = [_wrap(c, w) for c, w in zip(cells, widths)]
+        out = []
+        for i in range(max(len(c) for c in cells)):
+            out.append("|" + "|".join(f" {(c[i] if i < len(c) else ''):<{w}} "
+                                      for c, w in zip(cells, widths)) + "|")
+        return out
+
+    lines = [rule()] + line([name for name, _ in COLUMNS]) + [rule("=")]
+    for i, row in enumerate(rows):
+        lines += ([rule()] if i else []) + line(row)
+    return lines + [rule()]
+
+
 def to_text(report):
-    lines = [t.TITLE, t.DOCUMENT_LINE.format(source=report["source"]),
+    lines = [t.TITLE, *_para(t.DOCUMENT_LINE.format(source=report["source"])),
              t.CHECKED_LINE.format(date=report["date"], program=report["program"]), "",
-             t.DISCLAIMER, ""]
+             *_para(t.DISCLAIMER), ""]
     cits = report["citations"]
-    if any(c.get("kind") in ("article", "convention_article", "text_article") for c in cits):
-        lines.append(t.REFERENCE_LINE.format(
+    if any(c.get("kind") in LEGISLATION for c in cits):
+        lines += _para(t.REFERENCE_LINE.format(
             date=report["reference_date"] or report["date"],
             default="" if report["reference_date"] else t.REFERENCE_DEFAULT))
         lines.append("")
     if not cits:
-        lines.append(t.NO_CITATION)
-    for r in cits:
-        if r.get("kind") in ("article", "convention_article", "text_article"):
-            if r["kind"] == "article":
-                head = t.ARTICLE_LINE.format(code=r["code"], number=r["number"])
-            elif r["kind"] == "text_article":
-                head = t.ARTICLE_LINE.format(code=r["court"], number=r["number"])
-            else:
-                head = t.CONVENTION_LINE.format(idcc=r.get("idcc") or report.get("idcc") or t.IDCC_UNKNOWN,
-                                                number=r["number"])
-            lines.append(head + _where(r))
-            if r.get("quote"):
-                q = r["quote"] if len(r["quote"]) <= 160 else r["quote"][:157] + "..."
-                lines.append(t.QUOTE_LINE.format(quote=q))
-        else:
-            if r.get("number") is None:
-                head = t.UNNUMBERED_LINE.format(court=r["court"], date=r["cited_date"])
-            else:
-                line = t.RG_LINE if r.get("order") == "lower" else t.CITATION_LINE
-                head = line.format(court=r["court"], number=r["number"],
-                                   date=t.CITED_ON.format(date=r["cited_date"])
-                                   if r.get("cited_date") else t.NO_DATE)
-            lines.append(head + _where(r))
+        lines += _para(t.NO_CITATION)
+    else:
+        lines += _table([(str(n), page_label(r), citation_label(r, report),
+                          t.VERDICTS[r["verdict"]])
+                         for n, r in enumerate(cits, 1)])
+        lines += ["", t.DETAILS, ""]
+    for n, r in enumerate(cits, 1):
+        lines.append(f"{n:>3}. {citation_label(r, report)}")
+        lines += _para(f"{t.VERDICTS[r['verdict']]} : {r['explanation']}", "     ")
+        if r.get("link"):
+            lines.append(t.LINK_LINE.format(link=r["link"]))    # jamais coupé : il se clique
+        if r.get("quote"):
+            q = r["quote"] if len(r["quote"]) <= 160 else r["quote"][:157] + "..."
+            lines += _para(t.QUOTE_LINE.format(quote=q), "     ")
         if (r.get("location") or {}).get("excerpt"):
-            lines.append(t.EXCERPT_LINE.format(excerpt=r["location"]["excerpt"]))
-        lines.append(f"    {t.VERDICTS[r['verdict']]} : {r['explanation']}")
+            lines += _para(t.EXCERPT_LINE.format(excerpt=r["location"]["excerpt"]), "     ")
         lines.append("")
     if cits:
         lines.append(t.SUMMARY)
@@ -147,16 +216,14 @@ def to_text(report):
                 lines.append(f"    {report['summary'][code]:>3}  {label}")
         lines.append("")
     for rq in report["remarks"]:
-        lines.append(t.REMARK.format(text=rq))
+        lines += _para(t.REMARK.format(text=rq))
     if report["remarks"]:
         lines.append("")
-    if report["summary"].get("NOT_PUBLISHED"):
-        lines.append(t.NOTE_NOT_PUBLISHED)
-    if report["summary"].get("WRONG_DATE"):
-        lines.append(t.NOTE_WRONG_DATE)
-    if report["summary"].get("ARTICLE_OTHER_VERSION"):
-        lines.append(t.NOTE_OTHER_VERSION)
+    for code, note in (("NOT_PUBLISHED", t.NOTE_NOT_PUBLISHED), ("WRONG_DATE", t.NOTE_WRONG_DATE),
+                       ("ARTICLE_OTHER_VERSION", t.NOTE_OTHER_VERSION)):
+        if report["summary"].get(code):
+            lines += _para(note)
     lines.append("")
-    lines.append(t.NOT_CHECKED.format(
+    lines += _para(t.NOT_CHECKED.format(
         what=COUNTRIES[report["country"]].not_checked_summary()))
     return "\n".join(lines).rstrip() + "\n"

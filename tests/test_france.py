@@ -2,6 +2,7 @@
 `python -m citecheck --case cases/perigueux.json`."""
 import json
 import unittest
+from pathlib import Path
 
 from citecheck import report
 from citecheck.countries.france import codes
@@ -64,10 +65,10 @@ class OtherCourts(unittest.TestCase):
         self.assertEqual(seen, [("other", "CEDH", "13134/87", "1993-03-25"),
                                 ("conflicts", "T. confl.", "00012", "1873-02-08")])
         self.assertEqual(verdicts, {"MANUAL_CHECK"})
-        why = verdict_other({"court": "CEDH", "number": "13134/87"})[1]
+        _, why, _, link = verdict_other({"court": "CEDH", "number": "13134/87"})
         self.assertIn("n'autorise pas", why)
-        self.assertIn("https://hudoc.echr.coe.int/fre#%7B%22appno%22%3A%5B%2213134%2F87%22%5D%7D",
-                      why)
+        self.assertEqual(
+            "https://hudoc.echr.coe.int/fre#%7B%22appno%22%3A%5B%2213134%2F87%22%5D%7D", link)
 
     def test_slash_year_is_never_a_ce_request(self):
         seen, _ = self.orders("Requête n° 45678/12.")
@@ -127,11 +128,11 @@ class SeenNotChecked(unittest.TestCase):
         from citecheck.countries.france.other_courts import administrative_appeal
 
         class Fake:
-            def decision_titles(self, fond, number):
-                return ["CAA de NANCY, 2ème chambre, 12/04/2018, 17NC01414, Inédit",
+            def decisions(self, fond, number):
+                return [(t, "CETATEXT000000000001") for t in ["CAA de NANCY, 2ème chambre, 12/04/2018, 17NC01414, Inédit",
                         "Cour administrative d'appel de Paris, du 3 mars 2005, 17NC01414",
                         "Conseil d'État, 12/04/2019, 17NC01414, Inédit",
-                        "CAA de LYON, 12/04/2020, 17NC014145, Inédit"]
+                        "CAA de LYON, 12/04/2020, 17NC014145, Inédit"]]
         self.assertEqual(administrative_appeal(Fake(), "17NC01414"),
                          ["2005-03-03", "2018-04-12"])
 
@@ -169,7 +170,7 @@ class CommercialCourts(unittest.TestCase):
         from citecheck.countries.france.lower_courts import check_lower_court
         c = {"jurisdiction": "tcom", "place": "Paris", "number": "2025F00234",
              "cited_date": "2024-03-12"}
-        verdict, why, _ = check_lower_court(None, c)     # no network needed
+        verdict, why, *_ = check_lower_court(None, c)     # no network needed
         self.assertEqual(verdict, "DATE_BEFORE_NUMBER")
         self.assertIn("2025", why)
 
@@ -269,13 +270,16 @@ class ConstitutionalConflictsEu(unittest.TestCase):
         from citecheck.countries.france.other_courts import conflicts
 
         class Fake:
-            def decision_titles(self, fond, number):
-                return {"00012": [
+            def decisions(self, fond, number):
+                return [(t, "CETATEXT000000000002") for t in {"00012": [
                     "Conseil d'Etat, 6 / 2 SSR, du 21 octobre 1977, 00012, mentionné aux tables",
                     "Tribunal des conflits, du 8 février 1873, 00012, publié au recueil Lebon"],
                     "C4112": ["Tribunal des Conflits, , 12/02/2018, C4112, Publié au recueil"],
-                }.get(number, [])
+                }.get(number, [])]
         self.assertEqual(conflicts(Fake(), "00012"), ["1873-02-08"])
+        self.assertEqual(conflicts(Fake(), "00012").links,
+                         {"1873-02-08": "https://www.legifrance.gouv.fr/ceta/id/"
+                                        "CETATEXT000000000002"})
         self.assertEqual(conflicts(Fake(), "4112"), ["2018-02-12"])
 
 
@@ -499,12 +503,12 @@ class AmbiguousCode(unittest.TestCase):
                              "2026-09-30", {})
 
     def test_found_in_one_says_which(self):
-        verdict, why, _ = self.check({"L111-1": self.V}, {})
+        verdict, why, *_ = self.check({"L111-1": self.V}, {})
         self.assertEqual(verdict, "ARTICLE_IN_FORCE")
         self.assertIn("n'existe que dans le Code minier (nouveau)", why)
 
     def test_found_in_both_does_not_choose(self):
-        verdict, why, _ = self.check({"L111-1": self.V}, {"L111-1": self.V})
+        verdict, why, *_ = self.check({"L111-1": self.V}, {"L111-1": self.V})
         self.assertEqual(verdict, "DOUBTFUL")
         self.assertIn("à vous de dire", why)
 
@@ -564,23 +568,23 @@ class Succession(unittest.TestCase):
         return check_article(client, {"code": code, "number": "L124-1"}, day, {})
 
     def test_the_named_code_in_force_is_silent(self):
-        verdict, why, _ = self.check({"L124-1": self.NOW}, {"L124-1": self.OLD}, "Code pénal")
+        verdict, why, *_ = self.check({"L124-1": self.NOW}, {"L124-1": self.OLD}, "Code pénal")
         self.assertEqual(verdict, "ARTICLE_IN_FORCE")
         self.assertNotIn("ancien", why)
 
     def test_code_forestier_means_the_new_one(self):
-        verdict, why, _ = self.check({"L124-1": self.NOW}, {"L124-1": self.OLD})
+        verdict, why, *_ = self.check({"L124-1": self.NOW}, {"L124-1": self.OLD})
         self.assertEqual(verdict, "ARTICLE_IN_FORCE")
         self.assertIn("dans le Code forestier (nouveau)", why)
 
     def test_the_date_of_the_facts_finds_the_old_one(self):
-        verdict, why, _ = self.check({"L124-1": self.NOW}, {"L124-1": self.OLD},
+        verdict, why, *_ = self.check({"L124-1": self.NOW}, {"L124-1": self.OLD},
                                      day="2010-06-01")
         self.assertEqual(verdict, "ARTICLE_IN_FORCE")
         self.assertIn("il l'est dans l'ancien Code forestier", why)
 
     def test_only_in_the_old_one_is_abrogated_not_missing(self):
-        verdict, why, _ = self.check({}, {"L124-1": self.OLD}, "Code pénal")
+        verdict, why, *_ = self.check({}, {"L124-1": self.OLD}, "Code pénal")
         self.assertEqual(verdict, "ARTICLE_NOT_IN_FORCE")
         self.assertIn("abrogé ou déplacé le 2012-07-01", why)
 
@@ -614,7 +618,7 @@ class UncodifiedTexts(unittest.TestCase):
     def test_by_number(self):
         texts = {"A": ("Loi n° 89-462 du 6 juillet 1989 tendant", {"22": self.V})}
         self.assertEqual(self.check(texts, text_number="89-462")[0], "ARTICLE_IN_FORCE")
-        verdict, why, _ = self.check(texts, text_number="89-462", text_date="1989-07-07")
+        verdict, why, *_ = self.check(texts, text_number="89-462", text_date="1989-07-07")
         self.assertEqual(verdict, "WRONG_DATE")
         self.assertIn("datée du 1989-07-06, pas du 1989-07-07", why)
         self.assertEqual(self.check(texts, text_number="89-9999")[0], "TEXT_NOT_FOUND")
@@ -626,7 +630,7 @@ class UncodifiedTexts(unittest.TestCase):
                  "B": ("Loi n° 89-462 du 6 juillet 1989 tendant", {"22": self.V}),
                  "C": ("Loi n° 90-1 du 2 janvier 1990 modifiant la loi n° 89-462 du 6 juillet "
                        "1989", {"22": self.V})}
-        verdict, why, _ = self.check(texts, text_date="1989-07-06")
+        verdict, why, *_ = self.check(texts, text_date="1989-07-06")
         self.assertEqual(verdict, "ARTICLE_IN_FORCE")
         self.assertIn("désigne 2 textes", why)          # C is not OF that date
         self.assertIn("il n'existe que dans la loi n° 89-462", why)
@@ -634,7 +638,7 @@ class UncodifiedTexts(unittest.TestCase):
     def test_by_date_does_not_choose(self):
         texts = {"A": ("Loi n° 89-461 du 6 juillet 1989 x", {"22": self.V}),
                  "B": ("Loi n° 89-462 du 6 juillet 1989 y", {"22": self.V})}
-        verdict, why, _ = self.check(texts, text_date="1989-07-06")
+        verdict, why, *_ = self.check(texts, text_date="1989-07-06")
         self.assertEqual(verdict, "DOUBTFUL")
         self.assertIn("à vous de dire", why)
 
@@ -644,7 +648,7 @@ class UncodifiedTexts(unittest.TestCase):
             {"id": "x", "etat": "VIGUEUR", "debut": "2016-10-01", "fin": "2999-01-01"}]})}
         c = {"kind": "text_article", "text_nature": "ORDONNANCE", "text_number": "2016-131",
              "text_date": None, "number": "1"}
-        verdict, why, _ = check_text_article(self.Fake(texts), c, "2010-06-01", {})
+        verdict, why, *_ = check_text_article(self.Fake(texts), c, "2010-06-01", {})
         self.assertEqual(verdict, "ARTICLE_NOT_IN_FORCE")
         self.assertIn("le texte n'existait pas encore le 2010-06-01", why)
         self.assertIn("en vigueur depuis le 2016-10-01", why)
@@ -728,10 +732,10 @@ class Chamber(unittest.TestCase):
     def test_verdicts(self):
         record = {"decision_date": "2013-07-10", "chamber": "Chambre sociale", "solution": "x"}
         self.assertEqual(verdict_judicial(record, "2013-07-10", "1987", "soc")[0], "CONFIRMED")
-        verdict, why, _ = verdict_judicial(record, "2013-07-10", "1987", "civ2")
+        verdict, why, *_ = verdict_judicial(record, "2013-07-10", "1987", "civ2")
         self.assertEqual(verdict, "WRONG_CHAMBER")
         self.assertIn("pas à la deuxième chambre civile", why)
-        verdict, why, _ = verdict_judicial(record, "2013-07-11", "1987", "civ2")
+        verdict, why, *_ = verdict_judicial(record, "2013-07-11", "1987", "civ2")
         self.assertEqual(verdict, "WRONG_DATE")
         self.assertIn("et la chambre aussi", why)
         civ1 = {"decision_date": "2019-04-10", "chamber": "Première chambre civile"}
@@ -748,7 +752,7 @@ class Verdicts(unittest.TestCase):
         self.assertEqual(verdict_admin(2, set(), "2009-06-05")[0], "DOUBTFUL")
 
     def test_cited_by_others_is_never_confirmed(self):
-        verdict, why, _ = verdict_admin(40, set(), "2009-06-05")
+        verdict, why, *_ = verdict_admin(40, set(), "2009-06-05")
         self.assertEqual(verdict, "EXISTS_DATE_UNCHECKED")
         self.assertIn("NON contrôlée", why)
 
@@ -999,6 +1003,248 @@ class ControlCharacters(unittest.TestCase):
         self.assertFalse(any(line.lstrip().startswith("Cass. 99-99.999")
                              for line in text.splitlines()))
         self.assertIn("99-99.999", report.to_json(r))       # kept, on the same line
+
+
+class Links(unittest.TestCase):
+    """Each result carries the link of what was found, built on a fixed pattern from an
+    identifier the base sent back, and only from one of the expected form."""
+
+    def test_only_well_formed_identifiers_give_a_link(self):
+        from citecheck.countries.france import links
+        self.assertEqual(links.code_article("LEGIARTI000032041571"),
+                         "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000032041571")
+        self.assertEqual(links.judilibre("5fca7e0a7ec5c2c5b5a6d2a3"),
+                         "https://www.courdecassation.fr/decision/5fca7e0a7ec5c2c5b5a6d2a3")
+        self.assertEqual(links.legifrance_decision("CONSTEXT000022393072"),
+                         "https://www.legifrance.gouv.fr/cons/id/CONSTEXT000022393072")
+        for bad in (None, "", "LEGIARTI0000320415711", "LEGIARTI00003204157/../x",
+                    "javascript:alert(1)", "LEGIARTI000032041571\n"):
+            with self.subTest(bad=bad):
+                self.assertIsNone(links.code_article(bad))
+                self.assertIsNone(links.judilibre(bad))
+                self.assertIsNone(links.legifrance_decision(bad))
+        self.assertIsNone(links.legifrance_decision("EVILTEXT000022393072"))
+        self.assertIsNone(links.arianeweb("298348 ", "2009-10-30"))
+        self.assertIsNone(links.eur_lex("62019CJ0561&x=1"))
+
+    def test_dates_found_stay_a_list_and_carry_their_links(self):
+        from citecheck.countries.france import links
+        found = links.Found({"2021-10-06": "https://a", "2019-01-02": None, None: "x"})
+        self.assertEqual(found, ["2019-01-02", "2021-10-06"])
+        self.assertEqual(links.link_for(found, "2021-10-06"), "https://a")
+        self.assertEqual(links.link_for(found, "2000-01-01"), "https://a")    # the one found
+        self.assertIsNone(links.link_for(["2021-10-06"], "2021-10-06"))       # a plain list
+        self.assertEqual(links.Found(), [])
+
+    def test_the_verdict_carries_the_link(self):
+        from citecheck.countries.france import links, verdict_dates
+        ident = "5fca7e0a7ec5c2c5b5a6d2a3"
+        record = {"decision_date": "2019-04-10", "chamber": "Chambre sociale", "id": ident}
+        self.assertEqual(verdict_judicial(record, "2019-03-21")[3], links.judilibre(ident))
+        days = links.Found({"2009-10-30": links.arianeweb("298348", "2009-10-30")})
+        self.assertEqual(verdict_admin(5, days, "2009-10-30")[3],
+                         "https://www.conseil-etat.fr/fr/arianeweb/CE/decision/2009-10-30/298348")
+        self.assertEqual(len(verdict_dates([], "2010-05-12", "L")), 3)     # nothing found
+
+    def test_every_result_has_a_link_key(self):
+        from citecheck.countries.france import check
+        results = check([{"kind": "decision", "order": "other", "court": "CEDH",
+                          "number": "13134/87", "cited_date": None},
+                         {"kind": "decision", "order": "judicial", "court": "Cass",
+                          "number": "17-28268\n", "cited_date": None}], {})
+        self.assertTrue(results[0]["link"].startswith("https://hudoc.echr.coe.int/"))
+        self.assertIsNone(results[1]["link"])
+
+
+class KeyShape(unittest.TestCase):
+    def test_a_sentence_is_not_a_key(self):
+        from citecheck.keys import looks_like_key
+        self.assertTrue(looks_like_key("d1c0d8d0-1234-4abc-9def-0123456789ab"))
+        for bad in ("J'ai collé une phrase ici.", "abc", "clé-avec-accent-é", "a" * 300,
+                    "0123456789\nabcdef"):
+            with self.subTest(bad=bad):
+                self.assertFalse(looks_like_key(bad))
+
+
+class TableReport(unittest.TestCase):
+    def report(self):
+        cit = {"kind": "decision", "order": "judicial", "court": "Cass", "number": "17-28268",
+               "cited_date": "2019-03-21", "verdict": "WRONG_DATE",
+               "explanation": "le numéro existe, mais Judilibre date l'arrêt du 2019-04-10 " * 3,
+               "actual_date": "2019-04-10",
+               "link": "https://www.courdecassation.fr/decision/5fca7e0a7ec5c2c5b5a6d2a3",
+               "location": {"page": 2, "page_exact": True, "in_notes": False,
+                            "excerpt": "Cass. 2e civ., 21 mars 2019, n° 17-28268",
+                            "text": "17-28268", "nth": 0,
+                            "repeats": [{"page": 3, "text": "17-28268", "nth": 0}]}}
+        return report.build("Dupont c. Martin.pdf", "france", [cit], [])
+
+    def test_a_table_then_the_details(self):
+        text = report.to_text(self.report())
+        self.assertIn("| N°  | Page    | Citation", text)
+        self.assertIn("| 1   | 2       | Cass n° 17-28268, cité au 2019-03-21", text)
+        self.assertTrue(text.isascii() or all(ord(ch) < 0x2500 or ord(ch) > 0x257F
+                                               for ch in text))    # no box drawing
+        self.assertIn("lien : https://www.courdecassation.fr/decision/5fca7e0a7ec5c2c5b5a6d2a3",
+                      text)
+        for line in text.splitlines():
+            if "lien : " not in line:
+                with self.subTest(line=line):
+                    self.assertLessEqual(len(line), report.WIDTH + 2)
+
+    def test_without_excerpts_nothing_from_the_document_is_left(self):
+        r = report.without_excerpts(self.report())
+        self.assertEqual(r["citations"][0]["location"],
+                         {"page": 2, "page_exact": True, "in_notes": False})
+        self.assertNotIn("Dupont", report.to_json(r))
+        self.assertIn("courdecassation", report.to_json(r))          # the link stays
+
+    def test_lights(self):
+        self.assertEqual(report.light("CONFIRMED"), report.CONFIRMED)
+        self.assertEqual(report.light("NOT_PUBLISHED"), report.INVENTED)
+        self.assertEqual(report.light("NOT_TESTED"), report.UNCHECKED)
+        # Nothing doubtful is ever shown as confirmed.
+        for v in ("WRONG_DATE", "WRONG_CHAMBER", "DOUBTFUL", "EXISTS_DATE_UNCHECKED",
+                  "ARTICLE_OTHER_VERSION", "QUOTE_NOT_FOUND", "ARTICLE_NOT_IN_FORCE",
+                  "DATE_BEFORE_NUMBER"):
+            self.assertEqual(report.light(v), report.CHECK, v)
+
+
+class Repeats(unittest.TestCase):
+    def test_a_citation_repeated_is_checked_once_and_placed_twice(self):
+        text = ("Voir Cass. soc., 21 mars 2019, n° 17-28268. Et l'article 1240 du Code civil. "
+                "Plus loin, déjà cité (Cass. soc., 21 mars 2019, n° 17-28268), et encore "
+                "l'article 1240 du Code civil.")
+        citations, _ = extract(text)
+        self.assertEqual([c["number"] for c in citations], ["17-28268", "1240"])
+        for c in citations:
+            self.assertEqual(len(c["repeats"]), 1)
+            start, end = c["repeats"][0]
+            self.assertGreater(start, c["span"][1])
+            self.assertEqual(text[start:end], text[slice(*c["span"])])
+
+
+class AnnotatedPdf(unittest.TestCase):
+    """The annotated PDF, on a real PDF written here: a line of Helvetica at a known place."""
+
+    LINE = "Voir Cass. soc., n\xb0 17-28.268, et l'article 1240 du Code civil."
+    LINK = "https://www.courdecassation.fr/decision/5fca7e0a7ec5c2c5b5a6d2a3"
+
+    def pdf(self, path, rotate=0):
+        from pypdf import PdfWriter
+        from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+        w = PdfWriter()
+        page = w.add_blank_page(595, 842)
+        font = DictionaryObject({NameObject("/Type"): NameObject("/Font"),
+                                 NameObject("/Subtype"): NameObject("/Type1"),
+                                 NameObject("/BaseFont"): NameObject("/Helvetica"),
+                                 NameObject("/Encoding"): NameObject("/WinAnsiEncoding")})
+        page[NameObject("/Resources")] = DictionaryObject({NameObject("/Font"): DictionaryObject(
+            {NameObject("/F1"): w._add_object(font)})})
+        body = DecodedStreamObject()
+        body.set_data(b"BT /F1 12 Tf 72 700 Td (" + self.LINE.encode("cp1252") + b") Tj ET")
+        page[NameObject("/Contents")] = w._add_object(body)
+        if rotate:
+            page.rotate(rotate)
+        with open(path, "wb") as f:
+            w.write(f)
+
+    def report(self, path, verdict="CONFIRMED", link=LINK):
+        from citecheck import annotate, reader
+        doc = reader.read(path)
+        start = doc.text.index("17-28.268")
+        cit = {"kind": "decision", "order": "judicial", "court": "Cass", "number": "17-28268",
+               "cited_date": None, "verdict": verdict, "explanation": "x",
+               "actual_date": None, "link": link,
+               "location": {"page": 1, "page_exact": True, "in_notes": False,
+                            "excerpt": "", **annotate.anchor(doc.text, start, start + 9)}}
+        lost = {**cit, "location": {**cit["location"], "text": "99-99.999"}}
+        return report.build(path.name, "france", [cit, lost], [])
+
+    def annots(self, path):
+        from pypdf import PdfReader
+        return [a.get_object() for a in PdfReader(path).pages[0].get("/Annots", [])]
+
+    def test_highlighted_linked_and_the_original_untouched(self):
+        import tempfile
+        from pathlib import Path
+        from citecheck import annotate
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "conclusions.pdf"
+            self.pdf(src)
+            before = src.read_bytes()
+            target = annotate.output_name(src)
+            self.assertEqual(target.name, "conclusions-citations-vérifiées.pdf")
+            self.assertEqual(annotate.annotate(src, target, self.report(src)), (1, 1))
+            self.assertEqual(src.read_bytes(), before)
+            annots = self.annots(target)
+        kinds = [a["/Subtype"] for a in annots]
+        self.assertEqual(kinds, ["/Highlight", "/Link"])
+        highlight, link = annots
+        self.assertEqual(link["/A"]["/URI"], self.LINK)
+        x0, y0, x1, y1 = [float(v) for v in highlight["/Rect"]]
+        # « Voir Cass. soc., n° » is about 105 points of Helvetica 12: the number comes after.
+        self.assertTrue(150 < x0 < 200 and 690 < y0 < 702 and x1 - x0 < 70, (x0, y0, x1))
+        self.assertEqual([float(v) for v in highlight["/C"]],
+                         list(annotate.COLORS[report.CONFIRMED]))
+        self.assertIn("/AP", highlight)
+
+    def test_a_turned_page_is_marked_at_the_same_place(self):
+        import tempfile
+        from pathlib import Path
+        from citecheck import annotate
+        rects = []
+        with tempfile.TemporaryDirectory() as tmp:
+            for rotate in (0, 90):
+                src = Path(tmp) / f"p{rotate}.pdf"
+                self.pdf(src, rotate)
+                annotate.annotate(src, Path(tmp) / f"out{rotate}.pdf", self.report(src))
+                rects.append([round(float(v)) for v in
+                              self.annots(Path(tmp) / f"out{rotate}.pdf")[0]["/Rect"]])
+        self.assertEqual(rects[0], rects[1])
+
+    def test_unchecked_gets_a_question_mark_and_no_link(self):
+        import tempfile
+        from pathlib import Path
+        from citecheck import annotate
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "c.pdf"
+            self.pdf(src)
+            annotate.annotate(src, Path(tmp) / "out.pdf",
+                              self.report(src, "NOT_TESTED", link=None))
+            annots = self.annots(Path(tmp) / "out.pdf")
+            self.assertEqual([a["/Subtype"] for a in annots], ["/Highlight"])
+            self.assertIn(b"(?) Tj", annots[0]["/AP"]["/N"].get_object().get_data())
+
+
+class PdfReport(unittest.TestCase):
+    def test_the_pdf_report_says_the_same_with_working_links(self):
+        import tempfile
+        from pypdf import PdfReader
+        from citecheck import report_pdf
+        r = TableReport().report()
+        with tempfile.TemporaryDirectory() as tmp:
+            full, bare = Path(tmp) / "full.pdf", Path(tmp) / "bare.pdf"
+            report_pdf.write(r, full)
+            report_pdf.write(report.without_excerpts(r), bare)
+            texts = {}
+            for name in (full, bare):
+                pdf = PdfReader(name)
+                texts[name] = " ".join(pg.extract_text() for pg in pdf.pages)
+                uris = {a.get_object()["/A"]["/URI"] for pg in pdf.pages
+                        for a in pg.get("/Annots", []) if "/A" in a.get_object()}
+                self.assertEqual(uris, {r["citations"][0]["link"]})
+        self.assertIn("EXISTE, MAIS À UNE AUTRE DATE", texts[full])
+        self.assertIn("Dupont", texts[full])
+        self.assertNotIn("Dupont", texts[bare])
+        self.assertNotIn("21 mars 2019", texts[bare])            # the excerpt is gone
+
+    def test_its_name_never_carries_the_document_without_excerpts(self):
+        from citecheck import report_pdf
+        self.assertEqual(report_pdf.output_name("C:/x/Dupont c. Martin.pdf", False),
+                         "Dupont c. Martin-rapport-citations.pdf")
+        self.assertEqual(report_pdf.output_name("C:/x/Dupont c. Martin.pdf", True),
+                         "rapport-citations.pdf")
 
 
 if __name__ == "__main__":

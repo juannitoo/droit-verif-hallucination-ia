@@ -21,6 +21,7 @@ LA COMPARAISON DU TEXTE CITÉ
 import re
 import unicodedata
 
+from . import links
 from .codes import AMBIGUOUS, LABELS, SUCCESSION
 from .legifrance import Unavailable
 
@@ -58,8 +59,8 @@ def _period(v):
 
 
 def check_article(client, citation, day, texts):
-    """(verdict, explication, date de début de la version retenue). `texts` sert de cache
-    {id de version: texte}.
+    """(verdict, explication, date de début de la version retenue[, lien]). `texts` sert de
+    cache {id de version: texte}.
 
     Un titre ambigu (AMBIGUOUS) est cherché dans chacun des codes qu'il peut désigner. Si
     l'article n'existe que dans l'un, on le dit ; s'il existe dans plusieurs, on ne choisit
@@ -79,12 +80,12 @@ def check_article(client, citation, day, texts):
                 "l'autre, à aucune date : il ne semble pas exister ; à vérifier sur Légifrance",
                 None)
     if len(hits) == 1:
-        t, (verdict, why, start) = hits[0]
+        t, (verdict, why, start, *link) = hits[0]
         return (verdict, f"{head} ; l'article {number} n'existe que dans {_the(t)} : {why}",
-                start)
+                start, *link)
     return ("DOUBTFUL", f"{head} ; l'article {number} existe dans les deux, à vous de dire "
             "lequel est visé : " + " ; ".join(f"dans {_the(t)}, {why}"
-                                             for t, (_, why, _) in hits), None)
+                                             for t, (_, why, *_) in hits), None)
 
 
 IN_FORCE = ("ARTICLE_IN_FORCE", "ARTICLE_OTHER_VERSION", "QUOTE_NOT_FOUND")
@@ -105,7 +106,8 @@ def _check_succession(client, citation, day, texts):
             if found:
                 head += (f"l'article {number} n'est pas en vigueur le {day} dans "
                          + ", ni dans ".join(_the(t) for t, _ in found) + " ; il l'est ")
-            return result[0], f"{head}dans {_the(title)} : {result[1]}", result[2]
+            return (result[0], f"{head}dans {_the(title)} : {result[1]}", result[2],
+                    *result[3:])
         found.append((title, result))
     hits = [(t, r) for t, r in found if r[0] != "ARTICLE_NOT_FOUND"]
     names = ", ".join(_the(t) for t, _ in found)
@@ -136,10 +138,11 @@ def _check_one(client, citation, day, texts):
     return verdict_versions(client, citation, day, texts, versions, f"le {code}")
 
 
-def verdict_versions(client, citation, day, texts, versions, where):
+def verdict_versions(client, citation, day, texts, versions, where, link=links.code_article):
     """Le verdict d'un article d'après la liste COMPLÈTE de ses versions : existe-t-il, en
     vigueur à la date de référence, et le texte cité est-il celui de cette version ? `where` :
-    « le Code civil », « la loi n° 89-462 »."""
+    « le Code civil », « la loi n° 89-462 ». `link` : l'adresse d'une version d'après son
+    identifiant ; le lien mène à la version dont parle le verdict."""
     number = citation["number"]
     if not versions:
         return ("ARTICLE_NOT_FOUND",
@@ -152,20 +155,23 @@ def verdict_versions(client, citation, day, texts, versions, where):
         if day < first["debut"]:
             return ("ARTICLE_NOT_IN_FORCE",
                     f"pas encore en vigueur le {day} : entre en vigueur le {first['debut']}",
-                    None)
+                    None, link(first["id"]))
         if last["fin"] and last["fin"] <= day:
             return ("ARTICLE_NOT_IN_FORCE",
-                    f"plus en vigueur le {day} : abrogé ou déplacé le {last['fin']}", None)
-        return "ARTICLE_NOT_IN_FORCE", f"aucune version en vigueur le {day}", None
+                    f"plus en vigueur le {day} : abrogé ou déplacé le {last['fin']}", None,
+                    link(last["id"]))
+        return ("ARTICLE_NOT_IN_FORCE", f"aucune version en vigueur le {day}", None,
+                link(last["id"]))
 
     history = ""
     if len(versions) > 1:
         history = f" ; {len(versions)} versions, dernière modification le {versions[-1]['debut']}"
     base = f"en vigueur le {day} (version {_period(current)}{history})"
 
+    here = link(current["id"])
     fragments = quote_fragments(citation.get("quote") or "")
     if not fragments:
-        return "ARTICLE_IN_FORCE", base, current["debut"]
+        return "ARTICLE_IN_FORCE", base, current["debut"], here
 
     def text_of(v):
         if v["id"] not in texts:
@@ -173,20 +179,22 @@ def verdict_versions(client, citation, day, texts, versions, where):
         return texts[v["id"]]
 
     if quote_in(fragments, text_of(current)):
-        return "ARTICLE_IN_FORCE", base + " ; texte cité conforme à cette version", current["debut"]
+        return ("ARTICLE_IN_FORCE", base + " ; texte cité conforme à cette version",
+                current["debut"], here)
     others = [v for v in versions if v is not current]
     read = others[-MAX_VERSIONS_READ:]
     for v in reversed(read):
         if quote_in(fragments, text_of(v)):
             return ("ARTICLE_OTHER_VERSION",
                     f"le texte cité est celui de la version {_period(v)}, pas de celle en "
-                    f"vigueur le {day} (version {_period(current)})", v["debut"])
+                    f"vigueur le {day} (version {_period(current)})", v["debut"],
+                    link(v["id"]))
     scope = (f"aucune des {len(versions)} versions de l'article" if len(read) == len(others)
              else f"aucune des {len(read) + 1} versions les plus récentes lues, sur "
                   f"{len(versions)}")
     return ("QUOTE_NOT_FOUND",
             f"{base} ; mais le texte cité ne se retrouve dans {scope} "
-            "(paraphrase, ou texte inventé : à vérifier)", current["debut"])
+            "(paraphrase, ou texte inventé : à vérifier)", current["debut"], here)
 
 
 def check_articles(citations, client, day, log):

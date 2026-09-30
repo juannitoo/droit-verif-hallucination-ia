@@ -43,6 +43,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 
 from ...reader import Suspicious, parse_xml
+from . import links
 from .extract import RE_DATE_DIGITS, RE_DATE_WORDS, _iso
 from .legifrance import USER_AGENT, Unavailable
 from ...http import urlopen
@@ -62,12 +63,16 @@ def _title_date(title):
     return _iso(m, False) if m else None
 
 
+def _found(decisions):
+    """[(titre, identifiant)] retenus -> links.Found : leurs dates, et leurs liens."""
+    return links.Found({_title_date(t): links.legifrance_decision(i) for t, i in decisions})
+
+
 def constitutional(client, number):
     """Les dates des décisions du Conseil constitutionnel portant ce numéro (sans suffixe),
     triées ; liste vide si aucune. Lève Unavailable si Légifrance ne répond pas."""
     pattern = re.compile(rf"^Décision {re.escape(number)}\s", re.I)
-    return sorted({_title_date(t) for t in client.decision_titles("CONSTIT", number)
-                   if pattern.match(t)} - {None})
+    return _found((t, i) for t, i in client.decisions("CONSTIT", number) if pattern.match(t))
 
 
 def conflicts(client, number):
@@ -75,21 +80,21 @@ def conflicts(client, number):
     cherché aussi sous « C4112 », la forme de Légifrance pour les numéros récents."""
     number = number.replace(" ", "").upper()
     forms = [number] + ([f"C{number}"] if re.fullmatch(r"\d{4}", number) else [])
-    days = set()
+    found = []
     for form in forms:
         pattern = re.compile(rf",\s*{re.escape(form)}\s*,")
-        for title in client.decision_titles("CETAT", form):
+        for title, ident in client.decisions("CETAT", form):
             if title.lower().startswith("tribunal des conflits") and pattern.search(title):
-                days.add(_title_date(title))
-    return sorted(days - {None})
+                found.append((title, ident))
+    return _found(found)
 
 
 def administrative_appeal(client, number):
     """Les dates des décisions de cour administrative d'appel portant ce numéro."""
     pattern = re.compile(rf",\s*{re.escape(number)}\s*(?:,|$)")
-    return sorted({_title_date(t) for t in client.decision_titles("CETAT", number)
-                   if re.match(r"(?:CAA|Cour administrative d'appel)\b", t, re.I)
-                   and pattern.search(t)} - {None})
+    return _found((t, i) for t, i in client.decisions("CETAT", number)
+                  if re.match(r"(?:CAA|Cour administrative d'appel)\b", t, re.I)
+                  and pattern.search(t))
 
 
 class LocalBase:
@@ -157,10 +162,10 @@ def celex_numbers(number):
 def european_union(number):
     """Les dates des décisions de la Cour de justice ou du Tribunal de l'UE portant ce
     numéro (« C-561/19 »), triées ; liste vide si aucune."""
-    days = set()
+    days = {}
     for celex in celex_numbers(number):
-        days |= _celex_dates(celex)
-    return sorted(days)
+        days.update({d: links.eur_lex(celex) for d in _celex_dates(celex)})
+    return links.Found(days)
 
 
 def local_base_problem(url):

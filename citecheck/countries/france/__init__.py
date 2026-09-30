@@ -19,7 +19,7 @@ CE QU'ELLE NE VÉRIFIE PAS
 """
 from datetime import date
 
-from . import codes, other_courts, sources, wire
+from . import codes, links, other_courts, sources, wire
 from .articles import check_articles
 from .texts import check_text_articles
 from .conventions import check_convention_articles
@@ -121,13 +121,15 @@ def verdict_admin(count, dates, cited_date):
                 "ou inexistante ; à vérifier", None)
     if dates:
         actual = ", ".join(sorted(dates))
+        link = links.link_for(dates, cited_date)
         if not cited_date:
-            return "EXISTS_DATE_UNCHECKED", f"existe, rendue le {actual} ; aucune date citée", actual
+            return ("EXISTS_DATE_UNCHECKED", f"existe, rendue le {actual} ; aucune date citée",
+                    actual, link)
         if cited_date in dates:
-            return "CONFIRMED", f"ArianeWeb a bien la décision du {cited_date}", cited_date
+            return "CONFIRMED", f"ArianeWeb a bien la décision du {cited_date}", cited_date, link
         return ("WRONG_DATE",
                 f"le numéro existe, mais ArianeWeb date la décision du {actual}, pas du {cited_date}",
-                actual)
+                actual, link)
     if count <= NOISE_MAX:
         return "DOUBTFUL", f"{count} occurrence(s) seulement, à regarder à la main", None
     return ("EXISTS_DATE_UNCHECKED", f"{count} décisions citent ce numéro, mais la décision "
@@ -166,10 +168,11 @@ def verdict_judicial(record, cited_date, first_complete=None, cited_chamber=None
         return result
     said, actual = wrong
     if result[0] == "WRONG_DATE":
-        return result[0], f"{result[1]} ; et la chambre aussi : {actual}, pas {said}", result[2]
+        return (result[0], f"{result[1]} ; et la chambre aussi : {actual}, pas {said}",
+                result[2], *result[3:])
     return ("WRONG_CHAMBER", f"existe, mais Judilibre l'attribue à la {actual.lower()}, pas à "
             f"{said}" + ("" if result[0] == "CONFIRMED" else " ; aucune date citée"),
-            result[2])
+            result[2], *result[3:])
 
 
 def _verdict_judicial(record, cited_date, first_complete=None):
@@ -192,13 +195,15 @@ def _verdict_judicial(record, cited_date, first_complete=None):
         return "ERROR", f"Judilibre n'a pas répondu ({record['_err']})", None
     actual = (record.get("decision_date") or "")[:10]
     ident = f"{record.get('chamber', '?')}, {record.get('solution', '?')}"
+    link = links.judilibre(record.get("id"))
     if not cited_date:
-        return "EXISTS_DATE_UNCHECKED", f"existe, rendu le {actual} ({ident}) ; aucune date citée", actual
+        return ("EXISTS_DATE_UNCHECKED", f"existe, rendu le {actual} ({ident}) ; aucune date "
+                "citée", actual, link)
     if actual == cited_date:
-        return "CONFIRMED", f"Judilibre date bien l'arrêt du {actual} ({ident})", actual
+        return "CONFIRMED", f"Judilibre date bien l'arrêt du {actual} ({ident})", actual, link
     return ("WRONG_DATE",
             f"le numéro existe, mais Judilibre date l'arrêt du {actual}, pas du {cited_date} "
-            f"({ident})", actual)
+            f"({ident})", actual, link)
 
 
 # Bases qui ne publient qu'une partie des décisions : une absence n'y prouve rien.
@@ -209,17 +214,20 @@ PARTIAL = {"caa": "introuvable dans Légifrance, qui ne publie qu'environ la moi
 
 def verdict_dates(days, cited_date, base):
     """Traduit la liste des dates d'une base qui publie toutes ses décisions (Conseil
-    constitutionnel, Tribunal des conflits, Union européenne)."""
+    constitutionnel, Tribunal des conflits, Union européenne). Si `days` porte des liens
+    (links.Found), le verdict donne celui de la décision."""
     if not days:
         return ("NOT_PUBLISHED", f"aucune décision de ce numéro dans {base} : la décision ne "
                 "semble pas publiée ; à vérifier", None)
     actual = ", ".join(days)
+    link = links.link_for(days, cited_date)
     if not cited_date:
-        return "EXISTS_DATE_UNCHECKED", f"existe, rendue le {actual} ; aucune date citée", actual
+        return ("EXISTS_DATE_UNCHECKED", f"existe, rendue le {actual} ; aucune date citée",
+                actual, link)
     if cited_date in days:
-        return "CONFIRMED", f"{base} date bien la décision du {cited_date}", cited_date
+        return "CONFIRMED", f"{base} date bien la décision du {cited_date}", cited_date, link
     return ("WRONG_DATE", f"le numéro existe, mais {base} date la décision du {actual}, pas du "
-            f"{cited_date}", actual)
+            f"{cited_date}", actual, link)
 
 
 # Juridictions repérées mais pas vérifiées, numéro ou non : la vraie raison, pour chacune.
@@ -251,7 +259,8 @@ def verdict_other(citation):
                 "celui des requêtes CEDH")
         return ("MANUAL_CHECK", f"{what}. La Cour européenne des droits de l'homme "
                 "n'autorise pas la recherche dans sa base HUDOC par un programme : à vérifier "
-                f"dans votre navigateur, {other_courts.hudoc_link(number)}", None)
+                "dans votre navigateur, avec le lien de la recherche", None,
+                other_courts.hudoc_link(number))
     return ("MANUAL_CHECK", f"décision de la juridiction « {court} » citée sous une forme que "
             "ce programme ne sait pas lire ; aucune base n'a été interrogée", None)
 
@@ -481,8 +490,8 @@ LEGISLATION = ("article", "convention_article", "text_article")
 
 
 def _check_legislation(citations, keys, day, idcc, log):
-    """Résultats (verdict, explication, date) pour les articles de codes et de conventions,
-    dans l'ordre."""
+    """Résultats (verdict, explication, date[, lien]) pour les articles de codes, de lois et
+    de conventions, dans l'ordre."""
     if not citations:
         return []
     cid, secret = keys.get("PISTE_CLIENT_ID"), keys.get("PISTE_CLIENT_SECRET")
@@ -548,7 +557,7 @@ def check(citations, keys, log=lambda s: None, options=None):
         if why:
             log(f"  {str(c.get('number'))[:40]!r} : {why}")
             results.append({**c, "verdict": "NOT_TESTED", "explanation": why,
-                            "actual_date": None})
+                            "actual_date": None, "link": None})
         else:
             results.append(next(checked))
     return results
@@ -607,33 +616,37 @@ def _check(citations, keys, log, options):
     results = []
     log("Vérification des citations :")
     for c in citations:
+        # Un verdict : (verdict, explication, date réelle), et le lien de ce qui a été
+        # trouvé quand il y en a un.
         if c.get("kind") in LEGISLATION:
-            v, why, actual = next(legislation)
+            found = next(legislation)
         elif c["order"] in OTHER_BASES:
-            v, why, actual = next(other_results)
-            if c["order"] == "caa" and v == "UNVERIFIABLE_PERIOD" and local:
-                v, why, actual = verdict_local(local, "CAA", c, (v, why))
+            found = next(other_results)
+            if c["order"] == "caa" and found[0] == "UNVERIFIABLE_PERIOD" and local:
+                found = verdict_local(local, "CAA", c, found[:2])
         elif c["order"] == "ta" and local:
-            v, why, actual = verdict_local(local, "TA", c, (
+            found = verdict_local(local, "TA", c, (
                 "UNVERIFIABLE_PERIOD", "décision d'un tribunal administratif"))
         elif c["order"] == "ta":
-            v, why, actual = verdict_other(c)
+            found = verdict_other(c)
         elif c["order"] in ("other", "unnumbered"):
-            v, why, actual = verdict_other(c)
+            found = verdict_other(c)
         elif c["order"] == "lower":
-            v, why, actual = next(lower_results)
+            found = next(lower_results)
         elif c["order"] == "administrative":
             if admin_ok:
-                v, why, actual = verdict_admin(*sources.ariane(c["number"]), c.get("cited_date"))
+                found = verdict_admin(*sources.ariane(c["number"]), c.get("cited_date"))
             else:
-                v, why, actual = "NOT_TESTED", admin_why, None
+                found = "NOT_TESTED", admin_why, None
         elif judicial_ok:
-            v, why, actual = verdict_judicial(
+            found = verdict_judicial(
                 sources.judilibre(c["number"], keys["PISTE_API_KEY"]), c.get("cited_date"),
                 cc_first, c.get("chamber"))
         else:
-            v, why, actual = "NOT_TESTED", judicial_why, None
-        results.append({**c, "verdict": v, "explanation": why, "actual_date": actual})
+            found = "NOT_TESTED", judicial_why, None
+        v, why, actual, *link = found
+        results.append({**c, "verdict": v, "explanation": why, "actual_date": actual,
+                        "link": link[0] if link else None})
         if c.get("number") is None:
             log(f"  {c['court']}, {c.get('cited_date')}, sans numéro : {t.VERDICTS[v]}")
         else:

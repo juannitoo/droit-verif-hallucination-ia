@@ -14,6 +14,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from . import links
 from ... import NAME, __version__
 from ...http import urlopen
 
@@ -34,7 +35,8 @@ def ariane(number):
 
     `dates` : les dates des documents qui SONT cette décision (son numéro en SourceStr5 ou
     SourceCsv1, sa date en SourceDateTime1), et non de ceux qui se contentent de la citer.
-    Vide si la décision n'est connue que par les citations des autres."""
+    Vide si la décision n'est connue que par les citations des autres. Chaque date porte le
+    lien de la décision (links.Found)."""
     body = urllib.parse.urlencode({"text": str(number)}).encode()
     req = urllib.request.Request(ARIANE, data=body, headers={
         "Content-Type": "application/x-www-form-urlencoded", "User-Agent": USER_AGENT})
@@ -44,12 +46,13 @@ def ariane(number):
         return -1, set()
     finally:
         time.sleep(PAUSE)
-    dates = set()
+    dates = {}
     for doc in data.get("Documents") or []:
         numbers = {doc.get("SourceStr5", "")} | set((doc.get("SourceCsv1") or "").split(";"))
         if str(number) in numbers and doc.get("SourceDateTime1"):
-            dates.add(doc["SourceDateTime1"][:10])
-    return int(data.get("TotalCount", 0)), dates
+            day = doc["SourceDateTime1"][:10]
+            dates[day] = links.arianeweb(str(number), day)
+    return int(data.get("TotalCount", 0)), links.Found(dates)
 
 
 def normalize(number):
@@ -111,8 +114,8 @@ def yearly_counts(jurisdiction, location, key):
 
 
 def judilibre_rg(number, jurisdiction, location, key):
-    """Les décisions de cette juridiction sous ce numéro RG : liste de dates, vide si aucune,
-    ou {'_err': ...} si la base n'a pas répondu."""
+    """Les décisions de cette juridiction sous ce numéro RG : liste de dates (links.Found,
+    avec leurs liens), vide si aucune, ou {'_err': ...} si la base n'a pas répondu."""
     try:
         data = _judilibre_get("search", {"query": number, "jurisdiction": jurisdiction,
                                          "location": location, "page_size": 20}, key)
@@ -121,8 +124,9 @@ def judilibre_rg(number, jurisdiction, location, key):
     except Exception as e:
         return {"_err": type(e).__name__}
     target = normalize(number)
-    return sorted({(r.get("decision_date") or "")[:10] for r in data.get("results") or []
-                   if target in [normalize(x) for x in (r.get("numbers") or [])]})
+    return links.Found({(r.get("decision_date") or "")[:10]: links.judilibre(r.get("id"))
+                        for r in data.get("results") or []
+                        if target in [normalize(x) for x in (r.get("numbers") or [])]})
 
 
 EXPORT_BATCH = 100
@@ -142,9 +146,10 @@ def judilibre_on_day(number, jurisdiction, location, day, key):
                 "date_end": day, "batch_size": EXPORT_BATCH, "batch": batch}, key)
             for r in data.get("results") or []:
                 if target in [normalize(x) for x in (r.get("numbers") or [])]:
-                    return [(r.get("decision_date") or day)[:10]]
+                    return links.Found({(r.get("decision_date") or day)[:10]:
+                                        links.judilibre(r.get("id"))})
             if data.get("next_batch") is None:
-                return []
+                return links.Found()
     except urllib.error.HTTPError as e:
         return {"_err": f"HTTP {e.code}"}
     except Exception as e:

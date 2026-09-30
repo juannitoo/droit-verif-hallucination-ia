@@ -26,6 +26,14 @@ def get(name):
     return None
 
 
+def looks_like_key(value):
+    """Une clé d'accès est d'un seul tenant : ni espace ni retour à la ligne, des caractères
+    ASCII visibles. Une phrase collée par erreur dans le champ (c'est arrivé) est refusée,
+    au lieu d'être enregistrée puis envoyée à la base, qui répondrait « requête invalide »
+    sans dire pourquoi."""
+    return 8 <= len(value) <= 256 and all("!" <= ch <= "~" for ch in value)
+
+
 def save(name, value):
     """Store the key in the keyring. Returns False if the system has none."""
     if not keyring:

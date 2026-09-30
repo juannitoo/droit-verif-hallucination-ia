@@ -11,11 +11,12 @@ import sys
 import threading
 import tkinter as tk
 import webbrowser
+from pathlib import Path
 from tkinter import filedialog
 
 import customtkinter as ctk
 
-from . import keys, reader, report, theme
+from . import annotate, keys, reader, report, report_pdf, theme
 from .countries import COUNTRIES, DEFAULT
 from .engine import check_document, valid_date
 from .locales import t
@@ -170,7 +171,8 @@ class Window:
         self._ready(False)
         self.button.grid(row=6, column=0, columnspan=3, pady=MD)
 
-        self.output = ctk.CTkTextbox(tab, wrap="word", font=self.f_mono, state="disabled")
+        # Sans retour à la ligne automatique : il casserait le tableau du rapport.
+        self.output = ctk.CTkTextbox(tab, wrap="none", font=self.f_mono, state="disabled")
         self.output.grid(row=7, column=0, columnspan=3, sticky="nsew", padx=SM)
         tab.grid_rowconfigure(7, weight=1)
 
@@ -178,15 +180,24 @@ class Window:
         bottom.grid(row=8, column=0, columnspan=3, sticky="ew", padx=SM, pady=(SM, 0))
         self.b_txt = self._neutral(bottom, t.SAVE_TXT, state="disabled",
                                    command=lambda: self.save("txt"))
+        self.b_report_pdf = self._neutral(bottom, t.SAVE_REPORT_PDF, state="disabled",
+                                          command=lambda: self.save("pdf"))
         self.b_json = self._neutral(bottom, t.SAVE_JSON, state="disabled",
                                     command=lambda: self.save("json"))
+        # Le PDF annoté : le document lui-même, surligné. Pour un PDF seulement.
+        self.b_pdf = self._neutral(bottom, t.SAVE_PDF, state="disabled",
+                                   command=self.save_pdf)
+        ctk.CTkLabel(bottom, text=t.SAVE, font=self.f_bold).pack(side="left", padx=(0, SM))
         self.b_txt.pack(side="left", padx=(0, SM))
-        self.b_json.pack(side="left", padx=(0, LG))
+        self.b_report_pdf.pack(side="left", padx=(0, SM))
+        self.b_json.pack(side="left", padx=(0, SM))
+        self.b_pdf.pack(side="left")
         # Checked by default: a saved report travels, often to an online AI.
         self.no_excerpts = tk.BooleanVar(value=True)
-        ctk.CTkCheckBox(bottom, text=t.NO_EXCERPTS, variable=self.no_excerpts,
-                        font=self.f_body).pack(side="left")
-        self._hint(tab, t.NO_EXCERPTS_HINT).grid(row=9, column=0, columnspan=3, sticky="w",
+        ctk.CTkCheckBox(tab, text=t.NO_EXCERPTS, variable=self.no_excerpts,
+                        font=self.f_body).grid(row=9, column=0, columnspan=3, sticky="w",
+                                               padx=SM, pady=(SM, 0))
+        self._hint(tab, t.NO_EXCERPTS_HINT).grid(row=10, column=0, columnspan=3, sticky="w",
                                                  padx=SM, pady=(XS, SM))
 
     # Tab "keys"
@@ -301,6 +312,9 @@ class Window:
         value = field.get().strip()
         if not value:
             return
+        if not keys.looks_like_key(value):
+            status.configure(text=t.KEY_NOT_A_KEY, text_color=C["danger_text"])
+            return
         field.delete(0, "end")
         if keys.save(name, value):
             self.show_key_status()
@@ -360,8 +374,8 @@ class Window:
             self.write(t.IDCC_INVALID + "\n", clear=True)
             return
         self._ready(False)
-        self.b_txt.configure(state="disabled")
-        self.b_json.configure(state="disabled")
+        for b in (self.b_txt, self.b_report_pdf, self.b_json, self.b_pdf):
+            b.configure(state="disabled")
         self.write(t.IN_PROGRESS + "\n\n", clear=True)
 
         def work():
@@ -383,6 +397,10 @@ class Window:
                 kind, content = self.queue.get_nowait()
                 if kind == "line":
                     self.write(content + "\n")
+                elif kind == "pdf":
+                    self.write("\n" + content + "\n")
+                    self.b_pdf.configure(state="normal")
+                    return
                 elif kind == "error":
                     self.write("\n" + content + "\n")
                     self._ready(True)
@@ -390,23 +408,58 @@ class Window:
                 else:
                     self.last = content
                     self.write(report.to_text(content), clear=True)
+                    self.output.see("1.0")         # le tableau d'abord
                     self._ready(True)
-                    self.b_txt.configure(state="normal")
-                    self.b_json.configure(state="normal")
+                    for b in (self.b_txt, self.b_report_pdf, self.b_json):
+                        b.configure(state="normal")
+                    if Path(self.document).suffix.lower() == ".pdf":
+                        self.b_pdf.configure(state="normal")
                     return
         except queue.Empty:
             pass
         self.root.after(100, self.poll)
 
     def save(self, kind):
-        path = filedialog.asksaveasfilename(
-            defaultextension=f".{kind}", initialfile=f"{t.REPORT_FILE}.{kind}")
+        without = self.no_excerpts.get()
+        initial = (report_pdf.output_name(self.document, without) if kind == "pdf"
+                   else f"{t.REPORT_FILE}.{kind}")
+        path = filedialog.asksaveasfilename(defaultextension=f".{kind}", initialfile=initial)
         if not path:
             return
-        r = report.without_excerpts(self.last) if self.no_excerpts.get() else self.last
+        r = report.without_excerpts(self.last) if without else self.last
+        if kind == "pdf":
+            report_pdf.write(r, path)
+            return
         content = report.to_json(r) if kind == "json" else report.to_text(r)
         with open(path, "w", encoding="utf-8") as f:
             f.write(content)
+
+    def save_pdf(self):
+        source = Path(self.document)
+        default = annotate.output_name(source)
+        path = filedialog.asksaveasfilename(
+            defaultextension=".pdf", initialdir=str(default.parent),
+            initialfile=default.name, filetypes=[("PDF", "*.pdf")])
+        if not path:
+            return
+        if Path(path).resolve() == source.resolve():
+            self.write("\n" + t.PDF_NOT_OVER_ORIGINAL + "\n")
+            return
+        self.b_pdf.configure(state="disabled")
+        self.write("\n" + t.PDF_IN_PROGRESS + "\n")
+        report_ = self.last
+
+        def work():
+            try:
+                placed, missed = annotate.annotate(source, path, report_)
+                done = t.PDF_SAVED.format(path=path, placed=placed)
+                self.queue.put(("pdf", done + (t.PDF_MISSED.format(n=missed) if missed else "")))
+            except Exception as e:
+                self.queue.put(("pdf", t.PDF_FAILED_ANNOTATE.format(
+                    error=f"{type(e).__name__} : {e}")))
+
+        threading.Thread(target=work, daemon=True).start()
+        self.root.after(100, self.poll)
 
 
 def run():

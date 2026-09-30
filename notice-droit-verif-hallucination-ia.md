@@ -14,7 +14,8 @@ Il lit un document juridique, relève les citations de jurisprudence, d'articles
 d'articles de conventions collectives, et demande aux bases officielles si chaque décision existe, et à quelle date ; si chaque
 article existe, s'il était en vigueur à la date des faits, et si le texte cité entre
 guillemets est bien celui de la version en vigueur à cette date. Il rend un rapport en texte (pour
-un humain) et en JSON (pour qu'une IA corrige ses propres citations).
+un humain, en tableau, avec le lien de ce qui a été trouvé ; en .txt ou en PDF), en JSON (pour qu'une IA corrige
+ses propres citations) et, pour un PDF, une copie annotée du document.
 
 Il ne contient **aucune IA**, et c'est voulu : un programme qui consulte une base ne peut pas
 inventer. Ne jamais y ajouter un modèle, ni pour extraire les citations, ni pour juger.
@@ -43,9 +44,11 @@ ouvre dans son navigateur.
 | `citecheck/engine.py` | document → citations → rapport |
 | `citecheck/reader.py` | texte d'un .pdf .docx .odt .txt .md, notes de bas de page comprises |
 | `citecheck/keys.py` | clés : variable d'environnement, sinon trousseau du système |
-| `citecheck/report.py` | rapport texte et JSON |
+| `citecheck/report.py` | rapport texte (tableau) et JSON ; la couleur de chaque verdict |
+| `citecheck/report_pdf.py` | le rapport en PDF : tableau aux couleurs des verdicts, liens cliquables (fpdf2, police Roboto de customtkinter) |
+| `citecheck/annotate.py` | le PDF annoté : chaque citation surlignée de la couleur de son verdict, cliquable (pdfminer.six pour la place des lettres) |
 | `citecheck/locales/fr.py` | tous les textes affichés ; une langue = un fichier |
-| `citecheck/countries/france/` | extraction, bases et verdicts pour la France : `extract.py`, `sources.py` (ArianeWeb, Judilibre), `legifrance.py`, `articles.py` (codes), `texts.py` (lois, ordonnances, décrets non codifiés), `conventions.py`, `lower_courts.py` (cours d'appel, tribunaux judiciaires et de commerce), `other_courts.py` (CAA, base locale, Conseil constitutionnel, Tribunal des conflits, Union européenne, lien CEDH), `codes.py` (noms et abréviations), `scope.py` (ce qui est vérifié) |
+| `citecheck/countries/france/` | extraction, bases et verdicts pour la France : `extract.py`, `sources.py` (ArianeWeb, Judilibre), `legifrance.py`, `articles.py` (codes), `texts.py` (lois, ordonnances, décrets non codifiés), `conventions.py`, `links.py` (le lien de ce qui a été trouvé, sur un modèle fixe), `lower_courts.py` (cours d'appel, tribunaux judiciaires et de commerce), `other_courts.py` (CAA, base locale, Conseil constitutionnel, Tribunal des conflits, Union européenne, lien CEDH), `codes.py` (noms et abréviations), `scope.py` (ce qui est vérifié) |
 | `citecheck/http.py` | le seul point de sortie réseau, qui refuse toute redirection (une redirection emporterait les clés) |
 | `cases/` | bancs d'essai dont la réponse est connue : `perigueux.json` (cas réel jugé), `articles.json`, `conventions.json`, `lower_courts.json`, `other_courts.json`, `abrogated_codes.json` et `abrogated_codes_2010.json` (codes abrogés, lus à deux dates), `cgi.json` (suffixes et annexes du CGI), `commercial_courts.json`, `chambers.json`, `texts.json` et `texts_2010.json` |
 | `tests/` | tests hors réseau |
@@ -70,6 +73,8 @@ python -m venv .venv
 .venv/bin/python -m citecheck                    # la fenêtre
 .venv/bin/python -m citecheck conclusions.pdf    # la ligne de commande
 .venv/bin/python -m citecheck conclusions.pdf --json
+.venv/bin/python -m citecheck conclusions.pdf --pdf  # + conclusions-citations-vérifiées.pdf
+.venv/bin/python -m citecheck conclusions.docx -o rapport.pdf  # le rapport en PDF
 ```
 
 Sous Windows (PowerShell), les exécutables du venv sont dans `.venv\Scripts\` :
@@ -80,6 +85,8 @@ python -m venv .venv
 .venv\Scripts\python -m citecheck                    # la fenêtre
 .venv\Scripts\python -m citecheck conclusions.pdf    # la ligne de commande
 .venv\Scripts\python -m citecheck conclusions.pdf --json
+.venv\Scripts\python -m citecheck conclusions.pdf --pdf  # + conclusions-citations-vérifiées.pdf
+.venv\Scripts\python -m citecheck conclusions.docx -o rapport.pdf  # le rapport en PDF
 ```
 
 La fenêtre a trois onglets : « Vérifier un document », « Clés d'accès » et « Ce qui est
@@ -108,6 +115,16 @@ concernées sortent « non vérifiées », jamais en erreur de l'auteur.
 l'entoure, et sa page : exacte pour un PDF, approximative pour Word et LibreOffice (ils
 enregistrent les sauts de page de leur dernier affichage), absente pour du texte brut. Une
 citation placée dans une note de bas de page Word est signalée comme telle.
+
+**Le PDF annoté** (bouton « PDF annoté », ou `--pdf`) : une copie du document, nommée
+`<nom>-citations-vérifiées.pdf`, où chaque citation est surlignée : **bleu** confirmée,
+**orange** à vérifier (autre date, autre chambre, autre version, texte cité non retrouvé :
+tout ce qui est douteux, jamais confirmé), **rouge** semble inventée, **gris avec « ? »**
+non vérifiée (clé absente, base en panne, période non couverte). Un clic ouvre ce qui a
+été trouvé ; le survol donne le verdict et son explication. Une citation reprise plus loin
+est surlignée à chaque reprise. Le document d'origine n'est jamais modifié : un PDF ne se
+recompose pas, les couleurs sont des annotations posées par-dessus, que tout lecteur de PDF
+peut masquer.
 
 **Enregistrer sans extraits** (case cochée par défaut ; en ligne de commande, c'est aussi le défaut, `--with-excerpts` pour les garder) : le rapport
 enregistré ne garde que numéros, dates et verdicts, sans aucune phrase du document. C'est
