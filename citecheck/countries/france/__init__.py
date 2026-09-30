@@ -19,7 +19,7 @@ CE QU'ELLE NE VÉRIFIE PAS
 """
 from datetime import date
 
-from . import codes, other_courts, sources
+from . import codes, other_courts, sources, wire
 from .articles import check_articles
 from .texts import check_text_articles
 from .conventions import check_convention_articles
@@ -42,8 +42,12 @@ SETTINGS_HELP = {LOCAL_BASE: (
     "Les tribunaux administratifs ne sont interrogeables par aucune base en ligne : leurs "
     "décisions ne sont publiées qu'en archives, sur opendata.justice-administrative.fr. Si "
     "une base locale a été installée à partir de ces archives, donnez ici son adresse "
-    "(http://...) : les décisions des TA, et celles des CAA absentes de Légifrance, y "
-    "seront cherchées. Le format attendu est décrit dans la notice du programme.")}
+    "(https://..., ou http://localhost:... si elle tourne sur cet ordinateur) : les "
+    "décisions des TA, et celles des CAA absentes de Légifrance, y seront cherchées. Le "
+    "format attendu est décrit dans la notice du programme. Avant chaque vérification, elle "
+    "est essayée sur des décisions connues : cela montre qu'elle fonctionne, pas qu'elle dit "
+    "vrai sur les autres. Ses réponses valent ce que vaut celui qui l'a installée.")}
+SETTINGS_CHECK = {LOCAL_BASE: other_courts.local_base_problem}
 NOISE_MAX = 3        # au-delà, un témoin négatif d'ArianeWeb est du bruit anormal
 
 ADMIN_REAL = [("298348", "CE Ass. 30/10/2009 Perreux"),
@@ -530,9 +534,27 @@ def prepare(keys, log=lambda s: None):
 def check(citations, keys, log=lambda s: None, options=None):
     """Vérifie chaque citation. Renvoie un résultat par citation, dans l'ordre.
 
+    Une citation dont un champ n'a pas la forme que l'extracteur produit n'est envoyée à
+    aucune base : elle sort NOT_TESTED, avec la raison (wire.py).
+
     `options` :
       reference_date  AAAA-MM-JJ, la date à laquelle les articles sont lus (défaut : jour)
       idcc            l'IDCC à utiliser pour une convention citée sans IDCC"""
+    refused = [wire.refusal(c) for c in citations]
+    checked = iter(_check([c for c, why in zip(citations, refused) if not why], keys, log,
+                          options))
+    results = []
+    for c, why in zip(citations, refused):
+        if why:
+            log(f"  {str(c.get('number'))[:40]!r} : {why}")
+            results.append({**c, "verdict": "NOT_TESTED", "explanation": why,
+                            "actual_date": None})
+        else:
+            results.append(next(checked))
+    return results
+
+
+def _check(citations, keys, log, options):
     options = options or {}
     day = options.get("reference_date") or date.today().isoformat()
     legislation = iter(_check_legislation(

@@ -34,6 +34,7 @@ CE QU'ON A APPRIS (sonde du 29/09/2026 au soir, numéros réels et inventés)
 
 Seul le numéro de la décision part sur le réseau. Jamais le texte du document.
 """
+import ipaddress
 import json
 import re
 import urllib.error
@@ -41,6 +42,7 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 
+from ...reader import Suspicious, parse_xml
 from .extract import RE_DATE_DIGITS, RE_DATE_WORDS, _iso
 from .legifrance import USER_AGENT, Unavailable
 from ...http import urlopen
@@ -106,8 +108,9 @@ class LocalBase:
 
     def __init__(self, url):
         url = (url or "").strip().rstrip("/")
-        if not re.match(r"https?://", url):
-            raise Unavailable(f"adresse de la base locale invalide : {url[:60]}")
+        problem = local_base_problem(url)
+        if problem:
+            raise Unavailable(f"adresse de la base locale refusée : {problem}")
         self.url = url
         self._coverage = None
 
@@ -160,6 +163,38 @@ def european_union(number):
     return sorted(days)
 
 
+def local_base_problem(url):
+    """None si l'adresse de la base locale est acceptable ; sinon, pourquoi.
+
+    Vérifié à l'enregistrement ET à chaque lecture : une variable d'environnement gagne sur
+    le trousseau et ne passe pas par la fenêtre (audit du 30/09/2026, point 3). Les numéros
+    des requêtes ne circulent en clair que sur cet ordinateur ; ailleurs, https. Pas
+    d'identifiant dans l'adresse, où il finirait dans les journaux, et pas d'adresse
+    lien-local (169.254.x.x : les métadonnées des machines de cloud)."""
+    try:
+        u = urllib.parse.urlsplit((url or "").strip())
+        u.port                                       # un port illisible lève ValueError
+    except ValueError:
+        return "adresse illisible"
+    host = u.hostname or ""
+    if u.scheme not in ("http", "https") or not host:
+        return "l'adresse doit commencer par https://"
+    if u.username or u.password:
+        return "pas d'identifiant ni de mot de passe dans l'adresse"
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        ip = None
+    if host.lower() == "localhost" or (ip and ip.is_loopback):
+        return None
+    if u.scheme != "https":
+        return ("hors de cet ordinateur, l'adresse doit être en https:// : en http, les "
+                "numéros des requêtes circuleraient en clair sur le réseau")
+    if ip and (ip.is_link_local or ip.is_multicast or ip.is_unspecified or ip.is_reserved):
+        return "adresse réseau réservée, refusée"
+    return None
+
+
 def _get(url):
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT,
                                                "Accept": "application/xml;notice=object"})
@@ -196,8 +231,8 @@ def _celex_dates(celex):
     if len(body) > MAX_NOTICE:
         raise Unavailable("fiche CELLAR anormalement grande")
     try:
-        work = ET.fromstring(body).find("WORK")
-    except ET.ParseError:
+        work = parse_xml(body).find("WORK")
+    except (ET.ParseError, Suspicious):
         raise Unavailable("fiche CELLAR illisible")
     if work is None:
         raise Unavailable("fiche CELLAR sans décision")

@@ -28,8 +28,9 @@ le sont pas : [la notice pour les juristes](citecheck/countries/france/README.md
 ## État
 
 Programme en construction. Pas encore d'exécutable à télécharger. Audité par Claude Opus 5.5
-et Kimi K3 le 29 septembre 2026. Il reste à le vérifier sur des cas réels qui n'ont pas
-servi lors de la conception.
+et Kimi K3 le 29 septembre 2026, puis par Grok 4.7 le 30 septembre 2026 (sécurité : lecture
+des fichiers reçus, ce qui part sur le réseau, rapport sans extraits, base locale). Il reste
+à le vérifier sur des cas réels qui n'ont pas servi lors de la conception.
 
 ## Ce qu'il ne vérifie pas
 
@@ -55,8 +56,8 @@ servi lors de la conception.
 
 Un compte PISTE, gratuit, pour interroger Judilibre et Légifrance. Vos clés restent sur
 votre ordinateur, dans le trousseau du système. Seuls partent vers les bases publiques les
-numéros des décisions, les numéros d'articles avec le nom du code, et les numéros de
-conventions collectives (IDCC) : jamais votre texte.
+numéros des décisions, les numéros d'articles avec le nom du code ou la référence de la loi
+ou du décret, et les numéros de conventions collectives (IDCC) : jamais votre texte.
 
 Le rapport peut être enregistré sans aucun extrait de votre document, pour le donner à une
 IA sans y faire passer de noms ni de faits.

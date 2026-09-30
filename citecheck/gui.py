@@ -192,8 +192,11 @@ class Window:
     def save_setting(self, name):
         field, status = self.settings[name]
         value = field.get().strip()
-        if value and not value.startswith(("http://", "https://")):
-            status.config(text=t.SETTING_BAD_URL)
+        check = getattr(self.country, "SETTINGS_CHECK", {}).get(name)
+        problem = value and (check(value) if check else
+                             None if value.startswith("https://") else t.SETTING_BAD_URL)
+        if problem:
+            status.config(text=problem)
             return
         if not value:
             return self.delete_setting(name)

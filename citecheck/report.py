@@ -4,6 +4,7 @@ The JSON closes the loop "the AI writes, this program checks, the AI fixes": giv
 report back to the AI that wrote the document and it corrects its citations.
 """
 import json
+import re
 from collections import Counter
 from datetime import date
 
@@ -11,13 +12,42 @@ from . import NAME, __version__
 from .countries import COUNTRIES
 from .locales import t
 
+QUOTE_MAX = 300     # characters of a quoted passage kept in the report: a pair of quotation
+                    # marks around half the document must not carry half the document
+
+
+def _capped(r):
+    q = r.get("quote")
+    if q and len(q) > QUOTE_MAX:
+        r = {**r, "quote": q[:QUOTE_MAX - 1] + "…"}
+    return r
+
+
+# Control characters and bidirectional overrides, in any text that reaches the report:
+# labels sent back by a database (chamber, solution, court, title), and what is read in the
+# document. A line break in a label would add a line that looks like a verdict; an escape
+# sequence would hide or recolour lines in a terminal; a bidi override would show a number
+# reversed. None of them is ever part of a real label.
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f\u200e\u200f\u202a-\u202e\u2066-\u2069]")
+
+
+def _clean(v):
+    if isinstance(v, str):
+        return _CONTROL.sub(" ", v)
+    if isinstance(v, dict):
+        return {k: _clean(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_clean(x) for x in v]
+    return v
+
 
 def build(source, country, results, remarks, options=None):
     options = options or {}
+    results = [_clean(r) for r in results]
     return {
         "program": f"{NAME} {__version__}",
         "date": date.today().isoformat(),
-        "source": source,
+        "source": _clean(source),
         "country": country,
         # The date the cited articles were read at; None means "today, by default".
         "reference_date": options.get("reference_date"),
@@ -26,7 +56,8 @@ def build(source, country, results, remarks, options=None):
         "disclaimer": t.DISCLAIMER,
         "summary": dict(Counter(r["verdict"] for r in results)),
         # `verdict` is a stable code, the same in every language; `verdict_label` is for humans.
-        "citations": [{**r, "verdict_label": t.VERDICTS[r["verdict"]]} for r in results],
+        "citations": [{**_capped(r), "verdict_label": t.VERDICTS[r["verdict"]]}
+                      for r in results],
         "remarks": remarks,
     }
 
@@ -36,18 +67,19 @@ def without_excerpts(report):
     numbers, dates and verdicts remain. For a report handed to an online AI, when the
     document holds names and facts that must not leave the office."""
     out = dict(report)
+    out["source"] = t.SOURCE_WITHHELD      # « Dupont c. Martin.pdf » : un nom de partie
     out["citations"] = []
     for r in report["citations"]:
         r = {k: v for k, v in r.items() if k != "quote"}
         # « CA Paris » : le nom de ville est lu dans le document, il peut être autre chose
         # (audit K6). On ne garde que le type de juridiction ; l'explication cite le libellé
         # officiel de Judilibre quand il a été trouvé.
+        # Les explications ne recopient pas ce nom (lower_courts.py) : rien à y chercher.
         place = r.pop("place", None)
         if place:
             court = r["court"]
             r["court"] = (court[:-len(place)] if court.endswith(place)
                           else court.split(" ", 1)[0]).strip()
-            r["explanation"] = (r.get("explanation") or "").replace(place, "…")
         if r.get("location"):
             r["location"] = {k: v for k, v in r["location"].items() if k != "excerpt"}
         out["citations"].append(r)

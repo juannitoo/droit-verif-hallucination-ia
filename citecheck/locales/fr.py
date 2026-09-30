@@ -70,6 +70,10 @@ UNKNOWN_FORMAT = "{name} : format inconnu. Formats lus : .pdf .docx .odt .txt .m
 NO_TEXT = "{name} : aucun texte lisible."
 TOO_DEEP = "{name} : structure anormalement imbriquée, refusée par prudence."
 TOO_BIG = "Document trop volumineux une fois décompressé ({name}) : refusé par prudence."
+TOO_LONG = "{name} : texte anormalement long, refusé par prudence."
+TOO_MANY_PAGES = "{name} : {n} pages, au-delà des {max} lues : refusé par prudence."
+SUSPICIOUS = ("{name} : structure qu'aucun traitement de texte n'écrit ({detail}), refusé par "
+              "prudence.")
 NO_TEXT_PDF = ("{name} : aucun texte lisible. C'est sans doute un PDF scanné (une image) : "
                "il faut un PDF texte.")
 
@@ -87,8 +91,11 @@ TAB_KEYS = "Clés d'accès"
 TAB_SCOPE = "Ce qui est vérifié"
 KEYS_EXPLANATION = (
     "Certaines bases officielles demandent une clé gratuite, liée à votre compte. Vous la "
-    "donnez une fois : elle reste sur cet ordinateur, dans le trousseau du système. Seul le "
-    "numéro de chaque décision citée est envoyé aux bases, jamais le texte de votre document.")
+    "donnez une fois : elle reste sur cet ordinateur, dans le trousseau du système. Seuls "
+    "partent vers les bases les numéros des décisions, les numéros d'articles avec le nom du "
+    "code ou la référence de la loi ou du décret, et les numéros de conventions collectives "
+    "(IDCC). Jamais le texte de votre document, ni les passages que vous citez entre "
+    "guillemets : ils sont comparés sur cet ordinateur.")
 KEYS_MISSING_WARNING = ("Une clé d'accès manque : une partie des citations ne sera pas "
                         "vérifiée. Voir l'onglet « Clés d'accès ».")
 TITLE = "Vérification des citations juridiques"
@@ -98,10 +105,11 @@ NO_DOCUMENT = "aucun document choisi"
 FORMATS = "Documents (.pdf .docx .odt .txt .md)"
 KEY_SAVE = "Enregistrer la clé"
 SETTING_SAVE = "Enregistrer"
-SETTING_SAVED = "adresse enregistrée : elle sera contrôlée au début de chaque vérification"
+SETTING_SAVED = ("adresse enregistrée : la base sera essayée sur des décisions connues au "
+                 "début de chaque vérification")
 SETTING_EMPTY = "aucune base locale"
 SETTING_NO_KEYRING = "ce système n'a pas de trousseau : l'adresse ne sera pas conservée"
-SETTING_BAD_URL = "l'adresse doit commencer par http:// ou https://"
+SETTING_BAD_URL = "l'adresse doit commencer par https://"
 KEY_DELETE = "Effacer"
 KEY_PRESENT = "clé enregistrée"
 KEY_MISSING = "aucune clé : ces décisions ne seront pas vérifiées"
@@ -121,6 +129,9 @@ SAVE_JSON = "Enregistrer le rapport (pour une IA)"
 REPORT_FILE = "rapport-citations"
 NO_EXCERPTS = "Enregistrer sans extraits du document"
 NO_EXCERPTS_HINT = ("Le rapport enregistré ne contient alors que les numéros, les dates et les "
-                    "verdicts, sans aucune phrase de votre document. À garder coché si vous le "
-                    "donnez à une IA en ligne : les extraits pourraient contenir les noms des "
-                    "parties ou des faits couverts par le secret professionnel.")
+                    "verdicts : ni phrase de votre document, ni nom du fichier. À garder coché "
+                    "si vous le donnez à une IA en ligne : les extraits pourraient contenir les "
+                    "noms des parties ou des faits couverts par le secret professionnel. Le "
+                    "rapport affiché ci-dessus, lui, garde les extraits : donnez à l'IA le "
+                    "fichier enregistré, pas un copier-coller de cette fenêtre.")
+SOURCE_WITHHELD = "(nom du fichier retiré)"

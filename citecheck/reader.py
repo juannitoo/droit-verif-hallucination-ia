@@ -20,6 +20,7 @@ PAGES
   are approximate. Word footnotes come after the body, after a NOTES mark: their page is
   unknown. Plain text has no pages.
 """
+import os
 import re
 import shutil
 import subprocess
@@ -33,6 +34,12 @@ from .locales import t
 
 MAX_UNPACKED = 200 * 1024 * 1024   # a .docx or .odt part larger than this is refused:
                                    # a crafted "zip bomb" would otherwise fill the memory
+# The limits above bound what is unpacked, not what is built from it. These bound the rest
+# (audit of 30/09/2026, point 2): a 280-byte .odt asking for 300 million spaces took 600 MB.
+MAX_TEXT = 10_000_000     # characters of extracted text: some 3,000 pages of conclusions
+MAX_PAGES = 3_000         # pages of a PDF: each one costs pypdf time and memory
+MAX_SPACES = 100          # <text:s text:c="n"/> is a run of spaces, never a page of them
+PDFTOTEXT_TIMEOUT = 120   # seconds
 PAGE = "\f"
 NOTES = "\x1e"      # separates the body of a Word document from its footnotes
 
@@ -42,6 +49,24 @@ T = "{urn:oasis:names:tc:opendocument:xmlns:text:1.0}"
 
 class Unreadable(Exception):
     """The document cannot be read. The message says what to do."""
+
+
+class Suspicious(ValueError):
+    """The file has a structure no word processor writes: refused rather than read."""
+
+
+class _NoDTD(ET.TreeBuilder):
+    def doctype(self, name, pubid, system):
+        raise Suspicious("DTD")
+
+
+def parse_xml(data):
+    """ElementTree, with any DTD refused before it is used. Word, LibreOffice and CELLAR
+    never send one; a DTD is what declares the entities of a "billion laughs" or of an
+    external file, and how Python treats them depends on the expat it was built with."""
+    parser = ET.XMLParser(target=_NoDTD())
+    parser.feed(data)
+    return parser.close()
 
 
 @dataclass
@@ -79,7 +104,7 @@ def _docx(path):
     for n, x in enumerate(xmls):
         if n == 1:
             blocks.append(NOTES)
-        for p in ET.fromstring(x).iter(W + "p"):
+        for p in parse_xml(x).iter(W + "p"):
             pieces = []
             for e in p.iter():
                 if e.tag == W + "t":
@@ -101,7 +126,10 @@ def _odt_text(e):
     pieces = [e.text or ""]
     for f in e:
         if f.tag == T + "s":
-            pieces.append(" " * int(f.get(T + "c", "1")))
+            count = f.get(T + "c", "1")
+            if not (count.isascii() and count.isdigit() and len(count) <= 9):
+                raise Suspicious(f"text:c={count[:20]!r}")
+            pieces.append(" " * min(int(count), MAX_SPACES))
         elif f.tag == T + "tab":
             pieces.append("\t")
         elif f.tag == T + "line-break":
@@ -117,7 +145,7 @@ def _odt_text(e):
 def _odt(path):
     with zipfile.ZipFile(path) as z:
         _check_size(z, ["content.xml"])
-        root = ET.fromstring(z.read("content.xml"))
+        root = parse_xml(z.read("content.xml"))
 
     # Notes sit INSIDE the paragraph that calls them: read them in place, and do not descend
     # into a paragraph again, or every note would come out twice.
@@ -135,16 +163,46 @@ def _odt(path):
 def _pdf(path):
     try:
         from pypdf import PdfReader
-        return PAGE.join((pg.extract_text() or "") for pg in PdfReader(path).pages)
     except ImportError:
-        pass
-    if shutil.which("pdftotext"):
-        r = subprocess.run(["pdftotext", "-layout", str(path), "-"],
-                           capture_output=True, text=True)
-        if r.returncode == 0:
-            return r.stdout
-        raise Unreadable(t.PDF_FAILED.format(detail=r.stderr.strip()[:200]))
-    raise Unreadable(t.PDF_NO_READER)
+        return _pdftotext(path)
+    try:
+        pages = PdfReader(path).pages
+        if len(pages) > MAX_PAGES:
+            raise Unreadable(t.TOO_MANY_PAGES.format(name=path.name, n=len(pages),
+                                                     max=MAX_PAGES))
+        texts, size = [], 0
+        for pg in pages:
+            texts.append(pg.extract_text() or "")
+            size += len(texts[-1])
+            if size > MAX_TEXT:
+                raise Unreadable(t.TOO_LONG.format(name=path.name))
+        return PAGE.join(texts)
+    except (Unreadable, RecursionError):
+        raise
+    except Exception as e:        # pypdf has many error types; all mean a damaged PDF
+        raise Unreadable(t.DAMAGED.format(name=path.name, ext=".pdf", detail=type(e).__name__))
+
+
+# What pdftotext inherits: enough to run, nothing else. The access keys may be environment
+# variables, and a program found in the PATH has no business seeing them.
+CHILD_ENV = {"PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "HOME", "LANG", "LC_ALL",
+             "LC_CTYPE"}
+
+
+def _pdftotext(path):
+    exe = shutil.which("pdftotext")
+    if not exe:
+        raise Unreadable(t.PDF_NO_READER)
+    env = {k: v for k, v in os.environ.items() if k.upper() in CHILD_ENV}
+    try:
+        r = subprocess.run([exe, "-layout", str(path), "-"], capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", env=env,
+                           timeout=PDFTOTEXT_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        raise Unreadable(t.PDF_FAILED.format(detail=f"> {PDFTOTEXT_TIMEOUT} s"))
+    if r.returncode == 0:
+        return r.stdout
+    raise Unreadable(t.PDF_FAILED.format(detail=r.stderr.strip()[:200]))
 
 
 def _normalize(text):
@@ -175,14 +233,20 @@ def text_of(path):
     ext = path.suffix.lower()
     if ext in TO_EXPORT:
         raise Unreadable(t.EXPORT_FIRST.format(name=path.name, fmt=TO_EXPORT[ext]))
+    if ext not in READERS and path.stat().st_size > 4 * MAX_TEXT:   # utf-8: 4 bytes at most
+        raise Unreadable(t.TOO_LONG.format(name=path.name))
     try:
         raw = READERS[ext](path) if ext in READERS else path.read_text(encoding="utf-8")
+    except Suspicious as e:
+        raise Unreadable(t.SUSPICIOUS.format(name=path.name, detail=e))
     except (zipfile.BadZipFile, ET.ParseError, KeyError) as e:
         raise Unreadable(t.DAMAGED.format(name=path.name, ext=ext, detail=e))
     except RecursionError:
         raise Unreadable(t.TOO_DEEP.format(name=path.name))
     except UnicodeDecodeError:
         raise Unreadable(t.UNKNOWN_FORMAT.format(name=path.name))
+    if len(raw) > MAX_TEXT:
+        raise Unreadable(t.TOO_LONG.format(name=path.name))
     text = _normalize(raw)
     if len(text.split()) < 5:
         raise Unreadable(t.NO_TEXT_PDF.format(name=path.name) if ext == ".pdf"

@@ -402,13 +402,23 @@ class AuditPass2(unittest.TestCase):
         self.assertIsNone(Picky("id", "secret").convention("9998"))
 
     def test_k6_no_document_word_left(self):
+        from unittest import mock
+        from citecheck.countries.france.lower_courts import check_lower_court
         cit = {"kind": "decision", "order": "lower", "court": "CA Dupont Martin",
-               "place": "Dupont Martin", "number": "11/18803", "cited_date": None,
-               "verdict": "NOT_TESTED",
-               "explanation": "cour d'appel « Dupont Martin » non reconnue"}
-        r = report.without_excerpts(report.build("doc.pdf", "france", [cit], []))
+               "jurisdiction": "ca", "place": "Dupont Martin", "number": "11/18803",
+               "cited_date": None}
+        v, why, actual = check_lower_court(mock.Mock(**{"location.return_value": None}), cit)
+        cit = {**cit, "verdict": v, "explanation": why, "actual_date": actual}
+        r = report.without_excerpts(report.build("Dupont c. Martin.pdf", "france", [cit], []))
         self.assertNotIn("Dupont", report.to_json(r))
         self.assertNotIn("Dupont", report.to_text(r))
+
+    def test_a_long_quote_does_not_carry_the_document(self):
+        long = "Madame Dupont " + "et les faits " * 400
+        cit = {"kind": "article", "code": "Code civil", "number": "1240", "court": "Code civil",
+               "quote": long, "verdict": "ARTICLE_IN_FORCE", "explanation": "x"}
+        r = report.build("doc.pdf", "france", [cit], [])
+        self.assertLessEqual(len(r["citations"][0]["quote"]), report.QUOTE_MAX)
 
     def test_k10_deeply_nested_odt_is_refused(self):
         import tempfile
@@ -768,6 +778,227 @@ class Report(unittest.TestCase):
         r = report.build("empty.txt", "france", [], [])
         self.assertIn("sans garantie", report.to_text(r))
         self.assertIn("sans garantie", json.loads(report.to_json(r))["disclaimer"])
+
+
+class ReaderLimits(unittest.TestCase):
+    """Audit of 30/09/2026, point 2: a crafted file must be refused cleanly, never fill the
+    memory or stop the program with a raw error."""
+
+    ODT_NS = ('xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" '
+              'xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"')
+    BODY = "Voir Cass. soc., 14/12/2017, pourvoi 16-26.694, et la suite du texte."
+
+    def setUp(self):
+        import tempfile
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+
+    def zipped(self, name, part, xml):
+        import os
+        import zipfile
+        path = os.path.join(self.dir.name, name)
+        with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr(part, xml)
+        return path
+
+    def odt(self, inner, doctype=""):
+        return self.zipped("x.odt", "content.xml",
+                           f'<?xml version="1.0"?>{doctype}<office:document-content '
+                           f'{self.ODT_NS}><office:body><office:text><text:p>{self.BODY}'
+                           f'{inner}</text:p></office:text></office:body>'
+                           f'</office:document-content>')
+
+    def test_a_huge_run_of_spaces_is_capped(self):
+        from citecheck import reader
+        doc = reader.read(self.odt('<text:s text:c="300000000"/>fin'))
+        self.assertLess(len(doc.text), 1000)
+        self.assertIn("16-26.694", doc.text)
+
+    def test_a_run_of_spaces_that_is_not_a_number_is_refused(self):
+        from citecheck import reader
+        for bad in ("abc", "-5", "1e9", "٣"):        # ٣: an Arabic-Indic digit
+            with self.subTest(bad=bad), self.assertRaises(reader.Unreadable):
+                reader.read(self.odt(f'<text:s text:c="{bad}"/>fin'))
+
+    def test_a_dtd_is_refused_before_its_entities_expand(self):
+        from citecheck import reader
+        laughs = ('<!DOCTYPE office:document-content [<!ENTITY a "aaaaaaaaaa">'
+                  '<!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;">]>')
+        with self.assertRaises(reader.Unreadable):
+            reader.read(self.odt("&b;", laughs))
+        w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        docx = self.zipped("x.docx", "word/document.xml",
+                           '<?xml version="1.0"?><!DOCTYPE d [<!ENTITY x SYSTEM '
+                           f'"file:///etc/passwd">]><w:document xmlns:w="{w}"><w:body><w:p>'
+                           f'<w:r><w:t>{self.BODY} &x;</w:t></w:r></w:p></w:body></w:document>')
+        with self.assertRaises(reader.Unreadable):
+            reader.read(docx)
+
+    def test_an_ordinary_odt_still_reads(self):
+        from citecheck import reader
+        doc = reader.read(self.odt('<text:s text:c="3"/>fin'))
+        self.assertIn(self.BODY + "   fin", doc.text)
+
+    def test_a_text_too_long_is_refused(self):
+        import os
+        from unittest import mock
+        from citecheck import reader
+        path = os.path.join(self.dir.name, "long.txt")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(self.BODY * 50)
+        with mock.patch.object(reader, "MAX_TEXT", 1000), self.assertRaises(reader.Unreadable):
+            reader.read(path)
+
+    def test_pdftotext_does_not_see_the_keys(self):
+        import os
+        from unittest import mock
+        from citecheck import reader
+        seen = {}
+
+        def run(cmd, **kw):
+            seen.update(kw)
+            return mock.Mock(returncode=0, stdout=self.BODY)
+        with mock.patch.dict(os.environ, {"PISTE_CLIENT_SECRET": "s3cret"}),                 mock.patch.object(reader.shutil, "which", return_value="/bin/pdftotext"),                 mock.patch.object(reader.subprocess, "run", run):
+            reader._pdftotext(reader.Path("x.pdf"))
+        self.assertNotIn("PISTE_CLIENT_SECRET", seen["env"])
+        self.assertTrue(seen["timeout"])
+
+
+class WireShape(unittest.TestCase):
+    """Audit of 30/09/2026, point 1: whatever the caller (window, --number, --case, a
+    script), only a field shaped like the extractor's output reaches a database."""
+
+    def sent(self, citations):
+        from unittest import mock
+        from citecheck.countries import france
+        calls = []
+
+        def record(name):
+            def f(*a, **kw):
+                calls.append((name, a[0]))
+                raise AssertionError("must not be reached")
+            return f
+        with mock.patch.object(france.sources, "ariane", record("ariane")),                 mock.patch.object(france.sources, "judilibre", record("judilibre")),                 mock.patch.object(france, "selftest_admin", return_value=True),                 mock.patch.object(france, "selftest_judicial", return_value=True),                 mock.patch.object(france, "Courts"):
+            results = france.check(citations, {"PISTE_API_KEY": "k"})
+        return calls, results
+
+    def test_a_sentence_in_place_of_a_number_is_not_sent(self):
+        phrase = "Madame Dupont a été licenciée le 3 mars pour faute grave"
+        calls, results = self.sent([
+            {"kind": "decision", "order": "administrative", "court": "CE", "number": phrase},
+            {"kind": "decision", "order": "judicial", "court": "Cass", "number": phrase},
+            {"kind": "decision", "order": "judicial", "court": "Cass", "number": "17-28268 x"},
+            {"kind": "decision", "order": "anything", "court": "?", "number": "17-28268"},
+            {"kind": "decision", "order": "constitutional", "court": "Cons. const.",
+             "number": "2010-1" + "/1" * 30},
+            {"kind": "article", "order": "legislation", "court": "Code civil",
+             "code": "Code civil", "number": phrase},
+            {"kind": "article", "order": "legislation", "court": "x", "code": phrase,
+             "number": "1240"},
+            {"kind": "convention_article", "order": "legislation", "court": "x",
+             "idcc": phrase, "number": "1"},
+        ])
+        self.assertEqual(calls, [])
+        self.assertEqual({r["verdict"] for r in results}, {"NOT_TESTED"})
+        self.assertTrue(all("non envoyé" in r["explanation"] for r in results))
+
+    def test_every_real_citation_passes(self):
+        import glob
+        from citecheck.countries.france import wire
+        for f in glob.glob("cases/*.json"):
+            with open(f, encoding="utf-8") as fh:
+                for c in json.load(fh)["citations"]:
+                    with self.subTest(case=f, number=c.get("number")):
+                        self.assertIsNone(wire.refusal(c))
+        for c in extract(PERIGUEUX + " Voir C. trav., art. L. 1152-1 et CGI, art. 46 "
+                         "quater-0 ZZ bis ; loi n° 89-462 du 6 juillet 1989, art. 22 ; "
+                         "CAA Nancy, 17NC01414 ; CJUE, C-311/18.")[0]:
+            with self.subTest(number=c["number"]):
+                self.assertIsNone(wire.refusal(c))
+
+
+class ResponseCeiling(unittest.TestCase):
+    """Audit of 30/09/2026, hardening 5: no reply is read past http.MAX_RESPONSE, and an
+    oversized one is "no answer", never a verdict."""
+
+    def opened(self, size):
+        import io as _io
+        from unittest import mock
+        from citecheck import http
+        body = _io.BytesIO(b'{"TotalCount": 0, "pad": "' + b"x" * size + b'"}')
+        return mock.patch.object(http._opener, "open", return_value=body)
+
+    def test_an_oversized_reply_is_refused_whatever_the_caller_asks(self):
+        from unittest import mock
+        from citecheck import http
+        for n in (-1, None, 10**9):
+            with self.subTest(n=n), mock.patch.object(http, "MAX_RESPONSE", 1000),                     self.opened(5000), self.assertRaises(http.TooLarge):
+                with http.urlopen("https://example.invalid", timeout=1) as r:
+                    while r.read(n):
+                        pass
+
+    def test_an_oversized_reply_is_not_a_verdict(self):
+        from unittest import mock
+        from citecheck import http
+        from citecheck.countries.france import sources
+        with mock.patch.object(http, "MAX_RESPONSE", 1000), self.opened(5000),                 mock.patch.object(sources.time, "sleep"):
+            self.assertEqual(sources.ariane("308850"), (-1, set()))
+            self.assertIn("_err", sources.judilibre("17-28268", "k"))
+
+    def test_an_ordinary_reply_is_read_whole(self):
+        from citecheck import http
+        with self.opened(100):
+            with http.urlopen("https://example.invalid", timeout=1) as r:
+                self.assertEqual(json.loads(r.read())["TotalCount"], 0)
+
+
+class LocalBaseAddress(unittest.TestCase):
+    """Audit of 30/09/2026, point 3: numbers travel in clear only on this computer, and the
+    rule holds for an environment variable too, which the window never sees."""
+
+    def test_addresses(self):
+        from citecheck.countries.france.other_courts import local_base_problem
+        for url in ("https://decisions.ta.example.fr", "https://10.0.0.5:8443/api",
+                    "http://localhost:8080", "http://127.0.0.1:5000", "http://[::1]:5000"):
+            with self.subTest(url=url):
+                self.assertIsNone(local_base_problem(url))
+        for url in ("http://decisions.ta.example.fr", "http://10.0.0.5", "file:///C:/base",
+                    "https://user:pass@decisions.example.fr", "https://169.254.169.254",
+                    "https://[fe80::1]", "https://host:notaport", "decisions.example.fr",
+                    "ftp://decisions.example.fr"):
+            with self.subTest(url=url):
+                self.assertIsNotNone(local_base_problem(url))
+
+    def test_an_environment_variable_does_not_bypass_the_rule(self):
+        import os
+        from unittest import mock
+        from citecheck import keys
+        from citecheck.countries import france
+        logs = []
+        with mock.patch.dict(os.environ, {france.LOCAL_BASE: "http://base.example.fr"}),                 mock.patch.object(france, "selftest_local") as tested:
+            local = france._local_base([{"order": "ta", "number": "2301234"}],
+                                       keys, logs.append)
+        self.assertIsNone(local)
+        tested.assert_not_called()
+        self.assertIn("https", " ".join(logs))
+
+
+class ControlCharacters(unittest.TestCase):
+    """Audit of 30/09/2026, hardening 8: a label from a database cannot add a line to the
+    report, drive a terminal, or reverse a number on screen."""
+
+    def test_a_label_cannot_forge_a_line_or_drive_a_terminal(self):
+        forged = "civ. 2\n  Cass. 99-99.999 : CONFIRMÉE\x1b[2K\x1b]0;titre\x07\u202e"
+        cit = {"kind": "decision", "order": "judicial", "court": "Cass", "number": "17-28268",
+               "cited_date": None, "verdict": "CONFIRMED", "explanation": forged,
+               "actual_date": None}
+        r = report.build("doc.pdf", "france", [cit], [])
+        text = report.to_text(r)
+        self.assertNotIn("\x1b", text)
+        self.assertNotIn("\u202e", text)
+        self.assertFalse(any(line.lstrip().startswith("Cass. 99-99.999")
+                             for line in text.splitlines()))
+        self.assertIn("99-99.999", report.to_json(r))       # kept, on the same line
 
 
 if __name__ == "__main__":

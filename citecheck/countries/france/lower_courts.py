@@ -114,8 +114,10 @@ def check_lower_court(courts, citation):
                 "inexact ; à vérifier", None)
     found = courts.location(jurisdiction, citation["place"])
     if found is None:
-        return ("NOT_TESTED", f"{KIND[jurisdiction]} « {citation['place']} » non reconnue "
-                "sans ambiguïté parmi les juridictions de Judilibre", None)
+        # Le nom lu dans la pièce n'est pas recopié ici : il est déjà dans `court`, et un
+        # rapport « sans extraits » doit pouvoir le retirer sans le chercher dans les phrases.
+        return ("NOT_TESTED", f"nom de la {KIND[jurisdiction]} non reconnu sans ambiguïté "
+                "parmi les juridictions de Judilibre", None)
     code, label = found
     searchable = jurisdiction != "tcom" or number.isdigit()
     dates = []
