@@ -125,6 +125,29 @@ class Window:
         help_link = ttk.Label(tab, text=t.KEY_HELP, foreground=LINK, cursor="hand2")
         help_link.grid(row=row, column=1, sticky="w", padx=8, pady=(12, 0))
         help_link.bind("<Button-1>", lambda e: webbrowser.open(self.country.KEY_HELP_URL))
+        row += 1
+
+        # Optional settings (a local database's address): not secret, shown in clear.
+        self.settings = {}
+        for name, label in getattr(self.country, "SETTINGS", {}).items():
+            ttk.Separator(tab).grid(row=row, column=0, columnspan=3, sticky="ew", pady=(18, 0))
+            ttk.Label(tab, text=label).grid(row=row + 1, column=0, sticky="w", pady=(10, 0))
+            field = ttk.Entry(tab)
+            field.insert(0, keys.get(name) or "")
+            field.grid(row=row + 1, column=1, sticky="ew", padx=8, pady=(10, 0))
+            buttons = ttk.Frame(tab)
+            buttons.grid(row=row + 1, column=2, pady=(10, 0))
+            ttk.Button(buttons, text=t.SETTING_SAVE,
+                       command=lambda n=name: self.save_setting(n)).pack(side="left")
+            ttk.Button(buttons, text=t.KEY_DELETE,
+                       command=lambda n=name: self.delete_setting(n)).pack(side="left")
+            status = ttk.Label(tab, foreground=MUTED)
+            status.grid(row=row + 2, column=1, sticky="w", padx=8)
+            ttk.Label(tab, text=self.country.SETTINGS_HELP.get(name, ""), wraplength=740,
+                      justify="left", foreground=MUTED).grid(
+                row=row + 3, column=0, columnspan=3, sticky="w", pady=(6, 0))
+            self.settings[name] = (field, status)
+            row += 4
 
     # Tab "scope": generated from the country's own lists, so it cannot promise more
     # than the program does.
@@ -165,6 +188,22 @@ class Window:
     def delete_key(self, name):
         keys.delete(name)
         self.show_key_status()
+
+    def save_setting(self, name):
+        field, status = self.settings[name]
+        value = field.get().strip()
+        if value and not value.startswith(("http://", "https://")):
+            status.config(text=t.SETTING_BAD_URL)
+            return
+        if not value:
+            return self.delete_setting(name)
+        status.config(text=t.SETTING_SAVED if keys.save(name, value) else t.SETTING_NO_KEYRING)
+
+    def delete_setting(self, name):
+        field, status = self.settings[name]
+        keys.delete(name)
+        field.delete(0, "end")
+        status.config(text=t.SETTING_EMPTY)
 
     # Checking
 

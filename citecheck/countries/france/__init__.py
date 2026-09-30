@@ -34,6 +34,15 @@ KEYS = {"PISTE_API_KEY": "Clé API PISTE (Judilibre)",
         "PISTE_CLIENT_ID": "Identifiant OAuth PISTE (Légifrance)",
         "PISTE_CLIENT_SECRET": "Secret OAuth PISTE (Légifrance)"}
 KEY_HELP_URL = "https://piste.gouv.fr/"
+# Réglages facultatifs, qui ne sont pas des clés : affichés en clair, rangés au même endroit.
+LOCAL_BASE = "ADMIN_LOCAL_BASE_URL"
+SETTINGS = {LOCAL_BASE: "Base locale des décisions administratives (facultatif)"}
+SETTINGS_HELP = {LOCAL_BASE: (
+    "Les tribunaux administratifs ne sont interrogeables par aucune base en ligne : leurs "
+    "décisions ne sont publiées qu'en archives, sur opendata.justice-administrative.fr. Si "
+    "une base locale a été installée à partir de ces archives, donnez ici son adresse "
+    "(http://...) : les décisions des TA, et celles des CAA absentes de Légifrance, y "
+    "seront cherchées. Le format attendu est décrit dans la notice du programme.")}
 NOISE_MAX = 3        # au-delà, un témoin négatif d'ArianeWeb est du bruit anormal
 
 ADMIN_REAL = [("298348", "CE Ass. 30/10/2009 Perreux"),
@@ -70,11 +79,17 @@ CONSTIT_FAKE = ["2010-9999", "2019-9999"]
 # 00012 : Blanco, dont le numéro est aussi celui d'une décision du Conseil d'État de 1977.
 CONFLICTS_REAL = [("C3911", "2013-06-17"), ("00012", "1873-02-08")]
 CONFLICTS_FAKE = ["C9999", "C9998"]
+CAA_REAL = [("17NC01414", "2018-04-12"), ("23MA02610", "2023-12-29")]
+CAA_FAKE = ["17NC99999", "23MA99999"]
+# Base locale : des CAA de décembre 2023, dans la période des archives (CAA depuis 03/2022).
+LOCAL_REAL = [("CAA", "23MA02610", "2023-12-29"), ("CAA", "23PA00439", "2023-12-29")]
+LOCAL_FAKE = [("CAA", "23MA99999"), ("TA", "2399999")]
 EU_REAL = [("C-561/19", "2021-10-06"), ("C-311/18", "2020-07-16")]
 EU_FAKE = ["C-999/19", "C-998/19"]
 # Pour chaque juridiction : (nom de la base, recherche, témoins réels, témoins inventés,
 # besoin des identifiants Légifrance).
 OTHER_BASES = {
+    "caa": ("Légifrance", other_courts.administrative_appeal, CAA_REAL, CAA_FAKE, True),
     "constitutional": ("Légifrance", other_courts.constitutional, CONSTIT_REAL, CONSTIT_FAKE,
                        True),
     "conflicts": ("Légifrance", other_courts.conflicts, CONFLICTS_REAL, CONFLICTS_FAKE, True),
@@ -83,7 +98,7 @@ OTHER_BASES = {
            False),
 }
 
-__all__ = ["NAME", "KEYS", "KEY_HELP_URL", "prepare", "extract", "check", "scope",
+__all__ = ["NAME", "KEYS", "KEY_HELP_URL", "SETTINGS", "SETTINGS_HELP", "prepare", "extract", "check", "scope",
            "not_checked_summary"]
 
 
@@ -139,6 +154,12 @@ def verdict_judicial(record, cited_date, first_complete=None):
             f"({ident})", actual)
 
 
+# Bases qui ne publient qu'une partie des décisions : une absence n'y prouve rien.
+PARTIAL = {"caa": "introuvable dans Légifrance, qui ne publie qu'environ la moitié des "
+                  "décisions des cours administratives d'appel : l'absence ne prouve rien ; "
+                  "à vérifier"}
+
+
 def verdict_dates(days, cited_date, base):
     """Traduit la liste des dates d'une base qui publie toutes ses décisions (Conseil
     constitutionnel, Tribunal des conflits, Union européenne)."""
@@ -156,10 +177,12 @@ def verdict_dates(days, cited_date, base):
 
 # Juridictions repérées mais pas vérifiées, numéro ou non : la vraie raison, pour chacune.
 NOT_YET = {
-    "CAA": "décision d'une cour administrative d'appel, que ce programme ne vérifie pas "
-           "encore ; aucune base n'a été interrogée",
-    "TA": "décision d'un tribunal administratif, que ce programme ne vérifie pas encore ; "
-          "aucune base n'a été interrogée",
+    "CAA": "décision d'une cour administrative d'appel citée sans son numéro (de la forme "
+           "« 21BX01234 ») : aucune base n'a été interrogée",
+    "TA": "décision d'un tribunal administratif : aucune base en ligne ne permet à un "
+          "programme de les interroger (elles ne sont publiées qu'en archives à télécharger, "
+          "sur opendata.justice-administrative.fr). Une base locale construite à partir de ces "
+          "archives peut être déclarée dans l'onglet « Clés d'accès »",
     "CPH": "décision d'un conseil de prud'hommes : Judilibre ne les publie pas, aucune base "
            "n'a été interrogée",
 }
@@ -209,6 +232,64 @@ def selftest_other(base, search, real, fake, client, log):
     return ok
 
 
+def selftest_local(local, log):
+    ok = True
+    try:
+        for court in ("CAA", "TA"):
+            good = local.coverage(court) is not None
+            ok &= good
+            log(_line(good, f"La base locale doit dire depuis quand elle couvre les {court}"))
+        for court, number, day in LOCAL_REAL:
+            good = day in local.decisions(court, number)
+            ok &= good
+            log(_line(good, f"La base locale doit trouver {court} n° {number} du {day}"))
+        for court, number in LOCAL_FAKE:
+            good = local.decisions(court, number) == []
+            ok &= good
+            log(_line(good, f"La base locale ne doit pas trouver {court} n° {number}"))
+    except Unavailable as e:
+        log(f"        {e}")
+        return False
+    return ok
+
+
+def verdict_local(local, court, citation, fallback):
+    """Une décision de CAA absente de Légifrance, ou de TA, cherchée dans la base locale.
+    `fallback` : le verdict si la base locale ne permet pas de conclure."""
+    number, cited = citation["number"], citation.get("cited_date")
+    try:
+        days = local.decisions(court, number)
+        start = local.coverage(court)
+    except Unavailable as e:
+        return "ERROR", f"la base locale n'a pas répondu ({e})", None
+    if days:
+        return verdict_dates(days, cited, "la base locale")
+    recent = cited and (date.today() - date.fromisoformat(cited)).days < 183
+    if cited and start and cited >= start and not recent:
+        return ("NOT_PUBLISHED", f"aucune décision sous ce numéro dans la base locale, qui "
+                f"couvre les {court} depuis le {start} : la décision ne semble pas publiée ; "
+                "à vérifier", None)
+    why = (f"la base locale ne couvre les {court} que depuis le {start}" if start and cited
+           and cited < start else "la décision a moins de six mois" if recent
+           else "aucune date citée")
+    return ("UNVERIFIABLE_PERIOD", f"{fallback[1]} ; absente aussi de la base locale, mais "
+            f"{why} : l'absence ne prouve rien", None)
+
+
+def _local_base(citations, keys, log):
+    """La base locale, si l'utilisateur en a déclaré une ET qu'elle a passé ses témoins."""
+    url = keys.get(LOCAL_BASE)
+    if not url or not any(c.get("order") in ("caa", "ta") for c in citations):
+        return None
+    try:
+        local = other_courts.LocalBase(url)
+    except Unavailable as e:
+        log(f"Base locale ignorée : {e}")
+        return None
+    log("Contrôle de la base locale avant de juger :")
+    return local if selftest_local(local, log) else None
+
+
 def _check_other(citations, keys, log):
     """Résultats pour le Conseil constitutionnel, le Tribunal des conflits et l'Union
     européenne, dans l'ordre."""
@@ -233,8 +314,11 @@ def _check_other(citations, keys, log):
         for i in mine:
             c = citations[i]
             try:
-                results[i] = verdict_dates(search(client, c["number"]), c.get("cited_date"),
-                                           base)
+                days = search(client, c["number"])
+                if order in PARTIAL and not days:
+                    results[i] = ("UNVERIFIABLE_PERIOD", PARTIAL[order], None)
+                else:
+                    results[i] = verdict_dates(days, c.get("cited_date"), base)
             except Unavailable as e:
                 results[i] = ("ERROR", f"{base} n'a pas répondu ({e})", None)
     return [results[i] for i in range(len(citations))]
@@ -394,6 +478,7 @@ def check(citations, keys, log=lambda s: None, options=None):
         options.get("idcc"), log))
     others = [c for c in citations if c.get("order") in OTHER_BASES]
     other_results = iter(_check_other(others, keys, log))
+    local = _local_base(citations, keys, log)
     orders = {c["order"] for c in citations if c.get("kind") not in LEGISLATION}
     admin_ok = judicial_ok = False
     admin_why = judicial_why = None
@@ -442,6 +527,13 @@ def check(citations, keys, log=lambda s: None, options=None):
             v, why, actual = next(legislation)
         elif c["order"] in OTHER_BASES:
             v, why, actual = next(other_results)
+            if c["order"] == "caa" and v == "UNVERIFIABLE_PERIOD" and local:
+                v, why, actual = verdict_local(local, "CAA", c, (v, why))
+        elif c["order"] == "ta" and local:
+            v, why, actual = verdict_local(local, "TA", c, (
+                "UNVERIFIABLE_PERIOD", "décision d'un tribunal administratif"))
+        elif c["order"] == "ta":
+            v, why, actual = verdict_other(c)
         elif c["order"] in ("other", "unnumbered"):
             v, why, actual = verdict_other(c)
         elif c["order"] == "lower":

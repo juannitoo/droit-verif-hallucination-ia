@@ -17,7 +17,9 @@ def valid_date(text):
 
 
 def available_keys(country):
-    return {name: keys.get(name) for name in country.KEYS if keys.get(name)}
+    """The keys, and the optional settings (a local database's address...), that are set."""
+    names = list(country.KEYS) + list(getattr(country, "SETTINGS", {}))
+    return {name: keys.get(name) for name in names if keys.get(name)}
 
 
 def check_document(path, country_code=DEFAULT, log=lambda s: None, options=None):

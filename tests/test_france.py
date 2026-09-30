@@ -119,9 +119,21 @@ class SeenNotChecked(unittest.TestCase):
     def test_caa_and_ta_never_go_to_arianeweb(self):
         seen, _ = self.seen("CAA Bordeaux, 3 mars 2022, n° 21BX01234. TA Paris, 5 mai 2020, "
                             "n° 1901234. Tribunal administratif de Lyon, n° 2001234.")
-        self.assertEqual([s[:3] for s in seen], [("other", "CAA", "21BX01234"),
-                                                 ("other", "TA", "1901234"),
-                                                 ("other", "TA", "2001234")])
+        self.assertEqual([s[:3] for s in seen], [("caa", "CAA", "21BX01234"),
+                                                 ("ta", "TA", "1901234"),
+                                                 ("ta", "TA", "2001234")])
+
+    def test_caa_title_filter(self):
+        from citecheck.countries.france.other_courts import administrative_appeal
+
+        class Fake:
+            def decision_titles(self, fond, number):
+                return ["CAA de NANCY, 2ème chambre, 12/04/2018, 17NC01414, Inédit",
+                        "Cour administrative d'appel de Paris, du 3 mars 2005, 17NC01414",
+                        "Conseil d'État, 12/04/2019, 17NC01414, Inédit",
+                        "CAA de LYON, 12/04/2020, 17NC014145, Inédit"]
+        self.assertEqual(administrative_appeal(Fake(), "17NC01414"),
+                         ["2005-03-03", "2018-04-12"])
 
     def test_verdicts_say_why(self):
         from citecheck.countries.france import verdict_other
@@ -165,6 +177,62 @@ class CommercialCourts(unittest.TestCase):
         from citecheck.countries.france.lower_courts import _simplify
         self.assertEqual(_simplify("Tribunal des activités économiques de Paris"), "paris")
         self.assertEqual(_simplify("Tribunal de commerce d'Arras"), "arras")
+
+
+class LocalAdministrativeBase(unittest.TestCase):
+    """A local database built from opendata.justice-administrative.fr, on localhost."""
+    DECISIONS = {("CAA", "23MA02610"): "2023-12-29", ("CAA", "23PA00439"): "2023-12-29",
+                 ("TA", "2301234"): "2023-05-12"}
+
+    def serve(self, liar=False):
+        import http.server
+        import threading
+        from urllib.parse import parse_qs, urlparse
+        decisions = self.DECISIONS
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                url = urlparse(self.path)
+                q = {k: v[0] for k, v in parse_qs(url.query).items()}
+                if url.path == "/coverage":
+                    body = {"CAA": "2022-03-01", "TA": "2022-06-01"}
+                else:
+                    day = "2023-01-01" if liar else decisions.get((q["court"], q["number"]))
+                    body = {"decisions": [{"number": q["number"], "date": day}] if day else []}
+                data = json.dumps(body).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(data)
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return f"http://127.0.0.1:{server.server_port}"
+
+    def check(self, number, day, url):
+        from citecheck.countries.france import LOCAL_BASE, check
+        c = {"kind": "decision", "order": "ta", "court": "TA", "number": number,
+             "cited_date": day}
+        return check([c], {LOCAL_BASE: url} if url else {})[0]["verdict"]
+
+    def test_verdicts(self):
+        url = self.serve()
+        self.assertEqual(self.check("2301234", "2023-05-12", url), "CONFIRMED")
+        self.assertEqual(self.check("2301234", "2023-05-13", url), "WRONG_DATE")
+        self.assertEqual(self.check("2399998", "2023-05-12", url), "NOT_PUBLISHED")
+        self.assertEqual(self.check("2199998", "2021-05-12", url), "UNVERIFIABLE_PERIOD")
+
+    def test_without_a_local_base_ta_is_shown(self):
+        self.assertEqual(self.check("2301234", "2023-05-12", None), "MANUAL_CHECK")
+
+    def test_a_base_that_says_yes_to_everything_is_not_believed(self):
+        self.assertEqual(self.check("2301234", "2023-05-12", self.serve(liar=True)),
+                         "MANUAL_CHECK")
 
 
 class ConstitutionalConflictsEu(unittest.TestCase):

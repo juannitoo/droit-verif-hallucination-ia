@@ -1,7 +1,31 @@
 {
   "country": "france",
-  "source": "Conseil constitutionnel, Tribunal des conflits, Union européenne et CEDH : décisions connues, dates fausses et numéros inventés (relevé dans Légifrance et CELLAR le 29/09/2026)",
+  "source": "Cours administratives d'appel, Conseil constitutionnel, Tribunal des conflits, Union européenne et CEDH : décisions connues, dates fausses et numéros inventés (relevé dans Légifrance et CELLAR le 29/09/2026)",
   "citations": [
+    {
+      "kind": "decision",
+      "order": "caa",
+      "court": "CAA",
+      "number": "17NC01414",
+      "cited_date": "2018-04-12",
+      "expected": "CONFIRMED"
+    },
+    {
+      "kind": "decision",
+      "order": "caa",
+      "court": "CAA",
+      "number": "23MA02610",
+      "cited_date": "2023-12-28",
+      "expected": "WRONG_DATE"
+    },
+    {
+      "kind": "decision",
+      "order": "caa",
+      "court": "CAA",
+      "number": "21BX99999",
+      "cited_date": "2022-03-03",
+      "expected": "UNVERIFIABLE_PERIOD"
+    },
     {
       "kind": "decision",
       "order": "constitutional",

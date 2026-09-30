@@ -1,4 +1,5 @@
-"""Conseil constitutionnel et Tribunal des conflits (Légifrance), Cour de justice et
+"""Cours administratives d'appel, Conseil constitutionnel et Tribunal des conflits
+(Légifrance), Cour de justice et
 Tribunal de l'Union européenne (CELLAR), et la CEDH, qu'on ne peut pas interroger.
 
 CE QU'ON A APPRIS (sonde du 29/09/2026 au soir, numéros réels et inventés)
@@ -8,6 +9,16 @@ CE QU'ON A APPRIS (sonde du 29/09/2026 au soir, numéros réels et inventés)
     numéro de Blanco, 00012, y désigne AUSSI une décision du Conseil d'État de 1977 : on ne
     garde que les titres qui commencent par « Tribunal des conflits ». Les numéros récents
     s'écrivent « C3911 » ; « 3911 » seul ne trouve rien, on cherche donc les deux formes.
+  - Cours administratives d'appel : Légifrance, fonds CETAT, champ NUM_DEC (« 17NC01414 »).
+    Légifrance n'en publie qu'une PARTIE : 13 000 à 17 000 décisions par an depuis 2008 au
+    moins, environ la moitié de ce que rendent les CAA. Une décision trouvée se vérifie ;
+    une absence ne prouve rien. Les titres commencent par « CAA de » depuis 2014-2016, par
+    « Cour administrative d'appel » avant.
+  - Tribunaux administratifs : AUCUN dans Légifrance. Toutes leurs décisions (et celles des
+    CAA) sont sur opendata.justice-administrative.fr depuis 2022, mais en archives ZIP
+    mensuelles seulement : ses conditions d'utilisation disent « Le site de données ouvertes
+    ne comporte pas d'API » (article XI). La page de recherche du site a une interface
+    interne : s'en servir serait contourner ce choix. On ne le fait pas.
   - Union européenne : CELLAR, le dépôt de l'Office des publications de l'UE, public et
     fait pour les programmes, sans clé. On y cherche le numéro CELEX : « C-561/19 »
     devient 62019CJ0561 (CJ arrêt, CO ordonnance, CV avis ; TJ et TO pour le Tribunal).
@@ -69,6 +80,65 @@ def conflicts(client, number):
             if title.lower().startswith("tribunal des conflits") and pattern.search(title):
                 days.add(_title_date(title))
     return sorted(days - {None})
+
+
+def administrative_appeal(client, number):
+    """Les dates des décisions de cour administrative d'appel portant ce numéro."""
+    pattern = re.compile(rf",\s*{re.escape(number)}\s*(?:,|$)")
+    return sorted({_title_date(t) for t in client.decision_titles("CETAT", number)
+                   if re.match(r"(?:CAA|Cour administrative d'appel)\b", t, re.I)
+                   and pattern.search(t)} - {None})
+
+
+class LocalBase:
+    """Une base locale des décisions administratives, installée par l'utilisateur à partir
+    des archives de opendata.justice-administrative.fr (CAA depuis 03/2022, TA depuis
+    06/2022). Aucun logiciel standard ne le fait : ce programme fixe le contrat, que la base
+    doit respecter (détail dans la notice) :
+
+      GET <adresse>/coverage
+          -> {"CAA": "2022-03-01", "TA": "2022-06-01"}   première date couverte en entier
+      GET <adresse>/decisions?court=TA&number=2301234
+          -> {"decisions": [{"number": "2301234", "date": "2023-05-12"}]}
+
+    Seuls partent le type de juridiction et le numéro, jamais le texte du document. Comme
+    toute base, elle passe ses témoins avant de juger."""
+
+    def __init__(self, url):
+        url = (url or "").strip().rstrip("/")
+        if not re.match(r"https?://", url):
+            raise Unavailable(f"adresse de la base locale invalide : {url[:60]}")
+        self.url = url
+        self._coverage = None
+
+    def _get(self, route, params=None):
+        query = "?" + urllib.parse.urlencode(params) if params else ""
+        req = urllib.request.Request(f"{self.url}/{route}{query}", headers={
+            "User-Agent": USER_AGENT, "Accept": "application/json"})
+        try:
+            with urlopen(req, timeout=TIMEOUT) as r:
+                return json.loads(r.read(MAX_NOTICE).decode("utf-8", "replace"))
+        except urllib.error.HTTPError as e:
+            raise Unavailable(f"base locale : HTTP {e.code}", e.code)
+        except Exception as e:
+            raise Unavailable(f"base locale : {type(e).__name__}")
+
+    def coverage(self, court):
+        """Première date couverte en entier pour ce type de juridiction, ou None."""
+        if self._coverage is None:
+            data = self._get("coverage")
+            self._coverage = data if isinstance(data, dict) else {}
+        day = str(self._coverage.get(court) or "")[:10]
+        return day if re.fullmatch(r"\d{4}-\d{2}-\d{2}", day) else None
+
+    def decisions(self, court, number):
+        data = self._get("decisions", {"court": court, "number": number})
+        found = data.get("decisions") if isinstance(data, dict) else None
+        if not isinstance(found, list):
+            raise Unavailable("base locale : réponse d'une forme inattendue")
+        return sorted({str(d.get("date") or "")[:10] for d in found
+                       if isinstance(d, dict) and str(d.get("number")) == number
+                       and re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(d.get("date") or "")[:10])})
 
 
 def celex_numbers(number):

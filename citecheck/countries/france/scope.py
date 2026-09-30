@@ -26,6 +26,12 @@ DECISIONS = [
     "cherche qu'au jour cité (Judilibre ne l'indexe pas) : sans date, il n'est pas "
     "vérifiable. Le numéro porte l'année d'enregistrement de l'affaire : une décision citée "
     "à une date antérieure est signalée.",
+    "Cours administratives d'appel : « CAA Bordeaux, 3 mars 2022, n° 21BX01234 ». Base "
+    "interrogée : Légifrance, qui n'en publie qu'environ la moitié : une décision trouvée est "
+    "vérifiée, une décision absente sort « non vérifiable ».",
+    "Tribunaux administratifs, et CAA absentes de Légifrance : vérifiés seulement si une base "
+    "locale, construite à partir des archives de opendata.justice-administrative.fr, est "
+    "déclarée dans l'onglet « Clés d'accès ». Sinon, signalés « à vérifier à la main ».",
     "Conseil constitutionnel : « Cons. const., 12 mai 2010, n° 2010-605 DC », « 2010-14/22 "
     "QPC ». Base interrogée : Légifrance.",
     "Tribunal des conflits : « T. confl., 17 juin 2013, n° C3911 », « TC, n° 4112 », « n° "
@@ -87,9 +93,10 @@ NOT_CHECKED = [
     "les conseils de prud'hommes : Judilibre ne les publie pas (leurs jugements frappés "
     "d'appel sont vérifiés, eux, au niveau de la cour d'appel). Signalés « à vérifier à la "
     "main »",
-    "les décisions des cours administratives d'appel (CAA) et des tribunaux administratifs "
-    "(TA) : pas encore vérifiées. Signalées « à vérifier à la main », jamais cherchées parmi "
-    "celles du Conseil d'État",
+    "les décisions des tribunaux administratifs (TA), sans base locale : aucune base en ligne "
+    "ne permet à un programme de les interroger, elles ne sont publiées qu'en archives à "
+    "télécharger. Signalées « à vérifier à la main », jamais cherchées parmi celles du "
+    "Conseil d'État",
     "les décisions citées sans numéro : signalées « à vérifier à la main », pas cherchées",
     "les décisions de la CEDH : la Cour n'autorise pas la recherche dans sa base par un "
     "programme. Elles sont signalées, avec le lien de la recherche, à ouvrir soi-même",
@@ -125,7 +132,7 @@ def scope():
 def not_checked_summary():
     """Version courte, pour la fin du rapport : le détail est dans l'onglet."""
     return ("RG sans juridiction nommée, tribunaux de commerce avant 2025, prud'hommes, "
-            "décisions des CAA et TA, "
+            "décisions des TA sans base locale, "
             "décisions de la CEDH (lien fourni), lois et décrets non codifiés, avenants et accords "
             "attachés aux conventions, "
             "chambre, sens des décisions. Détail et raisons : onglet « Ce qui est vérifié »")

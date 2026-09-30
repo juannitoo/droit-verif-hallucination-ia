@@ -274,7 +274,7 @@ def extract(text):
         add("eu", "CJUE" if m.group(1) == "C" else "Trib. UE",
             f"{m.group(1)}-{int(m.group(2))}/{m.group(3)}", m)
     for m in caa:
-        add("other", "CAA", m.group(1), m)
+        add("caa", "CAA", m.group(1), m)
     for m, court in tcom:
         city = _city(text[court.end():][len(RE_TCOM_CITY.match(text, court.end()).group(0)):])
         d = dates.get(m.start())
@@ -310,7 +310,7 @@ def extract(text):
             if ("other", number, d) in seen:
                 continue
             seen.add(("other", number, d))
-            citations.append({"kind": "decision", "order": "other",
+            citations.append({"kind": "decision", "order": "ta" if order == "TA" else "other",
                               "court": order if order != "administrative"
                               else "juridiction non nommée",
                               "number": number, "cited_date": d,

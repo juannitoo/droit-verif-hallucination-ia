@@ -45,7 +45,7 @@ ouvre dans son navigateur.
 | `citecheck/keys.py` | clés : variable d'environnement, sinon trousseau du système |
 | `citecheck/report.py` | rapport texte et JSON |
 | `citecheck/locales/fr.py` | tous les textes affichés ; une langue = un fichier |
-| `citecheck/countries/france/` | extraction, bases et verdicts pour la France : `extract.py`, `sources.py` (ArianeWeb, Judilibre), `legifrance.py`, `articles.py` (codes), `conventions.py`, `lower_courts.py` (cours d'appel, tribunaux judiciaires et de commerce), `other_courts.py` (Conseil constitutionnel, Tribunal des conflits, Union européenne, lien CEDH), `codes.py` (noms et abréviations), `scope.py` (ce qui est vérifié) |
+| `citecheck/countries/france/` | extraction, bases et verdicts pour la France : `extract.py`, `sources.py` (ArianeWeb, Judilibre), `legifrance.py`, `articles.py` (codes), `conventions.py`, `lower_courts.py` (cours d'appel, tribunaux judiciaires et de commerce), `other_courts.py` (CAA, base locale, Conseil constitutionnel, Tribunal des conflits, Union européenne, lien CEDH), `codes.py` (noms et abréviations), `scope.py` (ce qui est vérifié) |
 | `citecheck/http.py` | le seul point de sortie réseau, qui refuse toute redirection (une redirection emporterait les clés) |
 | `cases/` | bancs d'essai dont la réponse est connue : `perigueux.json` (cas réel jugé), `articles.json`, `conventions.json`, `lower_courts.json`, `other_courts.json`, `abrogated_codes.json` et `abrogated_codes_2010.json` (codes abrogés, lus à deux dates), `cgi.json` (suffixes et annexes du CGI), `commercial_courts.json` |
 | `tests/` | tests hors réseau |
@@ -119,6 +119,25 @@ cités sans IDCC dans leur phrase. Le programme ne devine jamais une convention 
 son nom ; sans IDCC, la citation sort « non vérifiée ». Seul le texte de base d'une
 convention est vérifié, pas ses avenants ni ses accords attachés.
 
+**La base locale des décisions administratives** (facultatif ; onglet « Clés d'accès », ou
+variable `ADMIN_LOCAL_BASE_URL`). Les tribunaux administratifs ne sont dans aucune base
+interrogeable en ligne : Légifrance n'en a aucun, et opendata.justice-administrative.fr, qui
+les publie tous depuis juin 2022 (et les CAA depuis mars 2022), ne les diffuse qu'en
+archives ZIP mensuelles, sans API (article XI de ses conditions d'utilisation ; son
+interface de recherche interne ne doit pas être utilisée). Quelqu'un peut installer une
+base locale à partir de ces archives ; le programme l'interroge si elle respecte ce contrat :
+
+```
+GET <adresse>/coverage
+    -> {"CAA": "2022-03-01", "TA": "2022-06-01"}     première date couverte en entier
+GET <adresse>/decisions?court=TA&number=2301234      court : TA ou CAA
+    -> {"decisions": [{"number": "2301234", "date": "2023-05-12"}]}
+```
+
+Comme toute base, elle passe ses témoins avant de juger (`LOCAL_REAL`, `LOCAL_FAKE` dans
+`countries/france/__init__.py`) : une base qui répond oui à tout est écartée. Seuls le type
+de juridiction et le numéro lui sont envoyés.
+
 ## Vérifier qu'on n'a rien cassé
 
 ```bash
@@ -127,7 +146,7 @@ convention est vérifié, pas ses avenants ni ses accords attachés.
 .venv/bin/python -m citecheck --case cases/articles.json    # réseau, doit donner 9/9
 .venv/bin/python -m citecheck --case cases/conventions.json # réseau, doit donner 6/6
 .venv/bin/python -m citecheck --case cases/lower_courts.json # réseau, doit donner 4/4
-.venv/bin/python -m citecheck --case cases/other_courts.json # réseau, doit donner 10/10
+.venv/bin/python -m citecheck --case cases/other_courts.json # réseau, doit donner 13/13
 .venv/bin/python -m citecheck --case cases/abrogated_codes.json      # réseau, 7/7
 .venv/bin/python -m citecheck --case cases/abrogated_codes_2010.json # réseau, 3/3
 .venv/bin/python -m citecheck --case cases/cgi.json                  # réseau, 7/7
@@ -220,11 +239,9 @@ faut corriger.
   demanderait d'envoyer le nom des parties, ce que le programme ne fait jamais. Une piste
   sans rien envoyer du document : juridiction et date seules, mais une chambre de la Cour de
   cassation rend des dizaines de décisions le même jour.
-- Vérifier les décisions des **CAA et TA** (signalées aujourd'hui, jamais cherchées dans
-  ArianeWeb comme des décisions du Conseil d'État), et un
-  **RG** cité sans juridiction dans sa phrase. Piste pour les CAA, sondée le 29/09/2026 :
-  Légifrance, fonds CETAT, champ NUM_DEC, trouve « 17NC01414 » et rien pour un numéro
-  inventé ; la couverture reste à mesurer.
+- Vérifier les **TA** sans base locale, et les **CAA** absentes de Légifrance : impossible
+  en ligne (voir « La base locale » plus haut). Un **RG** cité sans juridiction dans sa
+  phrase n'est pas vérifié non plus.
 - Vérifier la **CEDH** : impossible sans l'accord de la Cour (voir plus haut).
 - Les **tribunaux de commerce** avant 2025 : Judilibre n'en publie rien (5 décisions en
   2024, 112 105 en 2025, mesuré le 29/09/2026), sans qu'on sache si l'antérieur viendra.
