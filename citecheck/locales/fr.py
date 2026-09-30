@@ -9,6 +9,7 @@ DISCLAIMER = (
 VERDICTS = {
     "CONFIRMED": "existe, à la date citée",
     "WRONG_DATE": "EXISTE, MAIS À UNE AUTRE DATE",
+    "WRONG_CHAMBER": "EXISTE, MAIS D'UNE AUTRE CHAMBRE",
     "EXISTS_DATE_UNCHECKED": "existe, date non contrôlée",
     "NOT_PUBLISHED": "NE SEMBLE PAS PUBLIÉE",
     "DOUBTFUL": "douteux, à regarder à la main",

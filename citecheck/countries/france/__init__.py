@@ -115,7 +115,7 @@ def verdict_admin(count, dates, cited_date):
         if not cited_date:
             return "EXISTS_DATE_UNCHECKED", f"existe, rendue le {actual} ; aucune date citée", actual
         if cited_date in dates:
-            return "CONFIRMED", "existe, à la date citée", cited_date
+            return "CONFIRMED", f"ArianeWeb a bien la décision du {cited_date}", cited_date
         return ("WRONG_DATE",
                 f"le numéro existe, mais ArianeWeb date la décision du {actual}, pas du {cited_date}",
                 actual)
@@ -125,7 +125,45 @@ def verdict_admin(count, dates, cited_date):
             "elle-même n'est pas dans ArianeWeb : date NON contrôlée", None)
 
 
-def verdict_judicial(record, cited_date, first_complete=None):
+# Taxonomie « chamber » de Judilibre pour la Cour de cassation (relevée le 30/09/2026).
+CHAMBERS = {"pl": "Assemblée plénière", "mi": "Chambre mixte", "civ1": "Première chambre civile",
+            "civ2": "Deuxième chambre civile", "civ3": "Troisième chambre civile",
+            "comm": "Chambre commerciale financière et économique", "soc": "Chambre sociale",
+            "cr": "Chambre criminelle", "creun": "Chambres réunies"}
+CHAMBER_CODES = {label.lower(): code for code, label in CHAMBERS.items()}
+
+
+def chamber_mismatch(cited, record):
+    """(chambre citée, chambre de Judilibre) si elles diffèrent, sinon None. « civ » (une
+    chambre civile sans numéro) s'accorde avec n'importe laquelle des trois."""
+    actual = CHAMBER_CODES.get((record.get("chamber") or "").strip().lower())
+    if not cited or not actual or cited == actual:
+        return None
+    if cited == "civ" and actual.startswith("civ"):
+        return None
+    name = CHAMBERS[cited]
+    said = "une chambre civile" if cited == "civ" else f"la {name[0].lower()}{name[1:]}"
+    return said, record["chamber"]
+
+
+def verdict_judicial(record, cited_date, first_complete=None, cited_chamber=None):
+    """Voir plus bas ; puis la chambre : une vraie décision attribuée à la mauvaise chambre
+    est une erreur typique d'une IA."""
+    result = _verdict_judicial(record, cited_date, first_complete)
+    if not record or "_err" in record:
+        return result
+    wrong = chamber_mismatch(cited_chamber, record)
+    if not wrong:
+        return result
+    said, actual = wrong
+    if result[0] == "WRONG_DATE":
+        return result[0], f"{result[1]} ; et la chambre aussi : {actual}, pas {said}", result[2]
+    return ("WRONG_CHAMBER", f"existe, mais Judilibre l'attribue à la {actual.lower()}, pas à "
+            f"{said}" + ("" if result[0] == "CONFIRMED" else " ; aucune date citée"),
+            result[2])
+
+
+def _verdict_judicial(record, cited_date, first_complete=None):
     """`first_complete` : première année où Judilibre publie largement la Cour de cassation
     (mesurée : 1987 au 29/09/2026 ; avant, 2 000 décisions par an contre 13 000 après)."""
     if record is None:
@@ -148,7 +186,7 @@ def verdict_judicial(record, cited_date, first_complete=None):
     if not cited_date:
         return "EXISTS_DATE_UNCHECKED", f"existe, rendu le {actual} ({ident}) ; aucune date citée", actual
     if actual == cited_date:
-        return "CONFIRMED", f"existe, à la date citée ({ident})", actual
+        return "CONFIRMED", f"Judilibre date bien l'arrêt du {actual} ({ident})", actual
     return ("WRONG_DATE",
             f"le numéro existe, mais Judilibre date l'arrêt du {actual}, pas du {cited_date} "
             f"({ident})", actual)
@@ -546,7 +584,7 @@ def check(citations, keys, log=lambda s: None, options=None):
         elif judicial_ok:
             v, why, actual = verdict_judicial(
                 sources.judilibre(c["number"], keys["PISTE_API_KEY"]), c.get("cited_date"),
-                cc_first)
+                cc_first, c.get("chamber"))
         else:
             v, why, actual = "NOT_TESTED", judicial_why, None
         results.append({**c, "verdict": v, "explanation": why, "actual_date": actual})

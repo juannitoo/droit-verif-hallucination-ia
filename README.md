@@ -42,7 +42,7 @@ servi lors de la conception.
   existe dans plusieurs juridictions) ;
 - les articles de lois et de décrets non codifiés, et ceux des avenants de conventions
   collectives : ils sont signalés dans le rapport, pas vérifiés ;
-- la chambre qui a rendu la décision ;
+- la chambre, sauf celle de la Cour de cassation, qui est comparée à Judilibre ;
 - le sens d'une décision : si elle soutient l'argument pour lequel elle est citée.
 
 ## Ce qu'il faut

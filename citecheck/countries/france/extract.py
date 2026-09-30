@@ -173,6 +173,68 @@ def assign_dates(text, spans, used=None):
     return {start: day for start, (_, day, _) in best.items()}
 
 
+# La chambre de la Cour de cassation citée avant le pourvoi, dans la même phrase. Codes de
+# Judilibre (taxonomie « chamber », relevée le 30/09/2026). « civ » : une chambre civile, sans
+# dire laquelle (« Civ. », « chambre civile »). Une vraie décision attribuée à la mauvaise
+# chambre est une erreur typique d'une IA.
+ORDINALS = {"1": "civ1", "2": "civ2", "3": "civ3", "première": "civ1", "deuxième": "civ2",
+            "troisième": "civ3"}
+CHAMBERS = [
+    (re.compile(r"\bciv(?:ile)?\.?\s*([123])\s*(?:re|ère|er|e|ème)\b", re.I), None),
+    (re.compile(r"\b([123])\s*(?:re|ère|er|e|ème)\.?\s*(?:ch(?:ambre)?\.?\s*)?civ(?:ile)?\b",
+                re.I), None),
+    (re.compile(r"\b(première|deuxième|troisième)\s+chambre\s+civile\b", re.I), None),
+    (re.compile(r"\bchambre\s+sociale\b|\bsoc\.|\bCass\.?\s*soc\b", re.I), "soc"),
+    (re.compile(r"\bchambre\s+commerciale\b|\bcom\.|\bCass\.?\s*com\b", re.I), "comm"),
+    (re.compile(r"\bchambre\s+criminelle\b|\bcrim\.|\bCass\.?\s*crim\b", re.I), "cr"),
+    (re.compile(r"\bass(?:emblée)?\.?\s*pl[ée]n(?:ière)?\b", re.I), "pl"),
+    (re.compile(r"\bch(?:ambre)?\.?\s*mixte\b", re.I), "mi"),
+    (re.compile(r"\bch(?:ambres)?\.?\s*réunies\b", re.I), "creun"),
+    (re.compile(r"\bciv\.|\bchambre\s+civile\b|\bCass\.?\s*civ\b", re.I), "civ"),
+]
+
+
+CHAMBER_AFTER = 80    # « n° 21-11.484, la deuxième chambre civile a jugé » : tout près
+CHAMBER_NEXT = 40     # « Civ. 2e, 5 mars 2019, n° » : une chambre qui annonce le pourvoi suivant
+
+
+def cited_chamber(text, start, end=None, stop=None):
+    """Le code Judilibre de la chambre nommée avant le numéro (`start`), dans la même phrase ;
+    à défaut, juste après (`end`), sans dépasser la phrase ni le numéro suivant (`stop`)."""
+    lo = max(0, start - WINDOW)
+    for m in RE_SENTENCE_END.finditer(text, lo, start):
+        lo = m.end()
+    found = _chambers(text, lo, start)
+    if not found and end is not None:
+        hi = min(len(text), end + CHAMBER_AFTER, stop if stop is not None else len(text))
+        m = RE_SENTENCE_END.search(text, end, hi)
+        found = _chambers(text, end, m.start() if m else hi)
+        if found:           # après le numéro : la PREMIÈRE nommée, pas la dernière
+            first = min(found, key=lambda f: f[0])
+            # « n° 19-11.399, puis Civ. 2e, n° 18-12.345 » : suivie de près par le pourvoi
+            # suivant, dans la même phrase, elle est à lui.
+            if (stop is not None and stop - first[1] <= CHAMBER_NEXT
+                    and not RE_SENTENCE_END.search(text, first[1], stop)):
+                return None
+            return min((f for f in found if f[0] < first[1] and first[0] < f[1]),
+                       key=lambda f: f[2])[3]
+    return _nearest(found)
+
+
+def _chambers(text, lo, hi):
+    return [(m.start(), m.end(), rank, code or ORDINALS[m.group(1).lower()])
+            for rank, (rx, code) in enumerate(CHAMBERS) for m in rx.finditer(text, lo, hi)]
+
+
+def _nearest(found):
+    if not found:
+        return None
+    # La plus proche ; parmi celles qui la chevauchent, la plus précise : « 1re civ. » est
+    # la première chambre civile, pas « une chambre civile ».
+    last = max(found, key=lambda f: f[1])
+    return min((f for f in found if f[0] < last[1] and last[0] < f[1]), key=lambda f: f[2])[3]
+
+
 def _court_in_sentence(text, start, rx):
     """La dernière mention de la juridiction `rx` avant `start`, dans la même phrase."""
     lo = max(0, start - WINDOW)
@@ -291,7 +353,11 @@ def extract(text):
             continue
         seen.add((number, d))
         citations.append({"kind": "decision", "order": "judicial", "court": "Cass",
-                          "number": number, "cited_date": d, "span": m.span()})
+                          "number": number, "cited_date": d, "span": m.span(),
+                          "chamber": cited_chamber(
+                              text, m.start(), m.end(),
+                              min((a.start() for a in appeals if a.start() > m.start()),
+                                  default=None))})
         if not d:
             undated.append(number)
 

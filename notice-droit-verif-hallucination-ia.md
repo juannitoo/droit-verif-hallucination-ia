@@ -47,7 +47,7 @@ ouvre dans son navigateur.
 | `citecheck/locales/fr.py` | tous les textes affichés ; une langue = un fichier |
 | `citecheck/countries/france/` | extraction, bases et verdicts pour la France : `extract.py`, `sources.py` (ArianeWeb, Judilibre), `legifrance.py`, `articles.py` (codes), `conventions.py`, `lower_courts.py` (cours d'appel, tribunaux judiciaires et de commerce), `other_courts.py` (CAA, base locale, Conseil constitutionnel, Tribunal des conflits, Union européenne, lien CEDH), `codes.py` (noms et abréviations), `scope.py` (ce qui est vérifié) |
 | `citecheck/http.py` | le seul point de sortie réseau, qui refuse toute redirection (une redirection emporterait les clés) |
-| `cases/` | bancs d'essai dont la réponse est connue : `perigueux.json` (cas réel jugé), `articles.json`, `conventions.json`, `lower_courts.json`, `other_courts.json`, `abrogated_codes.json` et `abrogated_codes_2010.json` (codes abrogés, lus à deux dates), `cgi.json` (suffixes et annexes du CGI), `commercial_courts.json` |
+| `cases/` | bancs d'essai dont la réponse est connue : `perigueux.json` (cas réel jugé), `articles.json`, `conventions.json`, `lower_courts.json`, `other_courts.json`, `abrogated_codes.json` et `abrogated_codes_2010.json` (codes abrogés, lus à deux dates), `cgi.json` (suffixes et annexes du CGI), `commercial_courts.json`, `chambers.json` |
 | `tests/` | tests hors réseau |
 
 **Langues du code.** Noms de fichiers, de fonctions, de variables, codes de verdict, clés du
@@ -151,6 +151,7 @@ de juridiction et le numéro lui sont envoyés.
 .venv/bin/python -m citecheck --case cases/abrogated_codes_2010.json # réseau, 3/3
 .venv/bin/python -m citecheck --case cases/cgi.json                  # réseau, 7/7
 .venv/bin/python -m citecheck --case cases/commercial_courts.json    # réseau, 9/9
+.venv/bin/python -m citecheck --case cases/chambers.json             # réseau, 6/6
 ```
 
 ## Les trois règles, à ne jamais affaiblir
@@ -250,7 +251,8 @@ faut corriger.
 - Vérifier les articles des **lois et décrets** non codifiés (« article 22 de la loi du 6
   juillet 1989 ») et des **avenants** de conventions. Ils sont signalés dans les remarques du
   rapport, jamais devinés.
-- Vérifier la **chambre** : une décision peut exister, à la bonne date, mais venir d'une
-  chambre sans rapport avec le litige.
+- Vérifier la **formation** du Conseil d'État et la chambre des cours d'appel : seule la
+  chambre de la Cour de cassation est comparée (`cited_chamber` dans `extract.py`, taxonomie
+  de Judilibre dans `CHAMBERS`).
 - Dire si la décision **soutient** l'argument. Aucune base ne le sait : c'est le travail du
   lecteur.

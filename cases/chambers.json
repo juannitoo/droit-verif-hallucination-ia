@@ -1,0 +1,60 @@
+{
+  "country": "france",
+  "source": "Cour de cassation : chambre citée juste ou fausse (relevé dans Judilibre le 30/09/2026)",
+  "citations": [
+    {
+      "kind": "decision",
+      "order": "judicial",
+      "court": "Cass",
+      "number": "12-18.273",
+      "cited_date": "2013-07-10",
+      "chamber": "soc",
+      "expected": "CONFIRMED"
+    },
+    {
+      "kind": "decision",
+      "order": "judicial",
+      "court": "Cass",
+      "number": "12-18.273",
+      "cited_date": "2013-07-10",
+      "chamber": "civ2",
+      "expected": "WRONG_CHAMBER"
+    },
+    {
+      "kind": "decision",
+      "order": "judicial",
+      "court": "Cass",
+      "number": "17-28.268",
+      "cited_date": "2019-04-10",
+      "chamber": "civ",
+      "expected": "CONFIRMED"
+    },
+    {
+      "kind": "decision",
+      "order": "judicial",
+      "court": "Cass",
+      "number": "17-28.268",
+      "cited_date": "2019-04-10",
+      "chamber": "civ1",
+      "expected": "CONFIRMED"
+    },
+    {
+      "kind": "decision",
+      "order": "judicial",
+      "court": "Cass",
+      "number": "17-28.268",
+      "cited_date": "2019-04-11",
+      "chamber": "civ3",
+      "expected": "WRONG_DATE"
+    },
+    {
+      "kind": "decision",
+      "order": "judicial",
+      "court": "Cass",
+      "number": "13-11.789",
+      "cited_date": null,
+      "chamber": "comm",
+      "expected": "WRONG_CHAMBER"
+    }
+  ]
+}

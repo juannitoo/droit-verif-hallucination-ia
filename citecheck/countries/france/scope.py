@@ -11,6 +11,10 @@ DECISIONS = [
     "numéro doit suivre « n° ». Base interrogée : ArianeWeb.",
     "Cour de cassation : les numéros de pourvoi « 17-28.268 » ou « 17-28268 », avec ou sans "
     "« Cass. », « Civ. 2e », « Soc. »... Base interrogée : Judilibre.",
+    "La chambre de la Cour de cassation, quand elle est citée (« Cass. soc. », « Civ. 2e », "
+    "« 1re civ. », « chambre commerciale », « Ass. plén. »...), avant le numéro ou juste "
+    "après, dans la même phrase : comparée à celle de Judilibre. Une vraie décision "
+    "attribuée à la mauvaise chambre est une erreur typique d'un texte rédigé par IA.",
     "Cours d'appel et tribunaux judiciaires : « CA Paris, 2 octobre 2013, RG n° 11/18803 », "
     "« tribunal judiciaire de Périgueux, 18 décembre 2025, RG 23/00452 ». Un RG n'est pas "
     "unique (chaque juridiction a sa numérotation) : la juridiction doit être nommée dans la "
@@ -90,23 +94,30 @@ NOT_CHECKED = [
     "seul n'identifie pas une décision",
     "les décisions des tribunaux de commerce antérieures à 2025 : Judilibre n'en publie pas, "
     "pour l'instant. Elles sortent « non vérifiable »",
-    "les conseils de prud'hommes : Judilibre ne les publie pas (leurs jugements frappés "
-    "d'appel sont vérifiés, eux, au niveau de la cour d'appel). Signalés « à vérifier à la "
-    "main »",
+    "les conseils de prud'hommes : ils ne sont dans aucune base publique (Judilibre ne "
+    "connaît que la Cour de cassation, les cours d'appel, les tribunaux judiciaires et de "
+    "commerce). Leurs jugements frappés d'appel se retrouvent au niveau de la cour d'appel. "
+    "Signalés « à vérifier à la main »",
     "les décisions des tribunaux administratifs (TA), sans base locale : aucune base en ligne "
     "ne permet à un programme de les interroger, elles ne sont publiées qu'en archives à "
     "télécharger. Signalées « à vérifier à la main », jamais cherchées parmi celles du "
     "Conseil d'État",
-    "les décisions citées sans numéro : signalées « à vérifier à la main », pas cherchées",
     "les décisions de la CEDH : la Cour n'autorise pas la recherche dans sa base par un "
     "programme. Elles sont signalées, avec le lien de la recherche, à ouvrir soi-même",
     "les articles de lois et de décrets non codifiés (« article 22 de la loi du 6 juillet "
     "1989 ») : signalés, pas vérifiés",
     "les avenants, accords et textes salariaux attachés aux conventions collectives : "
-    "signalés, pas vérifiés (seul le texte de base l'est)",
+    "signalés, pas vérifiés (seul le texte de base l'est). Chaque avenant est un texte à part "
+    "dans Légifrance, et il se cite de façons trop variées (« avenant n° 12 du ... ») pour "
+    "être identifié sans risque",
     "un article de convention cité sans IDCC dans sa phrase, si l'IDCC n'est pas donné",
-    "la chambre ou la formation qui a rendu la décision",
-    "le sens d'une décision : si elle soutient l'argument pour lequel elle est citée",
+    "la formation du Conseil d'État, et la chambre des cours d'appel et des tribunaux : "
+    "seule celle de la Cour de cassation est comparée",
+    "les décisions citées sans numéro : nos bases se consultent par numéro, et les chercher "
+    "par le nom des parties voudrait dire envoyer ce nom, qui vient de votre document",
+    "le sens d'une décision : si elle soutient l'argument pour lequel elle est citée. Il "
+    "faudrait comprendre la décision, donc mettre une IA dans ce programme : c'est le "
+    "travail de l'avocat",
 ]
 
 
@@ -135,4 +146,4 @@ def not_checked_summary():
             "décisions des TA sans base locale, "
             "décisions de la CEDH (lien fourni), lois et décrets non codifiés, avenants et accords "
             "attachés aux conventions, "
-            "chambre, sens des décisions. Détail et raisons : onglet « Ce qui est vérifié »")
+            "formation hors Cour de cassation, décisions sans numéro, sens des décisions. Détail et raisons : onglet « Ce qui est vérifié »")

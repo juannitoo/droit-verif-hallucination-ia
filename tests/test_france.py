@@ -594,6 +594,52 @@ class Location(unittest.TestCase):
         self.assertTrue(ex.startswith("…") and ex.endswith("…") and "article 1240" in ex)
 
 
+class Chamber(unittest.TestCase):
+    """The chamber of the Cour de cassation: a real decision given to the wrong chamber."""
+
+    def test_reading(self):
+        for text, code in [("Cass. soc., 10 juillet 2013, n° 12-18.273.", "soc"),
+                           ("Civ. 2e, 5 mars 2019, n° 17-28.268.", "civ2"),
+                           ("Cass. 1re civ., 10 avril 2019, n° 17-28.268.", "civ1"),
+                           ("Cass., 3e civ., 1er mars 2020, n° 19-11.399.", "civ3"),
+                           ("la première chambre civile, le 10 avril 2019, n° 17-28.268", "civ1"),
+                           ("Cass. com., 3 mars 2020, n° 19-11.399.", "comm"),
+                           ("Cass. crim., 3 mars 2020, n° 19-11.399.", "cr"),
+                           ("Cass. ass. plén., 3 mars 2020, n° 19-11.399.", "pl"),
+                           ("Ch. mixte, 3 mars 2020, n° 19-11.399.", "mi"),
+                           ("Cass. civ., 3 mars 2020, n° 19-11.399.", "civ"),
+                           ("Code de la sécurité sociale ; Cass., 3 mars 2020, n° 19-11.399.", None),
+                           ("Sur la communication, Cass., 3 mars 2020, n° 19-11.399.", None)]:
+            self.assertEqual(extract(text)[0][0]["chamber"], code, text)
+
+    def test_chamber_written_after_the_number(self):
+        cits = extract("arrêt du 7 juillet 2022, n° 21-11.484, la deuxième chambre civile a "
+                       "jugé.")[0]
+        self.assertEqual(cits[0]["chamber"], "civ2")
+        cits = extract("Cass., 3 mars 2020, n° 19-11.399, puis Civ. 2e, 5 mars 2019, n° "
+                       "18-12.345.")[0]
+        self.assertEqual([c["chamber"] for c in cits], [None, "civ2"])
+        cits = extract("arrêt du 7 juillet 2022, n° 21-11.484. La chambre sociale a dit.")[0]
+        self.assertIsNone(cits[0]["chamber"])
+
+    def test_two_citations_two_chambers(self):
+        cits = extract("Cass. soc. 1er mars 2020 n° 19-11.399 et Civ. 2e, n° 18-12.345")[0]
+        self.assertEqual([c["chamber"] for c in cits], ["soc", "civ2"])
+
+    def test_verdicts(self):
+        record = {"decision_date": "2013-07-10", "chamber": "Chambre sociale", "solution": "x"}
+        self.assertEqual(verdict_judicial(record, "2013-07-10", "1987", "soc")[0], "CONFIRMED")
+        verdict, why, _ = verdict_judicial(record, "2013-07-10", "1987", "civ2")
+        self.assertEqual(verdict, "WRONG_CHAMBER")
+        self.assertIn("pas à la deuxième chambre civile", why)
+        verdict, why, _ = verdict_judicial(record, "2013-07-11", "1987", "civ2")
+        self.assertEqual(verdict, "WRONG_DATE")
+        self.assertIn("et la chambre aussi", why)
+        civ1 = {"decision_date": "2019-04-10", "chamber": "Première chambre civile"}
+        self.assertEqual(verdict_judicial(civ1, "2019-04-10", "1987", "civ")[0], "CONFIRMED")
+        self.assertEqual(verdict_judicial(record, None, "1987", "comm")[0], "WRONG_CHAMBER")
+
+
 class Verdicts(unittest.TestCase):
     def test_admin(self):
         self.assertEqual(verdict_admin(0, set(), "2009-06-05")[0], "NOT_PUBLISHED")
