@@ -66,10 +66,20 @@ Python 3.10 ou plus récent, avec tkinter.
 
 ```bash
 python -m venv .venv
-.venv/bin/pip install -r requirements.txt        # Windows : .venv\Scripts\pip
+.venv/bin/pip install -r requirements.txt
 .venv/bin/python -m citecheck                    # la fenêtre
 .venv/bin/python -m citecheck conclusions.pdf    # la ligne de commande
 .venv/bin/python -m citecheck conclusions.pdf --json
+```
+
+Sous Windows (PowerShell), les exécutables du venv sont dans `.venv\Scripts\` :
+
+```powershell
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+.venv\Scripts\python -m citecheck                    # la fenêtre
+.venv\Scripts\python -m citecheck conclusions.pdf    # la ligne de commande
+.venv\Scripts\python -m citecheck conclusions.pdf --json
 ```
 
 La fenêtre a trois onglets : « Vérifier un document », « Clés d'accès » et « Ce qui est
