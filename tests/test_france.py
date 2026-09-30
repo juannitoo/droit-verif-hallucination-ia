@@ -1162,8 +1162,9 @@ class AnnotatedPdf(unittest.TestCase):
         return report.build(path.name, "france", [cit, lost], [])
 
     def annots(self, path):
+        """The annotations of the document's page: page 1 is now the notice."""
         from pypdf import PdfReader
-        return [a.get_object() for a in PdfReader(path).pages[0].get("/Annots", [])]
+        return [a.get_object() for a in PdfReader(path).pages[1].get("/Annots", [])]
 
     def test_highlighted_linked_and_the_original_untouched(self):
         import tempfile
@@ -1178,6 +1179,13 @@ class AnnotatedPdf(unittest.TestCase):
             self.assertEqual(annotate.annotate(src, target, self.report(src)), (1, 1))
             self.assertEqual(src.read_bytes(), before)
             annots = self.annots(target)
+            from pypdf import PdfReader
+            pages = PdfReader(target).pages
+            self.assertEqual(len(pages), 2)                     # the notice, then the page
+            notice = pages[0].extract_text()
+            self.assertIn("Comment lire ce document", notice)
+            self.assertIn("Cmd + clic", notice)
+            self.assertIn("compétence pour se prononcer", notice)
         kinds = [a["/Subtype"] for a in annots]
         self.assertEqual(kinds, ["/Highlight", "/Link"])
         highlight, link = annots
@@ -1187,6 +1195,9 @@ class AnnotatedPdf(unittest.TestCase):
         self.assertTrue(150 < x0 < 200 and 690 < y0 < 702 and x1 - x0 < 70, (x0, y0, x1))
         self.assertEqual([float(v) for v in highlight["/C"]],
                          list(annotate.COLORS[report.CONFIRMED]))
+        # One palette: the highlight is the colour shown in the legend and in the report.
+        self.assertEqual([round(v * 255) for v in annotate.COLORS[report.CONFIRMED]],
+                         list(report.COLORS[report.CONFIRMED]))
         self.assertIn("/AP", highlight)
 
     def test_a_turned_page_is_marked_at_the_same_place(self):
@@ -1245,6 +1256,56 @@ class PdfReport(unittest.TestCase):
                          "Dupont c. Martin-rapport-citations.pdf")
         self.assertEqual(report_pdf.output_name("C:/x/Dupont c. Martin.pdf", True),
                          "rapport-citations.pdf")
+
+
+class DecisionQuotes(unittest.TestCase):
+    """A real number at the right date, with a passage it may not contain: the passage is
+    looked for in the decision's full text."""
+
+    TEXT = ("9. Par ailleurs, l'huissier de justice, qui a déposé une copie de l'acte à son "
+            "étude, n'a pas laissé sur les lieux de la signification, l'avis de passage prévu "
+            "par les articles 655 et 656 du code de procédure civile.")
+    LINK = "https://www.courdecassation.fr/decision/658401878704660008a2970f"
+
+    def check(self, quote, verdict="CONFIRMED"):
+        from unittest import mock
+        from citecheck.countries.france import decision_quotes
+        with mock.patch.object(decision_quotes, "judilibre_text", return_value=self.TEXT) as t:
+            out = decision_quotes.check({"quote": quote}, (verdict, "Judilibre date bien "
+                                        "l'arrêt", "2023-12-21", self.LINK),
+                                        {"PISTE_API_KEY": "k"})
+        return out, t
+
+    def test_a_passage_in_the_decision_keeps_it_blue(self):
+        (v, why, _, link), _ = self.check("L'huissier de justice, qui a déposé une copie de "
+                                          "l'acte à son étude, n'a pas laissé (…) l'avis de "
+                                          "passage prévu par les articles 655 et 656")
+        self.assertEqual(v, "CONFIRMED")
+        self.assertIn("passage cité retrouvé", why)
+        self.assertEqual(link, self.LINK)
+
+    def test_a_passage_lent_to_a_real_decision_turns_orange(self):
+        (v, why, _, _), _ = self.check("la signification à domicile est nulle de plein droit "
+                                       "sans qu'il soit besoin de prouver un grief")
+        self.assertEqual(v, "DECISION_QUOTE_NOT_FOUND")
+        self.assertEqual(report.light(v), report.CHECK)
+        (v, why, _, _), _ = self.check("la signification à domicile est nulle de plein droit "
+                                       "sans grief", "WRONG_DATE")
+        self.assertEqual(v, "WRONG_DATE")
+        self.assertIn("ne se retrouve pas", why)
+
+    def test_nothing_is_fetched_without_a_passage_or_a_decision(self):
+        for quote, verdict in (("", "CONFIRMED"), ("trop court", "CONFIRMED"),
+                               ("un passage assez long pour compter", "NOT_PUBLISHED")):
+            out, fetched = self.check(quote, verdict)
+            self.assertEqual(out[0], verdict)
+            fetched.assert_not_called()
+
+    def test_the_passage_after_a_decision_is_attached_to_it(self):
+        cits, _ = extract("Cass. 2e civ., 21 décembre 2023, n° 22-18.480 : « L'huissier de "
+                          "justice n'a pas laissé l'avis de passage prévu par la loi ».")
+        self.assertEqual(cits[0]["quote"], "L'huissier de justice n'a pas laissé l'avis de "
+                                           "passage prévu par la loi")
 
 
 if __name__ == "__main__":

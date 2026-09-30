@@ -421,6 +421,12 @@ def extract(text):
     articles, article_remarks = extract_articles(text)
     # Dans l'ordre du document : c'est l'ordre dans lequel l'avocat relira.
     both = sorted(citations + articles, key=lambda c: c["span"][0])
+    # Le passage entre guillemets qui suit une décision, pour le chercher dans son texte
+    # (decision_quotes.py). Articles et décisions concourent : un passage va à la citation
+    # la plus proche. Celui des articles est déjà rattaché, entre articles seulement.
+    for i, quote in assign_quotes(text, [c["span"] for c in both]).items():
+        if both[i]["kind"] == "decision" and both[i].get("number"):
+            both[i]["quote"] = quote
     return both, remarks + article_remarks
 
 

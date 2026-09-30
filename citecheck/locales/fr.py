@@ -16,6 +16,7 @@ VERDICTS = {
     "ARTICLE_IN_FORCE": "article en vigueur à la date de référence",
     "ARTICLE_OTHER_VERSION": "TEXTE CITÉ D'UNE AUTRE VERSION",
     "QUOTE_NOT_FOUND": "TEXTE CITÉ NON RETROUVÉ dans l'article",
+    "DECISION_QUOTE_NOT_FOUND": "PASSAGE CITÉ NON RETROUVÉ dans la décision",
     "ARTICLE_NOT_IN_FORCE": "ARTICLE PAS EN VIGUEUR à la date de référence",
     "TEXT_NOT_FOUND": "CE TEXTE NE SEMBLE PAS EXISTER",
     "ARTICLE_NOT_FOUND": "CET ARTICLE NE SEMBLE PAS EXISTER dans ce texte",
@@ -62,6 +63,37 @@ OPEN_LINK = "ouvrir"
 LIGHT_LABELS = {"ok": "confirmée(s)", "check": "à vérifier", "invented": "semble(nt) inventée(s)",
                 "unchecked": "non vérifiée(s)"}
 REMARKS_HEADING = "Remarques"
+# La notice de la première page du rapport PDF.
+HOW_TO_READ = "Comment lire ce rapport"
+HOW_TO_READ_DOCUMENT = "Comment lire ce document"
+HOW_LINKS = ("Liens : « ouvrir » et les adresses mènent à la source officielle. Pour l'ouvrir "
+             "dans un nouvel onglet : Ctrl + clic (Windows, Linux) ou Cmd + clic (Mac).")
+HOW_COLORS = {
+    # La mise en garde est DANS la ligne du bleu, pas dans un encadré à part : un encadré, on
+    # le saute.
+    "ok": ("Bleu : confirmé.", "La décision existe à la date citée, ou l'article est en vigueur "
+           "à la date de référence ; si un passage est cité entre guillemets, il a été retrouvé "
+           "tel quel dans le texte. Une citation en bleu affirme juste cela : « ce numéro existe "
+           "à cette date », et, le cas échéant, « ces mots y figurent ». Elle ne veut pas dire "
+           "« cet arrêt dit ce qu'on lui fait dire ». Cela reste la responsabilité et le "
+           "jugement de l'utilisateur : l'administrateur du programme n'a pas compétence pour "
+           "se prononcer."),
+    "check": ("Orange : à vérifier.", "Trouvé, mais quelque chose ne concorde pas : autre date, "
+              "autre chambre, autre version, passage cité non retrouvé. Rien de douteux n'est "
+              "jamais mis en bleu."),
+    "invented": ("Rouge : semble inventé.", "Introuvable dans une base qui publie tout : à "
+                 "vérifier avant toute conclusion."),
+    "unchecked": ("Gris : non vérifié.", "Clé absente, base indisponible, période non couverte, "
+                  "ou vérification à faire à la main. Ce n'est pas une faute du document."),
+}
+HOW_LINKS_ANNOTATED = ("Liens : chaque passage surligné mène à la source officielle, et son "
+                       "survol montre le verdict (selon le lecteur de PDF). Pour l'ouvrir dans "
+                       "un nouvel onglet : Ctrl + clic (Windows, Linux) ou Cmd + clic (Mac).")
+CLICKABLE = "Lien cliquable."
+ANNOTATED_TITLE = "Citations vérifiées"
+ANNOTATED_NEXT = ("Cette page a été ajoutée par {program}. Le document commence à la page "
+                  "suivante ; il n'est pas modifié, les couleurs sont des annotations posées "
+                  "par-dessus, que tout lecteur de PDF peut masquer.")
 READING_HEADING = "Pour lire ce rapport"
 PDF_REPORT_FOOTER = "{program} - page {page} / {pages}"
 REFERENCE_LINE = "Date de référence pour les articles : {date}{default}"

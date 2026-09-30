@@ -108,6 +108,12 @@ LIGHTS = {
 }
 
 
+# La couleur de chaque feu, en RVB 0-255 : UNE palette pour le surligneur du PDF annoté,
+# sa légende et le rapport PDF. Ce qu'on voit dans la légende est ce qu'on voit dans le texte.
+COLORS = {CONFIRMED: (158, 199, 255), CHECK: (255, 189, 97), INVENTED: (255, 133, 128),
+          UNCHECKED: (199, 199, 199)}
+
+
 def light(verdict):
     return LIGHTS.get(verdict, CHECK)
 

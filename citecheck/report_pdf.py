@@ -6,6 +6,7 @@ Il est écrit par fpdf2, qui ne reçoit que du texte : aucune image, rien du doc
 vérifié sinon les extraits, et aucun extrait si le rapport a été fait « sans extraits ».
 Police : Roboto, celle que customtkinter fournit déjà pour la fenêtre.
 """
+import re
 from pathlib import Path
 
 import customtkinter
@@ -21,15 +22,28 @@ INK = (30, 30, 38)
 MUTED = (100, 100, 112)
 ACCENT = (6, 82, 133)          # le bleu foncé du thème, pour les titres et les liens
 RULE = (200, 200, 208)
-# Fonds des cellules de verdict : les couleurs du PDF annoté, éclaircies pour l'écrit.
-FILLS = {rep.CONFIRMED: (214, 230, 255), rep.CHECK: (255, 226, 190),
-         rep.INVENTED: (255, 208, 206), rep.UNCHECKED: (228, 228, 232)}
+FILLS = rep.COLORS          # les mêmes que le surligneur du PDF annoté
 # Colonnes du tableau, en mm (la page utile fait 180 mm).
 WIDTHS = (10, 14, 72, 58, 26)
 
 
+NBSP = "\u00a0"
+_BEFORE = re.compile(r" ([:;!?»])")
+_AFTER = re.compile(r"« ")
+
+
+def _fr(text):
+    """Espaces insécables de la typographie française : jamais « : », « ; » ou « » » en
+    début de ligne, ni « « » en fin de ligne."""
+    return _AFTER.sub("«" + NBSP, _BEFORE.sub(NBSP + r"\1", text))
+
+
 class _Pdf(FPDF):
+    footer_on = True
+
     def footer(self):
+        if not self.footer_on:
+            return
         self.set_y(-12)
         self.set_font("Roboto", size=8)
         self.set_text_color(*MUTED)
@@ -50,7 +64,7 @@ def _para(pdf, text, size=10, color=INK, style="", indent=0, gap=1.5):
     pdf.set_font("Roboto", style, size)
     pdf.set_text_color(*color)
     pdf.set_x(pdf.l_margin + indent)
-    pdf.multi_cell(0, size * 0.48, text, new_x="LMARGIN", new_y="NEXT", align="L")
+    pdf.multi_cell(0, size * 0.48, _fr(text), new_x="LMARGIN", new_y="NEXT", align="L")
     pdf.ln(gap)
     pdf.set_text_color(*INK)
 
@@ -62,6 +76,30 @@ def _link(pdf, url, indent):
     pdf.multi_cell(0, 4.2, url, link=url, new_x="LMARGIN", new_y="NEXT", align="L")
     pdf.set_text_color(*INK)
     pdf.ln(1.5)
+
+
+def _how_to_read(pdf, links=None, heading=None, clickable=False):
+    """La notice de la première page : les liens, les couleurs, et ce que le bleu ne dit
+    pas (dans la ligne du bleu elle-même)."""
+    _heading(pdf, heading or t.HOW_TO_READ)
+    _para(pdf, links or t.HOW_LINKS, size=9.5, gap=2)
+    for light in (rep.CONFIRMED, rep.CHECK, rep.INVENTED, rep.UNCHECKED):
+        name, meaning = t.HOW_COLORS[light]
+        y = pdf.get_y()
+        pdf.set_fill_color(*FILLS[light])
+        pdf.rect(pdf.l_margin, y + 0.6, 4, 4, style="F")
+        margin = pdf.l_margin
+        pdf.set_left_margin(margin + 6)       # la suite de la phrase reste alignée
+        pdf.set_xy(margin + 6, y)
+        pdf.set_font("Roboto", "B", 9.5)
+        if clickable and light in (rep.CONFIRMED, rep.CHECK):
+            name += " " + t.CLICKABLE      # dans le PDF annoté : le bleu et l'orange mènent
+        pdf.write(4.6, _fr(name) + " ")
+        pdf.set_font("Roboto", size=9.5)
+        pdf.write(4.6, _fr(meaning))
+        pdf.set_left_margin(margin)
+        pdf.ln(6)
+    pdf.ln(2)
 
 
 def _legend(pdf, report):
@@ -131,9 +169,8 @@ def _details(pdf, report):
         pdf.ln(2.5)
 
 
-def write(report, target):
-    """Écrit le rapport en PDF dans `target`."""
-    pdf = _Pdf(format="A4")
+def _new(report, page_format="A4"):
+    pdf = _Pdf(format=page_format)
     pdf.program = report["program"]
     pdf.set_margins(15, 15, 15)
     pdf.set_auto_page_break(True, margin=18)
@@ -142,20 +179,45 @@ def write(report, target):
     pdf.set_title(t.TITLE)
     pdf.set_creator(report["program"])
     pdf.add_page()
+    return pdf
 
+
+def _head(pdf, report, title):
+    """Titre, document, date, date de référence, avertissement."""
     pdf.set_font("Roboto", "B", 17)
     pdf.set_text_color(*ACCENT)
-    pdf.multi_cell(0, 8, t.TITLE, new_x="LMARGIN", new_y="NEXT")
+    pdf.multi_cell(0, 8, title, new_x="LMARGIN", new_y="NEXT")
     pdf.ln(1)
     _para(pdf, t.DOCUMENT_LINE.format(source=report["source"]), size=10.5, style="B", gap=0.5)
     _para(pdf, t.CHECKED_LINE.format(date=report["date"], program=report["program"]),
           size=9.5, color=MUTED)
-    cits = report["citations"]
-    if any(c.get("kind") in rep.LEGISLATION for c in cits):
+    if any(c.get("kind") in rep.LEGISLATION for c in report["citations"]):
         _para(pdf, t.REFERENCE_LINE.format(
             date=report["reference_date"] or report["date"],
             default="" if report["reference_date"] else t.REFERENCE_DEFAULT), size=9.5)
-    _para(pdf, t.DISCLAIMER, size=9, color=MUTED, gap=3)
+    _para(pdf, t.DISCLAIMER, size=9, color=MUTED, gap=1)
+
+
+def notice(report, width_pt, height_pt):
+    """La page de notice placée en tête du PDF annoté, au format de sa première page : le
+    même mode d'emploi que le rapport, et le compte des couleurs. Renvoie le PDF en octets."""
+    pdf = _new(report, (width_pt * 25.4 / 72, height_pt * 25.4 / 72))
+    pdf.set_auto_page_break(False)          # une seule page, quoi qu'il arrive
+    pdf.footer_on = False                   # « page 1 / 1 » en tête d'un document : trompeur
+    _head(pdf, report, t.ANNOTATED_TITLE)
+    _how_to_read(pdf, t.HOW_LINKS_ANNOTATED, t.HOW_TO_READ_DOCUMENT, clickable=True)
+    if report["citations"]:
+        _legend(pdf, report)
+    _para(pdf, t.ANNOTATED_NEXT.format(program=report["program"]), size=9, color=MUTED)
+    return bytes(pdf.output())
+
+
+def write(report, target):
+    """Écrit le rapport en PDF dans `target`."""
+    pdf = _new(report)
+    _head(pdf, report, t.TITLE)
+    _how_to_read(pdf)
+    cits = report["citations"]
 
     if not cits:
         _para(pdf, t.NO_CITATION)

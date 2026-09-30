@@ -264,6 +264,14 @@ class Window:
         self.button.configure(state="normal" if on else "disabled",
                               fg_color=C["accent"] if on else C["neutral"])
 
+    def _highlight(self, button, on):
+        """Rapport PDF et PDF annoté, le gros du programme : en bleu dès qu'ils servent,
+        comme Vérifier. Gris, et inactifs, sinon."""
+        button.configure(state="normal" if on else "disabled",
+                         fg_color=C["accent"] if on else C["neutral"],
+                         hover_color=C["accent_hover"] if on else C["neutral_hover"],
+                         text_color=C["text_on_accent"] if on else C["text"])
+
     def _reveal(self, parent, entry):
         """The eye button of a secret field: shows or hides what was typed."""
         shown = [False]
@@ -374,8 +382,10 @@ class Window:
             self.write(t.IDCC_INVALID + "\n", clear=True)
             return
         self._ready(False)
-        for b in (self.b_txt, self.b_report_pdf, self.b_json, self.b_pdf):
+        for b in (self.b_txt, self.b_json):
             b.configure(state="disabled")
+        for b in (self.b_report_pdf, self.b_pdf):
+            self._highlight(b, False)
         self.write(t.IN_PROGRESS + "\n\n", clear=True)
 
         def work():
@@ -399,7 +409,7 @@ class Window:
                     self.write(content + "\n")
                 elif kind == "pdf":
                     self.write("\n" + content + "\n")
-                    self.b_pdf.configure(state="normal")
+                    self._highlight(self.b_pdf, True)
                     return
                 elif kind == "error":
                     self.write("\n" + content + "\n")
@@ -410,10 +420,11 @@ class Window:
                     self.write(report.to_text(content), clear=True)
                     self.output.see("1.0")         # le tableau d'abord
                     self._ready(True)
-                    for b in (self.b_txt, self.b_report_pdf, self.b_json):
+                    for b in (self.b_txt, self.b_json):
                         b.configure(state="normal")
-                    if Path(self.document).suffix.lower() == ".pdf":
-                        self.b_pdf.configure(state="normal")
+                    self._highlight(self.b_report_pdf, True)
+                    self._highlight(self.b_pdf,
+                                    Path(self.document).suffix.lower() == ".pdf")
                     return
         except queue.Empty:
             pass
@@ -445,7 +456,7 @@ class Window:
         if Path(path).resolve() == source.resolve():
             self.write("\n" + t.PDF_NOT_OVER_ORIGINAL + "\n")
             return
-        self.b_pdf.configure(state="disabled")
+        self._highlight(self.b_pdf, False)
         self.write("\n" + t.PDF_IN_PROGRESS + "\n")
         report_ = self.last
 

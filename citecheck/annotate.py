@@ -17,6 +17,7 @@ TROUVER UNE CITATION SUR LA PAGE
   citation lue sur la page 3 est cherchée sur la page 3, et la n-ième fois qu'elle y figure
   est la n-ième trouvée. Une citation qu'on ne retrouve pas n'est pas annotée, et on le dit.
 """
+import io
 import logging
 import unicodedata
 
@@ -24,12 +25,12 @@ from pypdf import PdfReader, PdfWriter
 from pypdf.generic import (ArrayObject, DecodedStreamObject, DictionaryObject, FloatObject,
                            NameObject, NumberObject, TextStringObject)
 
-from . import NAME, report as rep
+from . import NAME, report as rep, report_pdf
 from .reader import MAX_PAGES, PAGE
 
-# Couleurs du surligneur, posées en « produit » (Multiply) : le texte noir reste noir.
-COLORS = {rep.CONFIRMED: (0.62, 0.78, 1.00), rep.CHECK: (1.00, 0.74, 0.38),
-          rep.INVENTED: (1.00, 0.52, 0.50), rep.UNCHECKED: (0.78, 0.78, 0.78)}
+# Les couleurs du rapport (report.COLORS), en 0-1 pour le PDF, posées en « produit »
+# (Multiply) : le texte noir reste noir.
+COLORS = {light: tuple(round(v / 255, 3) for v in rgb) for light, rgb in rep.COLORS.items()}
 QUESTION = (0.35, 0.35, 0.35)       # le « ? » des citations non vérifiées
 
 
@@ -253,6 +254,12 @@ def annotate(source, target, report):
             for rect in rects:
                 writer.add_annotation(page - 1, _link(rect, r["link"]))
         placed += 1
+    # En tête, une page de notice : comment lire les couleurs, et ce que le bleu ne dit pas.
+    # Ajoutée à la fin : les annotations ci-dessus visent les pages du document par leur rang.
+    first = writer.pages[0]
+    page = PdfReader(io.BytesIO(report_pdf.notice(
+        report, float(first.mediabox.width), float(first.mediabox.height)))).pages[0]
+    writer.insert_page(page, 0)
     with open(target, "wb") as f:
         writer.write(f)
     return placed, missed

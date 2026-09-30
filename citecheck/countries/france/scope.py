@@ -54,6 +54,12 @@ DECISIONS = [
     "nom des parties, et ce programme n'envoie jamais rien de votre document.",
     "La date citée est lue à côté du numéro, en toutes lettres (« 5 juin 2009 ») ou en "
     "chiffres (« 05/06/2009 »), puis comparée à celle de la base.",
+    "Le passage cité entre guillemets juste après une décision trouvée (« n° 22-18.480 : « ... "
+    "» ») est cherché dans son texte intégral et son sommaire : Judilibre (Cour de "
+    "cassation, cours d'appel, tribunaux), Légifrance (Conseil constitutionnel, CAA, "
+    "Tribunal des conflits). Non retrouvé tel quel : « à vérifier », jamais « inventé » "
+    "(paraphrase, nom pseudonymisé). Pas encore pour le Conseil d'État ni l'Union "
+    "européenne. Seul l'identifiant de la décision part sur le réseau, jamais le passage.",
 ]
 
 ARTICLES = [
@@ -124,7 +130,8 @@ NOT_CHECKED = [
     "par le nom des parties voudrait dire envoyer ce nom, qui vient de votre document",
     "le sens d'une décision : si elle soutient l'argument pour lequel elle est citée. Il "
     "faudrait comprendre la décision, donc mettre une IA dans ce programme : c'est le "
-    "travail de l'avocat",
+    "travail de l'avocat. Seul un passage cité entre guillemets est comparé au texte ; une "
+    "décision citée sans guillemets pour une règle qu'elle ne pose pas sort confirmée",
 ]
 
 

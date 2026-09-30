@@ -17,9 +17,10 @@ LES TROIS RÈGLES
 CE QU'ELLE NE VÉRIFIE PAS
   Que la décision dise ce qu'on lui fait dire. Aucune base ne le sait.
 """
+import re
 from datetime import date
 
-from . import codes, links, other_courts, sources, wire
+from . import codes, decision_quotes, links, other_courts, sources, wire
 from .articles import check_articles
 from .texts import check_text_articles
 from .conventions import check_convention_articles
@@ -269,6 +270,34 @@ def _line(ok, text):
     return f"  {'OK   ' if ok else 'ÉCHEC'} {text}"
 
 
+def _checked(base, selftest, log):
+    """Les contrôles d'une base, sur ses références témoins, sans les afficher un par un :
+    l'utilisateur n'a besoin que de savoir si la base fonctionne. Une seule ligne, et, en
+    cas d'échec, le contrôle qui a échoué. `selftest` reçoit la fonction où écrire."""
+    lines = []
+    ok = selftest(lines.append)
+    if ok:
+        log(f"{base} : fonctionne correctement.")
+        return True
+    errors = [line.strip() for line in lines if line.startswith("        ")]
+    failed = [re.sub(r"^.*?doit (?:pas )?(?:trouver|dire) ", "", line.split("ÉCHEC", 1)[1].strip())
+              for line in lines if "ÉCHEC" in line]
+    why = (f"ne répond pas ({errors[0]})" if errors
+           else f"n'a pas fonctionné correctement pour {failed[0]}" if failed
+           else "ne fonctionne pas correctement")
+    log(f"{base} : {why} ; ses citations ne sont pas vérifiées.")
+    return False
+
+
+# La base interrogée pour chaque sorte de citation, pour dire laquelle a flanché en cours de
+# route.
+def _base_of(c):
+    if c.get("kind") in LEGISLATION or c.get("order") in ("caa", "constitutional", "conflicts"):
+        return "Légifrance"
+    return {"judicial": "Judilibre", "lower": "Judilibre", "administrative": "ArianeWeb",
+            "eu": "CELLAR", "ta": "La base locale"}.get(c.get("order"), "La base")
+
+
 def selftest_other(base, search, real, fake, client, log):
     """Les témoins d'une base : ses décisions connues, à leur date, et des numéros inventés
     qui ne doivent rien donner."""
@@ -342,8 +371,8 @@ def _local_base(citations, keys, log):
     except Unavailable as e:
         log(f"Base locale ignorée : {e}")
         return None
-    log("Contrôle de la base locale avant de juger :")
-    return local if selftest_local(local, log) else None
+    ok = _checked("La base locale", lambda out: selftest_local(local, out), log)
+    return local if ok else None
 
 
 def _check_other(citations, keys, log):
@@ -362,8 +391,9 @@ def _check_other(citations, keys, log):
                 results.update({i: ("NOT_TESTED", why, None) for i in mine})
                 continue
             client = client or Client(cid, secret)
-        log(f"Contrôle de {base} ({citations[mine[0]]['court']}) avant de juger :")
-        if not selftest_other(base, search, real, fake, client, log):
+        name = f"{base.split(' (')[0]} ({citations[mine[0]]['court']})"   # « CELLAR (CJUE) »
+        if not _checked(name, lambda out: selftest_other(base, search, real, fake, client,
+                                                         out), log):
             why = f"{base} n'a pas passé ses contrôles : aucun verdict possible"
             results.update({i: ("NOT_TESTED", why, None) for i in mine})
             continue
@@ -501,9 +531,9 @@ def _check_legislation(citations, keys, day, idcc, log):
         return [("NOT_TESTED", why, None)] * len(citations)
     client = Client(cid, secret)
     kinds = {c["kind"] for c in citations}
-    log("Contrôle de Légifrance avant de juger :")
-    if not selftest_legifrance(client, log, "article" in kinds, "convention_article" in kinds,
-                               "text_article" in kinds):
+    if not _checked("Légifrance", lambda out: selftest_legifrance(
+            client, out, "article" in kinds, "convention_article" in kinds,
+            "text_article" in kinds), log):
         why = "Légifrance n'a pas passé ses contrôles : aucun verdict possible"
         return [("NOT_TESTED", why, None)] * len(citations)
     codes = iter(check_articles([c for c in citations if c["kind"] == "article"],
@@ -579,8 +609,7 @@ def _check(citations, keys, log, options):
     cc_first = None
 
     if "administrative" in orders:
-        log("Contrôle d'ArianeWeb (Conseil d'État) avant de juger :")
-        admin_ok = selftest_admin(log)
+        admin_ok = _checked("ArianeWeb (Conseil d'État)", selftest_admin, log)
         if not admin_ok:
             admin_why = "ArianeWeb n'a pas passé ses contrôles : aucun verdict possible"
     if "judicial" in orders:
@@ -589,8 +618,8 @@ def _check(citations, keys, log, options):
             judicial_why = "clé PISTE absente : Judilibre n'a pas été interrogé"
             log("Judilibre non interrogé : aucune clé PISTE.")
         else:
-            log("Contrôle de Judilibre (Cour de cassation) avant de juger :")
-            judicial_ok = selftest_judicial(key, log)
+            judicial_ok = _checked("Judilibre (Cour de cassation)",
+                                   lambda out: selftest_judicial(key, out), log)
             if not judicial_ok:
                 judicial_why = "Judilibre n'a pas passé ses contrôles : aucun verdict possible"
             else:
@@ -606,13 +635,16 @@ def _check(citations, keys, log, options):
             why = "clé PISTE absente : Judilibre n'a pas été interrogé"
             lower_results = iter([("NOT_TESTED", why, None)] * len(lower))
         else:
-            log("Contrôle de Judilibre (cours d'appel, tribunaux) avant de juger :")
-            if selftest_lower(key, {c["jurisdiction"] for c in lower}, log):
+            if _checked("Judilibre (cours d'appel, tribunaux)", lambda out: selftest_lower(
+                    key, {c["jurisdiction"] for c in lower}, out), log):
                 lower_results = iter(check_lower_courts(lower, Courts(key)))
             else:
                 why = "Judilibre n'a pas passé ses contrôles : aucun verdict possible"
                 lower_results = iter([("NOT_TESTED", why, None)] * len(lower))
 
+    # Pour lire le texte des décisions de Légifrance cité entre guillemets.
+    cid, secret = keys.get("PISTE_CLIENT_ID"), keys.get("PISTE_CLIENT_SECRET")
+    legifrance = Client(cid, secret) if cid and secret else None
     results = []
     log("Vérification des citations :")
     for c in citations:
@@ -644,7 +676,14 @@ def _check(citations, keys, log, options):
                 cc_first, c.get("chamber"))
         else:
             found = "NOT_TESTED", judicial_why, None
+        if c.get("kind") not in LEGISLATION:
+            found = decision_quotes.check(c, found, keys, legifrance)
         v, why, actual, *link = found
+        if v == "ERROR":
+            # La base a répondu à ses contrôles, puis a flanché sur cette citation.
+            from ...report import citation_label
+            log(f"{_base_of(c)} : n'a pas fonctionné correctement pour "
+                f"{citation_label(c)}.")
         results.append({**c, "verdict": v, "explanation": why, "actual_date": actual,
                         "link": link[0] if link else None})
         if c.get("number") is None:
