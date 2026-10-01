@@ -1534,5 +1534,82 @@ class PisteCeiling(unittest.TestCase):
         self.assertFalse(piste.limited())                    # the next check tries again
 
 
+class AuditPass3BadAnswers(unittest.TestCase):
+    """Audit du 01/10/2026, lot A : une réponse incomplète ou incohérente de la base ne fait
+    jamais un feu vert ni un feu rouge, seulement une erreur (gris)."""
+
+    def _client(self, answer):
+        from citecheck.countries.france.legifrance import Client
+
+        class Fake(Client):
+            def _post(self, route, body):
+                return answer(route, body)
+        return Fake("id", "secret")
+
+    def test_a_version_without_a_start_date_is_not_in_force(self):
+        from citecheck.countries.france.legifrance import Unavailable
+
+        def answer(route, body):
+            if route == "/search":
+                return {"totalResultNumber": 1, "results": [{
+                    "titles": [{"cid": "LEGITEXT1"}], "sections": [{"extracts": [
+                        {"num": "1240", "id": "LEGIARTI1", "dateDebut": None}]}]}]}
+            return {"article": {"articleVersions": [{"id": "LEGIARTI1", "dateDebut": None,
+                                                      "dateFin": None}]}}
+        with self.assertRaises(Unavailable):
+            self._client(answer).versions("Code civil", "LEGITEXT1", "1240")
+
+    def test_an_absurd_date_is_refused_not_crashed(self):
+        from citecheck.countries.france.legifrance import Unavailable, _day, dated
+        self.assertEqual(_day(-10 ** 20), "?")
+        self.assertEqual(_day(0), "1970-01-01")
+        with self.assertRaises(Unavailable):
+            dated([{"debut": _day(-10 ** 20), "fin": ""}], "1")
+        with self.assertRaises(Unavailable):
+            dated([{"debut": "0001-01-01", "fin": ""}], "1")
+        ok = [{"debut": "1804-03-21", "fin": "2999-01-01"}, {"debut": "2016-10-01", "fin": ""}]
+        self.assertEqual(dated(ok, "1"), ok)
+
+    def test_a_search_without_a_sound_total_concludes_nothing(self):
+        from citecheck.countries.france.legifrance import Unavailable
+        other = [{"titles": [{"cid": "LEGITEXT1"}], "sections": [{"extracts": [
+            {"num": "9999", "id": "LEGIARTI9"}]}]}]
+        for total in (0, None, "0", -1):
+            with self.subTest(total=total), self.assertRaises(Unavailable):
+                self._client(lambda r, b: {"totalResultNumber": total, "results": other}
+                             )._search_versions("Code civil", "LEGITEXT1", "1240")
+        # Le cas sain : rien sous ce numéro, et la base le dit.
+        self.assertEqual(self._client(lambda r, b: {"totalResultNumber": 0, "results": []}
+                                      )._search_versions("Code civil", "LEGITEXT1", "1240"), [])
+
+    def test_an_idcc_in_error_is_not_remembered_as_unknown(self):
+        from citecheck.countries.france.legifrance import Unavailable
+        asked = []
+
+        def answer(route, body):
+            asked.append(body["id"])
+            if body["id"] == "1979":
+                return {"titre": "HCR", "texteBaseId": ["KALITEXT1"]}
+            raise Unavailable("HTTP 500", 500)
+        client = self._client(answer)
+        self.assertIsNone(client.convention("3043"))
+        self.assertIsNone(client.convention("3043"))
+        self.assertEqual(asked.count("3043"), 4)             # asked again, not remembered
+
+    def test_a_cellar_record_without_a_date_is_not_unpublished(self):
+        import io, urllib.error
+        from unittest import mock
+        from citecheck.countries.france import other_courts
+        from citecheck.countries.france.legifrance import Unavailable
+        redirect = urllib.error.HTTPError(
+            "https://publications.europa.eu", 303, "See Other",
+            {"Location": "https://publications.europa.eu/resource/cellar/abc"}, io.BytesIO(b""))
+        record = (b"<NOTICE><WORK><RESOURCE_LEGAL_ID_CELEX><VALUE>62019CJ0561</VALUE>"
+                  b"</RESOURCE_LEGAL_ID_CELEX></WORK></NOTICE>")
+        with mock.patch.object(other_courts, "_get", side_effect=[redirect, record]):
+            with self.assertRaises(Unavailable):
+                other_courts._celex_dates("62019CJ0561")
+
+
 if __name__ == "__main__":
     unittest.main()

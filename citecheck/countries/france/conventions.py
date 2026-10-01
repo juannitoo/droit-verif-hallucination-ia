@@ -21,7 +21,7 @@ import re
 
 from . import links
 from .articles import _period, quote_fragments, quote_in, version_at
-from .legifrance import Unavailable
+from .legifrance import Unavailable, dated
 
 EXTENSION = {"VIGUEUR_ETEN": "version étendue", "VIGUEUR_NON_ETEN": "version non étendue"}
 
@@ -43,8 +43,9 @@ def check_convention_article(client, citation, day, default_idcc):
         return ("CONVENTION_NOT_FOUND", f"l'IDCC {idcc} ne semble correspondre à aucune "
                 "convention collective dans Légifrance ; à vérifier", None)
     title, text_ids = convention
-    versions = sorted((a for a in client.convention_articles(text_ids)
-                       if _key(a["num"]) == _key(number)), key=lambda a: a["debut"])
+    versions = sorted(dated([a for a in client.convention_articles(text_ids)
+                             if _key(a["num"]) == _key(number)], number),
+                      key=lambda a: a["debut"])
     source = "" if citation.get("idcc") else ", donné par l'utilisateur"
     if not versions:
         return ("ARTICLE_NOT_FOUND", f"aucun article {number} trouvé dans le texte de base de "

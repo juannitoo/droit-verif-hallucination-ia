@@ -44,6 +44,7 @@ Seuls le numéro d'article et le nom du code partent sur le réseau. Jamais le t
 document.
 """
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -148,7 +149,7 @@ class Client:
         if len(complete) < len(found):
             raise Unavailable(f"liste des versions de {number} incohérente "
                               f"({len(complete)} dans la fiche, {len(found)} dans la recherche)")
-        return sorted(complete, key=lambda v: v["debut"])
+        return sorted(dated(complete, number), key=lambda v: v["debut"])
 
     def _search_versions(self, code_title, code_id, number):
         """Les versions que la recherche veut bien montrer : incomplet, voir plus haut."""
@@ -161,7 +162,7 @@ class Client:
                 "pageNumber": page, "pageSize": PAGE_SIZE, "operateur": "ET",
                 "sort": "PERTINENCE", "typePagination": "ARTICLE"}})
             results = data.get("results") or []
-            total = data.get("totalResultNumber") or 0
+            total = _total(data)
             read += len(results)
             for res in results:
                 if not any(t.get("cid") == code_id for t in res.get("titles") or []):
@@ -173,7 +174,7 @@ class Client:
                                 "id": ext["id"], "etat": ext.get("legalStatus"),
                                 "debut": (ext.get("dateDebut") or "")[:10],
                                 "fin": (ext.get("dateFin") or "")[:10]}
-            if read >= total:
+            if _complete(read, total):
                 return sorted(found.values(), key=lambda v: v["debut"])
             if not results:
                 break
@@ -197,11 +198,11 @@ class Client:
                 "pageNumber": page, "pageSize": PAGE_SIZE, "operateur": "ET",
                 "sort": "PERTINENCE", "typePagination": "DEFAUT"}})
             results = data.get("results") or []
-            total = data.get("totalResultNumber") or 0
+            total = _total(data)
             read += len(results)
             titles += [(t.get("title") or "", t.get("id") or "")
                        for r in results for t in (r.get("titles") or [])[:1]]
-            if read >= total:
+            if _complete(read, total):
                 return titles
             if not results:
                 break
@@ -219,10 +220,10 @@ class Client:
                 "filtres": list(filtres), "pageNumber": page, "pageSize": PAGE_SIZE,
                 "operateur": "ET", "sort": "PERTINENCE", "typePagination": pagination}})
             page_results = data.get("results") or []
-            total = data.get("totalResultNumber") or 0
+            total = _total(data)
             results += page_results
             read += len(page_results)
-            if read >= total:
+            if _complete(read, total):
                 return results
             if not page_results:
                 break
@@ -272,7 +273,7 @@ class Client:
         # La fiche liste aussi l'article tel que publié au Journal officiel (JORFARTI...),
         # sans date : ce n'est pas une version consolidée.
         complete = [v for v in complete if not v["id"].startswith("JORFARTI")]
-        return sorted(complete, key=lambda v: v["debut"])
+        return sorted(dated(complete, number), key=lambda v: v["debut"])
 
     def convention(self, idcc):
         """(titre, identifiants des textes de base) de la convention, ou None si Légifrance ne
@@ -295,6 +296,9 @@ class Client:
                 if self.convention(KNOWN_IDCC) is None:
                     raise Unavailable("Légifrance répond en erreur, même pour une convention "
                                       "connue", 500)
+                # L'IDCC est tenu pour inconnu, pour cette citation seulement : un 500 peut
+                # aussi être passager, il n'est pas retenu pour la suite (audit du 01/10/2026).
+                return None
             base = (data or {}).get("texteBaseId") or []
             base = [base] if isinstance(base, str) else base   # une liste, parfois plusieurs
             if base:
@@ -328,12 +332,50 @@ class Client:
 
 def _day(ms):
     """Date Légifrance (millisecondes depuis 1970) en AAAA-MM-JJ. Par addition, pas par
-    fromtimestamp : sous Windows, celui-ci refuse les dates d'avant 1970 (Code civil, 1804)."""
+    fromtimestamp : sous Windows, celui-ci refuse les dates d'avant 1970 (Code civil, 1804).
+    "" si la date manque ; "?" si ce n'est pas une date (dated() la refuse)."""
     if ms is None:
         return ""
     from datetime import datetime, timedelta, timezone
     epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
-    return (epoch + timedelta(milliseconds=ms)).date().isoformat()
+    try:
+        return (epoch + timedelta(milliseconds=ms)).date().isoformat()
+    except (TypeError, ValueError, OverflowError):
+        return "?"
+
+
+# Une date de version plausible : du Code civil (1804) et des textes plus anciens encore
+# cités, jusqu'à la fin « sans terme » que Légifrance écrit 2999-01-01.
+_PLAUSIBLE = re.compile(r"(1[6-9]\d\d|2\d\d\d)-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])")
+
+
+def dated(versions, number):
+    """Les versions, si chacune a une vraie date de début (et de fin, quand elle en a une).
+    Sinon Unavailable : une version sans début passerait pour « en vigueur depuis
+    toujours » et ferait un feu vert que la base n'a pas donné (audit du 01/10/2026)."""
+    for v in versions:
+        if not _PLAUSIBLE.fullmatch(v["debut"] or "") or (
+                v["fin"] and not _PLAUSIBLE.fullmatch(v["fin"])):
+            raise Unavailable(f"version de l'article {number} sans date valable")
+    return versions
+
+
+def _total(data):
+    """Le nombre de résultats annoncé par une recherche. Absent ou mal formé : Unavailable,
+    car « tout a été lu » se décide en le comparant à ce qui a été reçu, et une recherche
+    tenue à tort pour complète ferait dire « n'existe pas » (audit du 01/10/2026)."""
+    total = data.get("totalResultNumber")
+    if type(total) is not int or total < 0:
+        raise Unavailable("recherche Légifrance sans nombre de résultats")
+    return total
+
+
+def _complete(read, total):
+    """Tout est-il lu ? Plus de résultats reçus qu'annoncés : la réponse se contredit."""
+    if read > total:
+        raise Unavailable(f"recherche Légifrance incohérente ({read} résultats reçus, "
+                          f"{total} annoncés)")
+    return read == total
 
 
 def _strip_html(html):

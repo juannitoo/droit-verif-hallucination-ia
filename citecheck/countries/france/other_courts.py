@@ -243,8 +243,12 @@ def _celex_dates(celex):
         raise Unavailable("fiche CELLAR sans décision")
     if celex not in {e.findtext("VALUE") for e in work.findall("RESOURCE_LEGAL_ID_CELEX")}:
         raise Unavailable(f"la fiche CELLAR ne porte pas le numéro {celex}")
+    # La fiche porte bien ce numéro : sans date lisible, c'est elle qui est incomplète, pas
+    # la décision qui manque (l'ensemble vide, « non publiée », est réservé au 404).
     day = (work.findtext("WORK_DATE_DOCUMENT/VALUE") or "")[:10]
-    return {day} if day else set()
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+        raise Unavailable(f"la fiche CELLAR de {celex} ne porte pas de date")
+    return {day}
 
 
 def hudoc_link(number):
