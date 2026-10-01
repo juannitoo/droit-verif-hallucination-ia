@@ -1865,11 +1865,12 @@ class CleanBlocks(unittest.TestCase):
     def test_a_block_never_covers_another_citation(self):
         seen = self.seen("IDCC 1979, Cass. soc., 14 décembre 2017, n° 16-26694, article 5 de "
                          "la convention collective.")
-        self.assertEqual([s[-1] for s in seen],
-                         ["Cass. soc., 14 décembre 2017, n° 16-26694", "article 5"])
+        self.assertEqual([s[-1] for s in seen],     # l'IDCC écrit avant n'est pas repris
+                         ["Cass. soc., 14 décembre 2017, n° 16-26694",
+                          "article 5 de la convention collective"])
         seen = self.seen("article 5 de la convention collective et article 12 de la "
                          "convention collective (IDCC 1979).")
-        self.assertEqual(seen[0][-1], "article 5")
+        self.assertEqual(seen[0][-1], "article 5 de la convention collective")    # pas le 12
         seen = self.seen("article 1240, CE 5 juin 2009 n° 402517, du Code civil.")
         self.assertEqual([s[-1] for s in seen], ["article 1240", "CE 5 juin 2009 n° 402517"])
         seen = self.seen("CE, n° 402517, article 1240 du Code civil, 5 juin 2009.")
@@ -1954,6 +1955,96 @@ class CleanBlocks(unittest.TestCase):
             pages = PdfReader(out).pages        # la page 0 est la notice
             self.assertEqual(len(pages[1].get("/Annots", [])), 1)
             self.assertEqual(len(pages[2].get("/Annots", [])), 1)
+
+class BlockTemplates(unittest.TestCase):
+    """Audit du 01/10/2026 (5) : un bloc n'est gardé que s'il suit un modèle autorisé, fait des
+    seuls morceaux retenus et de mots de liaison. Tout le reste : le numéro seul."""
+
+    def blocks(self, text):
+        return [text[slice(*c["span"])] for c in extract(text)[0]]
+
+    def test_several_articles_each_their_own_number(self):
+        self.assertEqual(self.blocks("articles 1240 et 1241 du Code civil."), ["1240", "1241"])
+        self.assertEqual(self.blocks("articles 5 et 12 de la convention collective (IDCC 1979)."),
+                         ["5", "12"])
+
+    def test_nothing_between_an_article_and_its_code_but_link_words(self):
+        self.assertEqual(self.blocks("article 1240, CE 5 juin 2009, du Code civil."),
+                         ["article 1240", "CE 5 juin 2009"])
+        self.assertEqual(self.blocks("article 5 de la convention collective, CE, 5 juin 2009, "
+                                     "(IDCC 1979)."),
+                         ["article 5 de la convention collective", "CE, 5 juin 2009"])
+        self.assertEqual(self.blocks("article 1240, alinéa 2, du Code civil."),
+                         ["article 1240, alinéa 2, du Code civil"])
+
+    def test_no_stray_number_or_court_in_a_decision_block(self):
+        for text in ("CE, T-12/15, 5 juin 2009, n° 402517.", "CE, C3911, 5 juin 2009, n° 402517.",
+                     "CE, 2025J05588, 5 juin 2009, n° 402517.",
+                     "CE, 2010-14 L, 5 juin 2009, n° 402517."):
+            with self.subTest(text=text):
+                self.assertEqual(self.blocks(text), ["n° 402517"])
+        for text in ("Cass. soc., IDCC 1979, 14 décembre 2017, n° 16-26694.",
+                     "Cass. soc., loi n° 89-462, 14 décembre 2017, n° 16-26694.",
+                     "Crim., Soc., 14 décembre 2017, n° 16-26694.",
+                     "Cass. soc., cour d'assises, 14 décembre 2017, n° 16-26694.",
+                     "La CEDH, pourvoi n° 16-26694."):
+            with self.subTest(text=text):
+                self.assertEqual(self.blocks(text), ["16-26694"])
+        self.assertEqual(self.blocks("CEDH, Cass. soc., 14 décembre 2017, n° 16-26694."),
+                         ["Cass. soc., 14 décembre 2017, n° 16-26694"])
+        self.assertEqual(self.blocks("TA, CE, 5 juin 2009, n° 402517."),
+                         ["CE, 5 juin 2009, n° 402517"])
+        self.assertEqual(self.blocks("CE, TA, 5 juin 2009, n° 402517."),
+                         ["TA, 5 juin 2009, n° 402517"])
+        self.assertEqual(self.blocks("CAA de Nancy CE, 12 avril 2018, n° 17NC01414."),
+                         ["12 avril 2018, n° 17NC01414"])
+
+    def test_ordinary_citations_stay_whole(self):
+        for text in ("Cass. soc., 14 décembre 2017, pourvoi n° 16-26.694",
+                     "Cass. soc., arrêt du 14 décembre 2017, n° 16-26694",
+                     "Civ. 2e, 5 mars 2019, pourvoi n° 18-12.345",
+                     "Conseil d'État du 5 juin 2009, n° 308850",
+                     "CA Aix-en-Provence, 5 juin 2009, RG n° 11/18803",
+                     "T. com. Paris, 12 mars 2025, n° 2025F00234",
+                     "CAA de Châlons-en-Champagne, 12 avril 2018, n° 17NC01414",
+                     "Cons. const., décision n° 2010-605 DC du 12 mai 2010",
+                     "CJUE, 8 septembre 2015, C-561/19"):
+            with self.subTest(text=text):
+                self.assertEqual(self.blocks(text + "."), [text])
+
+    def test_a_repeat_shows_its_chamber_only_if_it_is_the_verdicts(self):
+        c = extract("Voir Civ. 2e, 21 mars 2019, n° 17-28268. Plus loin (Soc., 21 mars 2019, "
+                    "n° 17-28268).")[0][0]
+        text = ("Voir Civ. 2e, 21 mars 2019, n° 17-28268. Plus loin (Soc., 21 mars 2019, "
+                "n° 17-28268).")
+        self.assertEqual([text[a:b] for a, b in c["repeats"]], ["17-28268"])
+
+    def test_two_articles_on_one_line_two_rectangles(self):
+        import tempfile
+        from pathlib import Path
+        from pypdf import PdfReader
+        from citecheck import annotate, reader
+        helper = AnnotatedPdf()
+        with tempfile.TemporaryDirectory() as tmp:
+            src, out = Path(tmp) / "a.pdf", Path(tmp) / "out.pdf"
+            helper.LINE = "articles 1240 et 9999 du Code civil."
+            helper.pdf(src)
+            doc = reader.read(src)
+            results = []
+            for c, verdict in zip(extract(doc.text)[0], ("ARTICLE_IN_FORCE",
+                                                          "ARTICLE_NOT_FOUND")):
+                start, end = c.pop("span")
+                c.pop("core", None)
+                results.append({**c, "verdict": verdict, "explanation": "x", "location": {
+                    "page": 1, "page_exact": True, "in_notes": False, "excerpt": "",
+                    **annotate.anchor(doc.text, start, end)}})
+            self.assertEqual(annotate.annotate(src, out, report.build("a.pdf", "france",
+                                                                      results, [])), (2, 0))
+            rects = [tuple(float(x) for x in a.get_object()["/Rect"])
+                     for a in PdfReader(out).pages[1]["/Annots"]
+                     if a.get_object()["/Subtype"] == "/Highlight"]
+            self.assertEqual(len(rects), 2)
+            self.assertLessEqual(rects[0][2], rects[1][0])      # côte à côte, jamais l'un sur l'autre
 
 if __name__ == "__main__":
     unittest.main()

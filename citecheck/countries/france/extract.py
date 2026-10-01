@@ -507,127 +507,144 @@ def _extract(text):
     for i, quote in assign_quotes(text, [c.get("core", c["span"]) for c in both]).items():
         if both[i]["kind"] == "decision" and both[i].get("number"):
             both[i]["quote"] = quote
-    numbers = ([m.start() for m in appeals + requests + rgs + conflicts + constit + eu + caa]
-               + [m.start() for m, _ in tcom] + [m.start() for m in RE_ARTICLES.finditer(text)])
-    blocks = _Blocks(text, numbers, date_places)
-    _decision_blocks(blocks, [c for c in both if c["kind"] == "decision" and c.get("number")])
-    _article_blocks(blocks, [c for c in both if c["kind"] != "decision"])
+    _decision_blocks(text, [c for c in both if c["kind"] == "decision" and c.get("number")],
+                     date_places)
     return both, remarks + article_remarks
 
 
-# Tout ce qui peut nommer la juridiction ou la chambre devant un numéro.
-# Une seule expression : une quinzaine de recherches devant chaque numéro rendaient un
-# document piégé (des milliers de fois la même citation) quatre fois plus lent à lire.
-_COURT_MARKS = [re.compile("|".join(
-    f"(?{'i' if rx.flags & re.I else '-i'}:{rx.pattern})"
-    for rx in [rx for _, rx in MARK_ANY] + [MARK_APPEAL] + [rx for rx, _ in CHAMBERS]))]
-_BETWEEN_MARKS = re.compile(r"[\s,.]*")
+# Le surlignage d'une décision : un bloc d'un seul tenant (« CE, 30 novembre 2018,
+# n° 402517 »), mais seulement s'il suit un MODÈLE autorisé. Le bloc est fait des morceaux
+# que le programme a retenus (la juridiction la plus proche, la chambre lue, la date
+# rattachée, le numéro), séparés seulement par des mots de liaison (« du », « pourvoi »,
+# « n° »...). Le moindre autre mot, chiffre ou juridiction entre deux morceaux, et c'est le
+# numéro seul, comme avant. On n'interdit pas ce qui serait dangereux : on n'autorise que ce
+# qui est sûr. Interdire laissait toujours passer un cas oublié (audits du 01/10/2026).
+
+# Les juridictions nommées, et celle que chacune désigne.
+_COURT_NAMES = [(name, rx) for name, rx in MARK_ANY] + [("Cass.", rx) for rx, _ in CHAMBERS]
+# Les mots de liaison permis entre deux morceaux retenus d'une décision.
+_LINK = re.compile(
+    r"(?:[\s,.:;()]|\b(?:du|de|des|la|le|les|l['’]|en\s+date\s+du|pourvoi|arr[êe]t|décision|"
+    r"rendue?|requête|req\.|RG|R\.G\.)(?![\w'’])|\bn[°º]\.?|\bno\b)*", re.I)
+# Une ville après une cour d'appel, un tribunal, une CAA : « CA Paris », « CAA de Nancy ».
+_CITY = re.compile(r"\s*(?:de\s+|d['’]\s*|du\s+)?[A-ZÀ-Þ][^\W\d_'’-]*(?:['’-][^\W\d_]+)*"
+                   r"(?:[\s-]+(?:sur|en|lès|les|la|le|de|du|des|[A-ZÀ-Þ][^\W\d_]*))*")
 
 
-# Les mots qui disent « décision » sans nommer une autre juridiction : permis n'importe où
-# dans le bloc d'une décision (« Cass. soc., 14 décembre 2017, pourvoi n° 16-26.694 »).
-_PLAIN_WORDS = re.compile(r"\bpourvoi|\barr[êe]t", re.I)
+def _accepted(c):
+    """Les noms de juridiction qui peuvent ouvrir le bloc de cette citation."""
+    order = c.get("order")
+    if order == "lower":
+        return {"ca": {"CA"}, "tj": {"TJ"}, "tcom": {"T. com."}}.get(c.get("jurisdiction"),
+                                                                     set())
+    return {"judicial": {"Cass."}, "administrative": {"CE"}, "caa": {"CAA"},
+            "constitutional": {CONSTIT}, "eu": {EU}, "conflicts": {CONFLICTS},
+            "ta": {"TA"}}.get(order, {c.get("court")} if order == "other" else set())
 
 
-def _court_start(text, lo, start):
-    """(début, fin) de la juridiction nommée juste avant `start` (« Cass. soc. », « CE »),
-    entre `lo` et `start` ; None s'il n'y en a pas. Les marques collées (« Cass. » puis
-    « soc. ») forment un seul nom."""
-    found = sorted({(m.start(), m.end()) for rx in _COURT_MARKS
-                    for m in rx.finditer(text, lo, start)}, key=lambda f: f[1])
-    if not found:
+def _court_piece(text, lo, hi, accepted):
+    """(début, fin) de la juridiction nommée juste avant `hi`, si c'est l'une de `accepted` ;
+    les noms collés de la même juridiction (« Cass. » puis « soc. ») en font un seul. None
+    sinon : la juridiction la plus proche n'est pas celle de la citation."""
+    marks = sorted({(m.start(), m.end(), name) for name, rx in _COURT_NAMES
+                    for m in rx.finditer(text, lo, hi)}, key=lambda f: (f[1], f[0]))
+    if not marks:
         return None
-    first, last = found[-1]
-    for a, b in reversed(found[:-1]):
-        if b <= first and _BETWEEN_MARKS.fullmatch(text, b, first):
+    # La plus proche, et les noms qui la chevauchent : « T. com. » se lit aussi « com. »
+    # (chambre commerciale) ; c'est le nom de la citation qui compte, s'il y est.
+    last = marks[-1][1]
+    near = [f for f in marks if f[1] > marks[-1][0]]
+    mine = [f for f in near if f[2] in accepted]
+    if not mine:
+        return None
+    first = min(f[0] for f in mine)
+    if any(f[2] not in accepted and f[0] < first for f in near):
+        return None                     # une autre juridiction déborde sur celle-ci
+    for a, b, name in reversed([f for f in marks if f not in near]):
+        if a >= first:
+            continue                    # contenu dans le nom déjà retenu
+        if name not in accepted:
+            if b > first:
+                return None             # une autre juridiction mêlée à celle-ci
+            break
+        if b > first:
+            first = a                   # deux noms qui se chevauchent : « Cass. soc »
+        elif re.fullmatch(r"[\s,.]*", text[b:first]):
             first = a
-        elif b > first:
-            first = min(first, a)       # deux marques qui se chevauchent : la plus large
+        else:
+            break
     return first, last
 
 
-class _Blocks:
-    """Le surlignage d'une citation, d'un seul tenant avec ce à quoi elle a été rattachée
-    (« CE, 30 novembre 2018, n° 402517 », « article 1240 du Code civil »), mais seulement si
-    le bloc est PROPRE : rien entre ses deux bouts que ce qui a été retenu. Ni le numéro
-    d'une autre citation, ni une date non retenue, ni une juridiction non retenue, ni un saut
-    de page. Sinon, le numéro seul, comme avant : le lecteur prend la couleur pour « ceci a
-    été lu et vérifié », elle ne doit couvrir rien d'autre (audit du 01/10/2026)."""
+def _block(text, lo, start, end, c, day, chamber_at):
+    """Le bloc de la décision dont le numéro est text[start:end], s'il suit le modèle ;
+    sinon None."""
+    pieces = [(start, end)]
+    if day and day[0] >= lo:
+        pieces.append(day)
+    if chamber_at and chamber_at[0] >= lo:
+        pieces.append(chamber_at)
+    # La juridiction se cherche devant la date ou le numéro ; la chambre peut la précéder
+    # (« La chambre sociale de la Cour de cassation »).
+    first = min(p[0] for p in pieces if p != chamber_at)
+    court = _court_piece(text, lo, first, _accepted(c))
+    city = None
+    if court:
+        pieces.append(court)
+        if c.get("order") in ("lower", "caa"):
+            m = _CITY.match(text, court[1])
+            # Une ville, pas une juridiction déguisée en ville (« CAA de Nancy CE »).
+            if (m and m.end() > court[1]
+                    and m.end() <= min(p[0] for p in pieces if p[0] >= court[1])
+                    and not any(rx.search(text, court[1], m.end()) for _, rx in _COURT_NAMES)):
+                city = (court[1], m.end())
+                pieces.append(city)
+    # Les morceaux qui se chevauchent (« Cass. soc. » et la chambre « soc. ») n'en font qu'un.
+    merged = []
+    for a, b in sorted(pieces):
+        if merged and a <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], b))
+        else:
+            merged.append((a, b))
+    for (_, b), (a, _) in zip(merged, merged[1:]):
+        if not _LINK.fullmatch(text, b, a):
+            return None                 # autre chose qu'un mot de liaison entre deux morceaux
+    first, last = merged[0][0], merged[-1][1]
+    if PAGE in text[first:last]:
+        return None                     # sur deux pages : le numéro seul, sur sa page
+    # Une seule chambre dans le bloc : celle qui a été lue.
+    # Le « com. » de « T. com. » fait partie du nom du tribunal : pas une chambre.
+    inside_name = c.get("order") != "judicial" and court
+    for rx, _ in CHAMBERS:
+        for m in rx.finditer(text, first, last):
+            if chamber_at and m.start() < chamber_at[1] and chamber_at[0] < m.end():
+                continue
+            if inside_name and court[0] <= m.start() and m.end() <= court[1]:
+                continue
+            return None
+    return first, last
 
-    def __init__(self, text, numbers, date_places):
-        self.text = text
-        self.numbers = sorted(numbers)          # débuts de tout ce qui a forme de numéro
-        self.dates = sorted([m.span() for m in RE_DATE_WORDS.finditer(text)]
-                            + [m.span() for m in RE_DATE_DIGITS.finditer(text)])
-        self.date_places = date_places
 
-    def _inside(self, spans, lo, hi, allowed):
-        i = bisect.bisect_left(spans, lo)
-        while i < len(spans) and spans[i] < hi:
-            if spans[i] not in allowed:
-                return True
-            i += 1
-        return False
-
-    def clean(self, block, core, kept=(), decision=False):
-        """Le bloc ne contient que ce qui a été retenu. `kept` : les morceaux retenus
-        (juridiction, chambre, date) ; seuls ceux-là peuvent nommer une juridiction ou une
-        date dans le bloc d'une décision."""
-        lo, hi = block
-        if PAGE in self.text[lo:hi]:
-            return False                # sur deux pages : surligné sur la page du numéro
-        if self._inside(self.numbers, lo, hi, {core[0]}):
-            return False                # le numéro d'une autre citation
-        if not decision:
-            return True                 # un code peut s'abréger « C. com. » ; une loi a une date
-        i = bisect.bisect_left(self.dates, (lo,))
-        while i < len(self.dates) and self.dates[i][0] < hi:
-            if self.dates[i] not in kept:
-                return False            # une date que le programme n'a pas retenue
-            i += 1
-        rest = [(lo, hi)]
-        for a, b in sorted(kept):       # ce qui reste du bloc hors des morceaux retenus
-            rest = [piece for x, y in rest for piece in ((x, min(y, a)), (max(x, b), y))
-                    if piece[0] < piece[1]]
-        for x, y in rest:
-            for m in _COURT_MARKS[0].finditer(self.text, x, y):
-                if not _PLAIN_WORDS.fullmatch(m.group(0)):
-                    return False        # une juridiction ou une chambre non retenue
-        return True
-
-
-def _decision_blocks(blocks, decisions):
-    """Le bloc d'une décision : sa juridiction, sa chambre retenue (avant ou après le numéro),
-    sa date retenue, son numéro, dans la même phrase. Un bloc ne remonte jamais avant le
-    précédent : « CE, 5 juin 2009, n° 308850 et n° 402517 » laisse le « CE » au premier."""
-    text, previous = blocks.text, 0
-
-    def block(start, end, chamber_at):
-        lo = _sentence_start(text, start, min(previous, start))
-        first, last, kept = start, end, []
-        day = blocks.date_places.get(start)
-        if day and day[0] >= lo:
-            first, last = min(first, day[0]), max(last, day[1])
-            kept.append(day)
-        court = _court_start(text, lo, first)
-        if court is not None:
-            first = min(first, court[0])
-            kept.append(court)
-        # La chambre après la juridiction : « La chambre sociale de la Cour de cassation »,
-        # ou après le numéro (« n° 16-26694, la deuxième chambre civile a jugé »).
-        if chamber_at and chamber_at[0] >= lo:
-            first, last = min(first, chamber_at[0]), max(last, chamber_at[1])
-            kept.append(chamber_at)
-        return (first, last), kept
-
-    # La citation et ses reprises, dans l'ordre du texte : chacune a son bloc.
+def _decision_blocks(text, decisions, date_places):
+    """Chaque décision, et chacune de ses reprises, reçoit son bloc s'il suit le modèle. Un
+    bloc ne remonte jamais avant le précédent : « CE, 5 juin 2009, n° 308850 et n° 402517 »
+    laisse le « CE » au premier."""
+    previous = 0
     places = sorted([(c["span"], c, None) for c in decisions]
                     + [(span, c, i) for c in decisions
                        for i, span in enumerate(c.get("repeats", []))], key=lambda p: p[0][0])
     for (start, end), c, i in places:
-        chamber_at = c.get("_chamber_at") if i is None else None
-        span, kept = block(start, end, chamber_at)
-        if span == (start, end) or not blocks.clean(span, (start, end), kept, decision=True):
+        lo = _sentence_start(text, start, min(previous, start))
+        if i is None:
+            chamber_at = c.get("_chamber_at")
+        else:
+            # Une reprise : sa chambre à elle, qui n'entre dans le bloc que si c'est celle
+            # du verdict (« Soc. » reprise en « Civ. 2e » : le numéro seul).
+            code, chamber_at = _cited_chamber(text, start, end)
+            if code != c.get("chamber"):
+                chamber_at = None
+        span = _block(text, lo, start, end, c, date_places.get(start), chamber_at)
+        if not span or span == (start, end):
             previous = max(previous, end)
             continue
         previous = max(previous, span[1])
@@ -638,18 +655,6 @@ def _decision_blocks(blocks, decisions):
             c.setdefault("repeat_cores", {})[i] = (start, end)
     for c in decisions:
         c.pop("_chamber_at", None)
-
-
-def _article_blocks(blocks, articles):
-    """Un article garde son bloc (article et code, loi ou convention) s'il est propre ; sinon
-    il revient à l'article seul."""
-    for c in articles:
-        if "core" in c and not blocks.clean(c["span"], c["core"]):
-            c["span"] = c.pop("core")
-        cores = c.get("repeat_cores", {})
-        for i, span in enumerate(c.get("repeats", [])):
-            if i in cores and not blocks.clean(span, cores[i]):
-                c["repeats"][i] = cores.pop(i)
 
 
 # Articles de codes
@@ -835,6 +840,29 @@ def _word_start(text, start, end):
     return start
 
 
+# Entre un article et son code : des mots de liaison, et au plus un alinéa.
+_TO_CODE = re.compile(r"\s*,?\s*(?:(?:alinéa|al\.)\s*(?:\d+|1er|premier)\s*,?\s*)?"
+                      r"(?:du|de\s+la|de\s+l['’]|des|de|au)?\s*", re.I)
+# Entre « convention collective » et son IDCC : son nom (« des hôtels, cafés,
+# restaurants (»), sans chiffre, sans fin de phrase, sans juridiction.
+_CONVENTION_NAME = re.compile(r"[^\d.;!?]{0,80}")
+
+
+def _convention_name(text, lo, hi):
+    return (bool(_CONVENTION_NAME.fullmatch(text, lo, hi))
+            and not re.search(r"\b(?:convention|CCNT?|accord|avenant|article|art\.)",
+                              text[lo:hi], re.I)
+            and not any(rx.search(text, lo, hi) for _, rx in _COURT_NAMES))
+
+
+def _fit(text, reach, core, count):
+    """Le bloc d'un article (article et code, loi ou convention), s'il n'y a qu'un numéro et
+    que le bloc tient sur une page ; sinon le numéro seul."""
+    if count == 1 and PAGE not in text[reach[0]:reach[1]]:
+        return reach
+    return core
+
+
 def extract_articles(text):
     """Renvoie (citations d'articles, remarques).
 
@@ -854,8 +882,13 @@ def extract_articles(text):
         stop = RE_SENTENCE_END.search(text, m.end(), m.end() + CODE_AFTER)
         after = text[m.end(): stop.start() + 1 if stop else m.end() + CODE_AFTER]
         before = text[max(0, m.start() - CODE_BEFORE): m.start()]
-        numbers = [normalize_number(x) for x in RE_ONE_NUM.findall(m.group(1))]
+        found_numbers = list(RE_ONE_NUM.finditer(m.group(1)))
+        numbers = [normalize_number(x.group(0)) for x in found_numbers]
         quote = quotes.get(index) if len(numbers) == 1 else None
+        # Ce que surligne chaque numéro : l'article entier s'il est seul ; sinon chacun son
+        # numéro (« articles 1240 et 1241 » : deux verdicts, jamais peints l'un sur l'autre).
+        cores = ([m.span()] if len(numbers) == 1 else
+                 [(m.start(1) + x.start(), m.start(1) + x.end()) for x in found_numbers])
 
         if RE_ATTACHED.match(after):
             attached.extend(numbers)            # avenant, accord : pas le texte de base
@@ -873,17 +906,21 @@ def extract_articles(text):
                 where, idcc = nearest_idcc(text, m.start(), m.end(), idcc_taken)
                 if idcc:
                     idcc_taken.add(where)
-                    # Le bloc surligné va jusqu'à l'IDCC qui a servi, avant ou après.
+                    # Le bloc va jusqu'à l'IDCC qui a servi, s'il suit la convention et que
+                    # rien d'autre ne les sépare que son nom (« des hôtels, cafés,
+                    # restaurants (IDCC 1979 »).
                     told = RE_IDCC.match(text, where)
-                    reach = (min(reach[0], where), max(reach[1], told.end()))
+                    if where >= reach[1] and _convention_name(text, reach[1], where):
+                        reach = (reach[0], told.end())
             last_idcc = idcc or last_idcc
-            for number in numbers:
-                if seen.again(("idcc", idcc, number), reach, m.span()):
+            for number, core in zip(numbers, cores):
+                span = _fit(text, reach, core, len(numbers))
+                if seen.again(("idcc", idcc, number), span, core):
                     continue
                 citations.append({"kind": "convention_article", "order": "legislation",
                                   "court": f"IDCC {idcc}" if idcc else "convention collective",
                                   "idcc": idcc, "number": number, "cited_date": None,
-                                  "quote": quote, "span": reach, "core": m.span()})
+                                  "quote": quote, "span": span, "core": core})
                 seen[("idcc", idcc, number)] = citations[-1]
             continue
 
@@ -903,14 +940,15 @@ def extract_articles(text):
                 reach = (_word_start(text, named.start(), m.start()), m.end())
         if ref:
             last_text = ref
-            for number in numbers:
+            for number, core in zip(numbers, cores):
+                span = _fit(text, reach, core, len(numbers))
                 key = ("text", ref["text_nature"], ref["text_number"], ref["text_date"], number)
-                if seen.again(key, reach, m.span()):
+                if seen.again(key, span, core):
                     continue
                 citations.append({"kind": "text_article", "order": "legislation",
                                   "court": _text_label(ref), **ref, "number": number,
-                                  "cited_date": None, "quote": quote, "span": reach,
-                                  "core": m.span()})
+                                  "cited_date": None, "quote": quote, "span": span,
+                                  "core": core})
                 seen[key] = citations[-1]
             continue
 
@@ -923,7 +961,11 @@ def extract_articles(text):
         if (found and not RE_ARTICLES.search(after[:found[1]])
                 and not RE_OTHER_TEXT.search(after[:found[1]])):
             code = found[0]
-            reach = (m.start(), m.end() + found[2])
+            # Le bloc va jusqu'au code s'il n'en est séparé que par « du », « de la »,
+            # « , alinéa 2, du »... : « article 1240, CE 5 juin 2009, du Code civil » laisse
+            # l'article seul.
+            reach = ((m.start(), m.end() + found[2])
+                     if _TO_CODE.fullmatch(after, 0, found[1]) else m.span())
         elif same and last_code:
             code = last_code
             reach = (m.start(), m.end() + same.end())
@@ -937,12 +979,13 @@ def extract_articles(text):
             no_code.extend(numbers)
             continue
         last_code = code
-        for number in numbers:
-            if seen.again((code, number), reach, m.span()):
+        for number, core in zip(numbers, cores):
+            span = _fit(text, reach, core, len(numbers))
+            if seen.again((code, number), span, core):
                 continue
             citations.append({"kind": "article", "order": "legislation", "court": code,
                               "code": code, "number": number, "cited_date": None,
-                              "quote": quote, "span": reach, "core": m.span()})
+                              "quote": quote, "span": span, "core": core})
             seen[(code, number)] = citations[-1]
     remarks = []
     if no_code:
