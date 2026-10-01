@@ -33,7 +33,7 @@ Chaque verdict ci-dessous a été obtenu sur les bases officielles, en septembre
 | « article 405 du Code pénal » (l'escroquerie d'avant 1994) | **ARTICLE PAS EN VIGUEUR** : il n'existe que dans l'ancien Code pénal, abrogé le 1er mars 1994 |
 | « article 199 undecies B du CGI » | le bon article, suffixe compris ; la vérification ne s'arrête pas à l'article 199 |
 | « article 46 quater-0 ZZ bis du CGI » | **CET ARTICLE NE SEMBLE PAS EXISTER** dans le CGI : il est dans l'annexe III |
-| « article 22 de la loi du 6 juillet 1989 » | neuf lois portent cette date ; l'article 22 n'existe que dans la loi n° 89-462 (rapports locatifs) : vérifié dans celle-là |
+| « article 22 de la loi du 6 juillet 1989 » | **DOUTEUX, À REGARDER À LA MAIN** : neuf lois portent cette date ; l'article 22 n'existe que dans la loi n° 89-462 (rapports locatifs), avec son lien ; à vous de confirmer que c'est bien elle que vise la pièce |
 | « loi n° 89-462 du 7 juillet 1989 » | **EXISTE, MAIS À UNE AUTRE DATE** : la loi est du 6 juillet |
 | « loi n° 89-9999 » | **CE TEXTE NE SEMBLE PAS EXISTER** |
 | une ordonnance de 2016 citée pour des faits de 2010 | **le texte n'existait pas encore** à la date des faits |
@@ -96,8 +96,15 @@ dernière.
 
 Quand une citation est ambiguë, le programme ne tranche pas à votre place. « La loi du 6
 juillet 1989 » désigne neuf lois : il cherche l'article dans chacune et vous dit laquelle le
-contient. S'il existe dans plusieurs, il vous les montre toutes, et c'est à vous de dire
-laquelle est visée.
+contient, ou vous les montre toutes s'il existe dans plusieurs. Dans les deux cas, le
+verdict reste « à regarder à la main » : c'est à vous de dire laquelle est visée.
+
+Un verdict confirmé doit être sûr. Si la phrase ne rattache pas l'article à un seul code ou
+à un seul texte de façon certaine (« article 22 du Code civil ou de la loi du 6 juillet
+1989 », « art. 1240, C. trav., art. L. 1152-1 », où le code peut être celui de l'un ou de
+l'autre), l'article n'est pas vérifié : le rapport le signale, et vous renvoie à la pièce.
+Mieux vaut une citation juste laissée en gris qu'une citation confirmée sur le mauvais
+texte.
 
 De même, il ne dit jamais « faux » ni « inventé ». Il dit « ne semble pas publiée », « ne semble
 pas exister », « existe, mais à une autre date » : il constate, et vous renvoie à une

@@ -80,9 +80,11 @@ def check_article(client, citation, day, texts):
                 "l'autre, à aucune date : il ne semble pas exister ; à vérifier sur Légifrance",
                 None)
     if len(hits) == 1:
+        # Trouvé dans un seul : peut-être pas celui que vise la pièce. Jamais bleu (règle du
+        # 02/10/2026 : un bleu doit être sûr) ; le lien mène à celui qu'on a trouvé.
         t, (verdict, why, start, *link) = hits[0]
-        return (verdict, f"{head} ; l'article {number} n'existe que dans {_the(t)} : {why}",
-                start, *link)
+        return ("DOUBTFUL", f"{head} ; l'article {number} n'existe que dans {_the(t)} : {why} ; "
+                "vérifiez que c'est bien ce code que vise la pièce", start, *link)
     return ("DOUBTFUL", f"{head} ; l'article {number} existe dans les deux, à vous de dire "
             "lequel est visé : " + " ; ".join(f"dans {_the(t)}, {why}"
                                              for t, (_, why, *_) in hits), None)

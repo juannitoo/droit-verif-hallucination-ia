@@ -529,7 +529,7 @@ class AmbiguousCode(unittest.TestCase):
 
     def test_found_in_one_says_which(self):
         verdict, why, *_ = self.check({"L111-1": self.V}, {})
-        self.assertEqual(verdict, "ARTICLE_IN_FORCE")
+        self.assertEqual(verdict, "DOUBTFUL")       # jamais bleu : peut-être l'autre code
         self.assertIn("n'existe que dans le Code minier (nouveau)", why)
 
     def test_found_in_both_does_not_choose(self):
@@ -656,7 +656,7 @@ class UncodifiedTexts(unittest.TestCase):
                  "C": ("Loi n° 90-1 du 2 janvier 1990 modifiant la loi n° 89-462 du 6 juillet "
                        "1989", {"22": self.V})}
         verdict, why, *_ = self.check(texts, text_date="1989-07-06")
-        self.assertEqual(verdict, "ARTICLE_IN_FORCE")
+        self.assertEqual(verdict, "DOUBTFUL")       # jamais bleu : peut-être l'autre loi
         self.assertIn("désigne 2 textes", why)          # C is not OF that date
         self.assertIn("il n'existe que dans la loi n° 89-462", why)
 
@@ -1896,7 +1896,7 @@ class CleanBlocks(unittest.TestCase):
                          "convention collective (IDCC 1979).")
         self.assertEqual(seen[0][-1], "article 5 de la convention collective")    # pas le 12
         seen = self.seen("article 1240, CE 5 juin 2009 n° 402517, du Code civil.")
-        self.assertEqual([s[-1] for s in seen], ["article 1240", "CE 5 juin 2009 n° 402517"])
+        self.assertEqual([s[-1] for s in seen], ["CE 5 juin 2009 n° 402517"])
         seen = self.seen("CE, n° 402517, article 1240 du Code civil, 5 juin 2009.")
         self.assertEqual([s[-1] for s in seen], ["n° 402517", "article 1240 du Code civil"])
 
@@ -1994,7 +1994,7 @@ class BlockTemplates(unittest.TestCase):
 
     def test_nothing_between_an_article_and_its_code_but_link_words(self):
         self.assertEqual(self.blocks("article 1240, CE 5 juin 2009, du Code civil."),
-                         ["article 1240", "CE 5 juin 2009"])
+                         ["CE 5 juin 2009"])       # le 1240 n'est pas sûr : non vérifié
         self.assertEqual(self.blocks("article 5 de la convention collective, CE, 5 juin 2009, "
                                      "(IDCC 1979)."),
                          ["article 5 de la convention collective", "CE, 5 juin 2009"])
@@ -2171,16 +2171,17 @@ class AuditPass6(unittest.TestCase):
         for text in ("C. civ., art. 1240, al. 2, C. trav., art. L. 1152-1.",
                      "C. civ., art. 1240, ainsi que C. trav., art. L. 1152-1.",
                      "C. civ., art. 1240, notamment C. trav., art. L. 1152-1.",
-                     "C. civ., art. 1240, au visa de C. trav., art. L. 1152-1.",
                      "C. civ., art. 1240 - C. trav., art. L. 1152-1.",
                      "C. civ., art. 1240 (C. trav., art. L. 1152-1)."):
             with self.subTest(text=text):
                 self.assertEqual([r[:2] for r in self.read(text)],
                                  [("1240", "Code civil"), ("L1152-1", "Code du travail")])
+        # « de » en suspens devant le code suivant (audit 10) : non vérifié.
+        self.assertEqual(self.read("C. civ., art. 1240, au visa de C. trav., art. L. 1152-1."), [])
+        self.assertEqual(self.read("décret n° 2016-334 du 21 mars 2016, article 1, au visa du "
+                                   "C. civ., art. 1240."), [])
         for text, label in [("loi n° 89-462 du 6 juillet 1989, article 22, ainsi que C. civ., "
                              "art. 1240.", "Loi n° 89-462 du 6 juillet 1989"),
-                            ("décret n° 2016-334 du 21 mars 2016, article 1, au visa du C. civ., "
-                             "art. 1240.", "Décret n° 2016-334 du 21 mars 2016"),
                             ("ordonnance n° 2020-306 du 25 mars 2020, article 2, voir C. trav., "
                              "art. L. 1152-1.", "Ordonnance n° 2020-306 du 25 mars 2020")]:
             with self.subTest(text=text):
@@ -2220,13 +2221,27 @@ class AuditPass6(unittest.TestCase):
             ("art. 1240, C. civ., art. L. 1152-1, C. trav., art. L. 110-1.", []),
             ("article 1240 du Code civil, art. 1241.", [("1240", "Code civil")]),
             # « (du », un point, un saut de page, une virgule ne rattachent pas
-            ("loi n° 89-462 du 6 juillet 1989, article 22 (du code civil).", [("22", law)]),
-            ("C. civ., art. 1240. du Code du travail, art. L. 1152-1.",
-             [("1240", "Code civil"), ("L1152-1", "Code du travail")]),
-            ("C. civ., art. 1240 du\fCode du travail, art. L. 1152-1.",
-             [("1240", "Code civil"), ("L1152-1", "Code du travail")]),
-            ("Code civil, art. 1240, du Code du travail, art. L. 1152-1.",
-             [("1240", "Code civil"), ("L1152-1", "Code du travail")]),
+            ("loi n° 89-462 du 6 juillet 1989, article 22 (du code civil).", []),
+            # un « du » en suspens : le code qui suit peut être de l'un ou de l'autre
+            ("C. civ., art. 1240. du Code du travail, art. L. 1152-1.", []),
+            # « du » rattache le Code du travail au 1240 : le L. 1152-1 n'a plus de code sûr
+            ("C. civ., art. 1240 du\fCode du travail, art. L. 1152-1.", []),
+            ("C. civ., art. 1240 au C. trav., art. L. 1152-1.", []),
+            ("art. 1240, C. civ.", [("1240", "Code civil")]),
+            ("article 2 de la loi n° 2014-626 du 18 juin 2014, dite loi Pinel.",
+             [("2", "Loi n° 2014-626 du 18 juin 2014")]),
+            ("article 22 de la loi n° 89-462 du 6 juillet 1989 modifiée par la loi n° 2014-366 "
+             "du 24 mars 2014.", [("22", law)]),
+            ("article 22 de la loi n° 89-462 du 6 juillet 1989 ou de la loi n° 2014-366 du "
+             "24 mars 2014.", []),
+            ("article 22 de la loi du 6 juillet 1989 ou du 24 mars 2014.", []),
+            ("article 5 de la convention collective (IDCC 1979 ou IDCC 1486).", []),
+            ("C. pén. et C. trav., art. L. 1152-1. L'article 222-33 du même code.", []),
+            ("Le Code civil et le Code pénal s'appliquent. L'article 222-33 du même code.", []),
+            ("L'article 1240, et non le Code pénal, fonde l'action.", []),
+            ("article 22 du Code civil ou de la loi n° 89-462 du 6 juillet 1989.", []),
+            ("C. pén., article 222-33 (Code du travail).", []),
+            ("Code civil, art. 1240, du Code du travail, art. L. 1152-1.", []),
             # « modifiée », « dite » gardent la loi
             ("loi n° 89-462 du 6 juillet 1989 modifiée, article 22, C. civ., art. 1240.",
              [("22", law), ("1240", "Code civil")]),
@@ -2236,15 +2251,14 @@ class AuditPass6(unittest.TestCase):
             ("article 1240 du Code civil. L'article 6 du code de déontologie des avocats "
              "s'applique.", [("1240", "Code civil")]),
             ("article 1240 du Code civil. Le Code du travail est applicable. L'article "
-             "L. 1152-1 du même code prévoit le harcèlement.",
-             [("1240", "Code civil"), ("L1152-1", "Code du travail")]),
+             "L. 1152-1 du même code prévoit le harcèlement.", [("1240", "Code civil")]),
             ("article 1241 du même code, C. trav., art. L. 1152-1.",
              [("L1152-1", "Code du travail")]),
             ("article L. 1152-1 du Code du travail. C. civ., art. 1240 du même code.",
-             [("L1152-1", "Code du travail"), ("1240", "Code civil")]),
+             [("L1152-1", "Code du travail")]),
             # une convention citée après une virgule ne prend pas l'article qui a son code
             ("C. civ., art. 1240, convention collective (IDCC 1979), art. L. 1152-1 C. trav.",
-             [("1240", "Code civil"), ("L1152-1", "Code du travail")]),
+             []),
             # l'ancien code civil n'est pas celui d'aujourd'hui
             ("loi n° 89-462 du 6 juillet 1989, article 1382 de l'ancien code civil.", []),
             ("article 1 du Code de la Légion d'honneur, de la Médaille militaire et de l'ordre "
@@ -2298,8 +2312,7 @@ class AuditPass6(unittest.TestCase):
                          "Trib. UE, 8 septembre 2015, T-12/15")
 
     def test_a_small_paragraph_number_only(self):
-        self.assertEqual(self.read("article 1240, alinéa 1241, du Code civil.")[0][2],
-                         "article 1240")
+        self.assertEqual(self.read("article 1240, alinéa 1241, du Code civil."), [])
 
 if __name__ == "__main__":
     unittest.main()

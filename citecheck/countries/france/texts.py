@@ -119,8 +119,11 @@ def check_text_article(client, citation, day, texts):
         return ("ARTICLE_NOT_FOUND", f"{head} ; aucun ne le contient, à aucune date : il ne "
                 "semble pas exister ; à vérifier sur Légifrance", None)
     if len(hits) == 1:
+        # Trouvé dans un seul : peut-être pas celui que vise la pièce. Jamais bleu (règle du
+        # 02/10/2026 : un bleu doit être sûr) ; le lien mène à celui qu'on a trouvé.
         name, (verdict, why, start, *link) = hits[0]
-        return verdict, f"{head} ; il n'existe que dans {name} : {why}", start, *link
+        return ("DOUBTFUL", f"{head} ; il n'existe que dans {name} : {why} ; vérifiez que "
+                "c'est bien ce texte que vise la pièce", start, *link)
     return ("DOUBTFUL", f"{head} ; il existe dans {len(hits)} d'entre eux, à vous de dire "
             "lequel est visé : " + " ; ".join(f"dans {n}, {r[1]}" for n, r in hits), None)
 
