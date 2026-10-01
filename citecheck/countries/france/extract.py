@@ -895,40 +895,38 @@ def _word_start(text, start, end):
 # Entre un article et son code : des mots de liaison, et au plus un alinéa.
 _TO_CODE = re.compile(r"\s*,?\s*(?:(?:alinéa|al\.)\s*(?:\d{1,2}|1er|premier)\s*,?\s*)?"
                       r"(?:du|de\s+la|de\s+l['’]|des|de|au)?\s*", re.I)
-# Entre « convention collective » et son IDCC : rien, ou son nom (« nationale des hôtels,
-# cafés, restaurants (»). Un nom suit « de », « du », « des » ou « d' », et n'est fait que de
-# mots, de virgules, de traits d'union et d'apostrophes : ni guillemets, ni deux-points, ni
-# chiffre. « convention collective : les salariés ont droit... (IDCC 1979) » ou « ... « le
-# salarié a droit » (IDCC 1979) » n'est pas un nom (audit du 01/10/2026).
-_CONVENTION_NAME = re.compile(
-    r"(?:\s+nationale)?(?:\s+(?:de\s+la|de\s+l['’]|des|du|de|d['’])\s*[^\W\d_]+"
-    r"(?:(?:\s*,\s*|\s+|['’-])[^\W\d_]+)*)?\s*,?\s*\(?\s*", re.I)
-# Des mots de phrase, pas de nom : « des salariés qui contestent ».
-_NOT_A_NAME = re.compile(r"\b(?:que|qu['’]|qui|dont|est|sont|a|ont|été|ne|pas|ce|cette|ces|"
-                         r"il|elle|ils|elles|on|selon|mais|car|donc|or|arr[êe]t|convention|"
-                         r"CCNT?|accord|avenant|article|art)\b", re.I)
+# Entre « convention collective » et son IDCC : rien, ou « nationale », et une parenthèse
+# (« convention collective nationale (IDCC 1979 »). Pas de nom : un programme ne distingue
+# pas « des hôtels, cafés, restaurants » de « des salariés contestent le licenciement », et
+# peindre une phrase sous la couleur de l'article serait mentir. L'IDCC reste dans le rapport
+# (audits du 01/10/2026).
+_CONVENTION_NAME = re.compile(r"(?:\s+nationale)?\s*,?\s*\(?\s*", re.I)
 
 
 def _convention_name(text, lo, hi):
-    return (hi - lo <= 80 and bool(_CONVENTION_NAME.fullmatch(text, lo, hi))
-            and not _NOT_A_NAME.search(text, lo, hi)
-            and not any(rx.search(text, lo, hi) for _, rx in _COURT_NAMES))
+    return bool(_CONVENTION_NAME.fullmatch(text, lo, hi))
 
 
-# « C. civ., art. 1240, C. trav., art. L. 1152-1 » : quand les citations nomment le code
-# AVANT l'article, un code ou un texte qui suit l'article, séparé de lui par une simple
-# virgule (ou « et »), et suivi d'un autre article, est celui de l'article suivant.
-# L'article 1240 était cherché dans le Code du travail, et dans « CGI, art. 46 quater ; loi
-# n° 89-462..., art. 22 », le 46 quater dans la loi de 1989 (audit du 01/10/2026).
+# Un code ou un texte qui suit l'article, séparé de lui par une simple virgule (ou « et »,
+# « ou », « et/ou »), et suivi d'un autre article, peut être celui de l'article suivant :
+# « C. civ., art. 1240, C. trav., art. L. 1152-1 ». Il l'est quand l'article a déjà le sien,
+# écrit devant lui (et pas déjà pris par l'article d'avant : « art. 1240 C. civ., art.
+# L. 1152-1 C. trav. » écrit les codes derrière), ou une loi écrite devant lui (« loi n°
+# 89-462..., article 22, C. civ., art. 1240 »). Sinon l'article 1240 était cherché dans le
+# Code du travail, l'article 22 dans le Code civil (audits du 01/10/2026).
 _THEN_ARTICLE = re.compile(r"[\s,;:]*\bart(?:icle)?s?\b", re.I)
-_ONLY_COMMAS = re.compile(r"[\s,;:]*(?:\b(?:et|ou)\b[\s,;:]*)?", re.I)
+_ONLY_COMMAS = re.compile(r"[\s,;:]*(?:\b(?:et\s*/\s*ou|et|ou)\b[\s,;:]*)?", re.I)
 
 
-def _of_next(text, at, lo, hi, written_before):
+# Une loi, un décret, une ordonnance nommé juste après l'article, derrière une virgule ou
+# « et » : « art. 1240 et décret n° 2016-334 du 21 mars 2016, article 3 ».
+RE_TEXT_NEXT = re.compile(_ONLY_COMMAS.pattern + _TEXT_REF, re.I)
+
+
+def _announces_next(text, at, lo, hi):
     """True si ce qui est nommé dans text[at + lo:at + hi], après l'article qui finit à `at`,
-    annonce l'article suivant."""
-    return bool(written_before and _ONLY_COMMAS.fullmatch(text, at, at + lo)
-                and _THEN_ARTICLE.match(text, at + hi))
+    n'en est séparé que par une virgule et est suivi d'un autre article."""
+    return bool(_ONLY_COMMAS.fullmatch(text, at, at + lo) and _THEN_ARTICLE.match(text, at + hi))
 
 
 def _fit(text, reach, core, count):
@@ -951,7 +949,8 @@ def extract_articles(text):
     citations, seen, no_code, attached = [], Seen(), [], []
     last_code = last_idcc = last_text = None
     idcc_taken = set()      # les IDCC déjà rattachés à un article (leur position)
-    taken_until = 0         # la fin de ce que l'article précédent a pris (son code, sa loi)
+    taken_until = 0         # la fin du bloc peint de l'article précédent
+    used_until = 0          # la fin du code ou du texte qu'il a pris, peint ou non
     for index, m in enumerate(matches):
         # Le code, le texte ou la convention se cherchent dans la même phrase : « L'article
         # 1240. Cette solution ne figure pas au code de commerce » ne cite pas le Code de
@@ -970,6 +969,7 @@ def extract_articles(text):
         if RE_ATTACHED.match(after):
             attached.extend(numbers)            # avenant, accord : pas le texte de base
             taken_until = m.end()
+            used_until = m.end()
             continue
         same = RE_SAME_CONVENTION.match(after)
         named = same or RE_CONVENTION.match(after)
@@ -992,6 +992,7 @@ def extract_articles(text):
                         reach = (reach[0], told.end())
             last_idcc = idcc or last_idcc
             taken_until = reach[1]
+            used_until = reach[1]
             for number, core in zip(numbers, cores):
                 span = _fit(text, reach, core, len(numbers))
                 if seen.again(("idcc", idcc, number), span, core):
@@ -1008,16 +1009,26 @@ def extract_articles(text):
         # (« article 22 de la loi du 6 juillet 1989 » n'est pas un article de code).
         found = find_code(after)
         found_before = find_code(before, last=True)
+        text_before = (None if found_before else
+                       RE_TEXT_BEFORE.search(text, max(0, m.start() - TEXT_BEFORE), m.start()))
+        # Ce que l'article a à lui, écrit devant : un code collé, ou une loi, un décret, une
+        # ordonnance juste avant ; et que l'article précédent n'a pas déjà pris.
         written_before = bool(found_before
-                              and re.fullmatch(r"[\s,;:]*", before[found_before[2]:]))
+                              and re.fullmatch(r"[\s,;:]*", before[found_before[2]:])
+                              and m.start() - len(before) + found_before[1] >= used_until)
+        own_before = written_before or bool(
+            text_before and _text_ref(text_before)
+            and _word_start(text, text_before.start(), m.start()) >= used_until)
         code_after = (found and not RE_ARTICLES.search(after[:found[1]])
-                      and not RE_OTHER_TEXT.search(after[:found[1]])
-                      and not _of_next(text, m.end(), found[1], found[2], written_before))
+                      and not RE_OTHER_TEXT.search(after[:found[1]]))
+        if (code_after and own_before
+                and _announces_next(text, m.end(), found[1], found[2])):
+            code_after = None
 
         # Un article de loi, d'ordonnance ou de décret non codifié.
         named = RE_TEXT_AFTER.match(after)
-        text_of_next = bool(named and _of_next(text, m.end(), named.start("nature"),
-                                               named.end(), written_before))
+        coming = RE_TEXT_NEXT.match(after) if own_before else None
+        text_of_next = bool(coming and _THEN_ARTICLE.match(after, coming.end()))
         if text_of_next:
             named = None
         ref = _text_ref(named)
@@ -1029,9 +1040,11 @@ def extract_articles(text):
             reach = (m.start(), m.end() + same.end())
         # Le texte nommé juste avant, sauf si l'article a son code après lui : « article 22
         # de la loi n° 89-462 du 6 juillet 1989, article 1240 du Code civil » cherchait
-        # l'article 1240 dans la loi de 1989 (audit du 01/10/2026).
-        if not ref and not code_after and not found_before:
-            named = RE_TEXT_BEFORE.search(text, max(0, m.start() - TEXT_BEFORE), m.start())
+        # l'article 1240 dans la loi de 1989. Un code qui annonce l'article suivant a été
+        # écarté plus haut : « loi n° 89-462..., article 22, C. civ., art. 1240 » garde la loi
+        # (audits du 01/10/2026).
+        if not ref and not code_after and text_before:
+            named = text_before
             ref = _text_ref(named)
             if ref:
                 reach = (_word_start(text, named.start(), m.start()), m.end())
@@ -1040,6 +1053,7 @@ def extract_articles(text):
         if ref:
             last_text = ref
             taken_until = reach[1]
+            used_until = max(m.end(), reach[1])
             for number, core in zip(numbers, cores):
                 span = _fit(text, reach, core, len(numbers))
                 key = ("text", ref["text_nature"], ref["text_number"], ref["text_date"], number)
@@ -1054,8 +1068,11 @@ def extract_articles(text):
 
         code = None
         same = RE_SAME_CODE.search(after)
+        other = RE_OTHER_TEXT.match(after)
+        used = m.end()
         if code_after:
             code = found[0]
+            used = m.end() + found[2]
             # Le bloc va jusqu'au code s'il n'en est séparé que par « du », « de la »,
             # « , alinéa 2, du »... : « article 1240, CE 5 juin 2009, du Code civil » laisse
             # l'article seul.
@@ -1063,8 +1080,11 @@ def extract_articles(text):
                      if _TO_CODE.fullmatch(after, 0, found[1]) else m.span())
         elif same and last_code:
             code = last_code
+            used = m.end() + same.end()
             reach = (m.start(), m.end() + same.end())
-        elif text_of_next or not RE_OTHER_TEXT.match(after):
+        elif text_of_next or not other or RE_ARTICLES.search(after, 0, other.end()):
+            # (Un texte nommé après un autre article est celui de cet article-là : « C. civ.,
+            # art. 1240, article 31 du décret ... » laissait le 1240 sans code.)
             # Code placé avant : il doit être collé à l'article (« C. trav., art. L. 1152-1 »).
             found = find_code(before, last=True)
             if found and re.fullmatch(r"[\s,;:]*", before[found[2]:]):
@@ -1074,6 +1094,7 @@ def extract_articles(text):
                     # « article 1240 du Code civil, art. 1241 » : le code est déjà dans le
                     # bloc du 1240 ; le 1241 garde son numéro seul.
                     reach = m.span()
+        used_until = used
         if not code:
             no_code.extend(numbers)
             taken_until = m.end()
@@ -1118,7 +1139,7 @@ def _place(link, city):
     Sables-d'Olonne » -> « Les Sables-d'Olonne ». Sans « du » ni « des » lus, ces tribunaux
     n'étaient pas reconnus (01/10/2026)."""
     word = link.split()[-1].lower() if link.strip() else ""
-    if city and word in ("du", "des"):
+    if city and word in ("du", "des") and not re.match(r"(?:Le|La|Les)\s|L['’]", city):
         return ("Le " if word == "du" else "Les ") + city
     return city
 

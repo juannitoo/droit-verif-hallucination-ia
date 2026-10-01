@@ -196,6 +196,8 @@ class CommercialCourts(unittest.TestCase):
                             ("tribunal judiciaire des Sables-d'Olonne, 5 juin 2009, RG n° "
                              "11/18803.", "Les Sables-d'Olonne"),
                             ("TJ Le Mans, 5 juin 2009, RG n° 11/18803.", "Le Mans"),
+                            ("tribunal judiciaire du Le Mans, 5 juin 2009, RG n° 11/18803.",
+                             "Le Mans"),
                             ("T. com. du Havre, 5 juin 2009, n° 2025J05588.", "Le Havre")]:
             self.assertEqual([c["place"] for c in extract(text)[0]], [place], text)
         self.assertEqual(
@@ -2123,13 +2125,68 @@ class AuditPass6(unittest.TestCase):
                      "délai (IDCC 1979).",
                      "article 5 de la convention collective, ce que le salarié conteste "
                      "(IDCC 1979).",
-                     "article 5 de la convention collective applicable (IDCC 1979)."):
+                     "article 5 de la convention collective applicable (IDCC 1979).",
+                     "article 5 de la convention collective des salariés contestent le "
+                     "licenciement (IDCC 1979).",
+                     "article 5 de la convention collective nationale des hôtels, cafés, "
+                     "restaurants (IDCC 1979)."):
             with self.subTest(text=text):
                 self.assertEqual(self.read(text),
                                  [("5", "IDCC 1979", "article 5 de la convention collective")])
-        text = ("article 5 de la convention collective nationale des hôtels, cafés, restaurants "
-                "(IDCC 1979).")
-        self.assertEqual(self.read(text)[0][2], text[:-2])
+        for text in ("article 5 de la convention collective (IDCC 1979).",
+                     "article 5 de la convention collective nationale (IDCC 1979)."):
+            self.assertEqual(self.read(text)[0][2], text[:-2])
+
+    def test_a_chain_of_codes_written_after(self):
+        """Audit du 01/10/2026 (7) : le code écrit derrière l'article précédent n'est pas
+        celui de l'article suivant."""
+        self.assertEqual(
+            [r[:2] for r in self.read("art. 1240 C. civ., art. L. 1152-1 C. trav., "
+                                      "art. L. 110-1 C. com.")],
+            [("1240", "Code civil"), ("L1152-1", "Code du travail"),
+             ("L110-1", "Code de commerce")])
+        self.assertEqual(
+            [r[:2] for r in self.read("art. 1240 C. civ., art. 222 C. pén., art. L. 1152-1 "
+                                      "C. trav., art. L. 110-1 C. com.")],
+            [("1240", "Code civil"), ("222", "Code pénal"), ("L1152-1", "Code du travail"),
+             ("L110-1", "Code de commerce")])
+        self.assertEqual(
+            [r[:2] for r in self.read("article 1240 du Code civil, art. L. 1152-1 C. trav., "
+                                      "art. 1241 C. pén.")],
+            [("1240", "Code civil"), ("L1152-1", "Code du travail"), ("1241", "Code pénal")])
+        self.assertEqual(
+            [r[:2] for r in self.read("C. civ., art. 1240, C. trav., art. L. 1152-1, "
+                                      "C. com., art. L. 110-1.")],
+            [("1240", "Code civil"), ("L1152-1", "Code du travail"),
+             ("L110-1", "Code de commerce")])
+        self.assertEqual(
+            [r[:2] for r in self.read("C. civ., art. 1240 et/ou C. trav., art. L. 1152-1.")],
+            [("1240", "Code civil"), ("L1152-1", "Code du travail")])
+
+    def test_a_law_written_before_is_kept(self):
+        law = "Loi n° 89-462 du 6 juillet 1989"
+        for text, second in [("loi n° 89-462 du 6 juillet 1989, article 22, C. civ., art. 1240.",
+                               ("1240", "Code civil")),
+                              ("loi n° 89-462 du 6 juillet 1989, article 22 et C. civ., "
+                               "art. 1240.", ("1240", "Code civil"))]:
+            with self.subTest(text=text):
+                self.assertEqual([r[:2] for r in self.read(text)], [("22", law), second])
+        self.assertEqual(
+            [r[:2] for r in self.read("loi n° 89-462 du 6 juillet 1989, article 20, décret "
+                                      "n° 2016-334 du 21 mars 2016, article 31.")],
+            [("20", law), ("31", "Décret n° 2016-334 du 21 mars 2016")])
+        self.assertEqual(
+            [r[:2] for r in self.read("C. civ., art. 1240, article 31 du décret n° 2016-334 du "
+                                      "21 mars 2016.")],
+            [("1240", "Code civil"), ("31", "Décret n° 2016-334 du 21 mars 2016")])
+        # Une loi déjà prise par l'article d'avant ne l'emporte pas sur le code qui suit,
+        # comme dans « art. 1240 C. civ., art. L. 1152-1 C. trav. ».
+        self.assertEqual(
+            [r[:2] for r in self.read("article 20 de la loi n° 89-462 du 6 juillet 1989, "
+                                      "art. L. 1152-1 C. trav., art. L. 110-1 C. com.")],
+            [("20", law), ("L1152-1", "Code du travail"), ("L110-1", "Code de commerce")])
+        self.assertEqual(self.read("décret n° 2016-334 du 21 mars 2016, article 1, C. civ., "
+                                   "art. 1240.")[0][1][:6], "Décret")
 
     def test_one_place_after_the_court(self):
         self.assertEqual(self.read("CA Paris Dupont, 5 juin 2009, RG n° 11/18803.")[0][2],
