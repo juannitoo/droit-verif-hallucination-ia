@@ -2163,6 +2163,46 @@ class AuditPass6(unittest.TestCase):
             [r[:2] for r in self.read("C. civ., art. 1240 et/ou C. trav., art. L. 1152-1.")],
             [("1240", "Code civil"), ("L1152-1", "Code du travail")])
 
+    def test_only_du_ties_a_following_code(self):
+        """Audit du 01/10/2026 (8) : un article qui a déjà son code ou sa loi devant lui ne
+        prend le code qui suit que si « du », « de la »... l'y rattachent."""
+        for text in ("C. civ., art. 1240, al. 2, C. trav., art. L. 1152-1.",
+                     "C. civ., art. 1240, ainsi que C. trav., art. L. 1152-1.",
+                     "C. civ., art. 1240, notamment C. trav., art. L. 1152-1.",
+                     "C. civ., art. 1240, au visa de C. trav., art. L. 1152-1.",
+                     "C. civ., art. 1240 - C. trav., art. L. 1152-1.",
+                     "C. civ., art. 1240 (C. trav., art. L. 1152-1)."):
+            with self.subTest(text=text):
+                self.assertEqual([r[:2] for r in self.read(text)],
+                                 [("1240", "Code civil"), ("L1152-1", "Code du travail")])
+        for text, label in [("loi n° 89-462 du 6 juillet 1989, article 22, ainsi que C. civ., "
+                             "art. 1240.", "Loi n° 89-462 du 6 juillet 1989"),
+                            ("décret n° 2016-334 du 21 mars 2016, article 1, au visa du C. civ., "
+                             "art. 1240.", "Décret n° 2016-334 du 21 mars 2016"),
+                            ("ordonnance n° 2020-306 du 25 mars 2020, article 2, voir C. trav., "
+                             "art. L. 1152-1.", "Ordonnance n° 2020-306 du 25 mars 2020")]:
+            with self.subTest(text=text):
+                self.assertEqual(self.read(text)[0][1], label)
+        self.assertEqual(self.read("C. civ., art. 1240, alinéa 2 du Code du travail.")[0][1],
+                         "Code du travail")
+
+    def test_same_code_wins_over_the_next_one(self):
+        for text in ("C. civ., art. 1240, art. 1241 du même code, C. trav., art. L. 1152-1.",
+                     "art. 1240 C. civ., art. 1241 dudit code, C. pén., art. 222-33.",
+                     "article 1240 du Code civil, article 1241 du même code, C. trav., "
+                     "art. L. 1152-1."):
+            with self.subTest(text=text):
+                self.assertEqual(self.read(text)[1][:2], ("1241", "Code civil"))
+        self.assertEqual(
+            [r[:2] for r in self.read("art. 1240 du Code civil. L'article L. 1152-1 du Code du "
+                                      "travail s'applique.")],
+            [("1240", "Code civil"), ("L1152-1", "Code du travail")])
+        self.assertEqual(self.read("art. 1240 C. civ., art. 1241 du code précité.")[1][2],
+                         "art. 1241 du code précité")
+        self.assertEqual([r[2] for r in self.read("art. 1240 (C. civ.), art. L. 1152-1 "
+                                                  "(C. trav.).")],
+                         ["art. 1240 (C. civ.)", "art. L. 1152-1 (C. trav.)"])
+
     def test_a_law_written_before_is_kept(self):
         law = "Loi n° 89-462 du 6 juillet 1989"
         for text, second in [("loi n° 89-462 du 6 juillet 1989, article 22, C. civ., art. 1240.",
