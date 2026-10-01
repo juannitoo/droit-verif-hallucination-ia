@@ -218,6 +218,57 @@ def _link(rect, url):
     })
 
 
+# La copie ne reprend de la pièce que ses pages, avec leurs commentaires et leurs liens
+# ordinaires. Le reste agit sans qu'on le voie (JavaScript, action à l'ouverture, lancement
+# d'un programme, fichier joint, formulaire) ou dit qui l'a écrit (auteur, titre, XMP) : la
+# copie annotée se transmet, cela ne doit pas partir avec elle. Les signets ne sont pas
+# repris non plus : un signet peut porter une action.
+_QUIET_ANNOTS = {"/Text", "/Highlight", "/Underline", "/StrikeOut", "/Squiggly", "/FreeText",
+                 "/Square", "/Circle", "/Line", "/Polygon", "/PolyLine", "/Ink", "/Stamp",
+                 "/Caret", "/Popup", "/Link"}
+
+
+def _harmless(action):
+    """Une action qui ne fait qu'aller à une page du document, ou ouvrir une page web."""
+    action = action.get_object() if action is not None else None
+    if not isinstance(action, DictionaryObject) or "/Next" in action:
+        return False
+    if action.get("/S") == "/GoTo":
+        return True
+    return action.get("/S") == "/URI" and str(action.get("/URI", "")).lower().startswith(
+        ("https://", "http://"))
+
+
+def _disarm(page):
+    """La page, sans ses actions ni ses annotations actives."""
+    page.pop(NameObject("/AA"), None)
+    if "/Annots" not in page:
+        return
+    kept = ArrayObject()
+    for a in page["/Annots"] or []:
+        annot = a.get_object()
+        if not isinstance(annot, DictionaryObject) or annot.get("/Subtype") not in _QUIET_ANNOTS:
+            continue
+        annot.pop(NameObject("/AA"), None)
+        if "/A" in annot and not _harmless(annot["/A"]):
+            continue
+        kept.append(a)
+    page[NameObject("/Annots")] = kept
+
+
+def _copy(reader):
+    """Un document neuf fait des seules pages de la pièce : rien de son catalogue (action à
+    l'ouverture, JavaScript, fichiers joints, formulaire, métadonnées) ne le suit."""
+    writer = PdfWriter()
+    for page in reader.pages:
+        # Désarmée avant d'être copiée : ce qui est copié s'écrit, même retiré après.
+        # (Seule la page lue en mémoire change, jamais le fichier d'origine.)
+        _disarm(page)
+        writer.add_page(page)
+    writer.add_metadata({"/Producer": NAME})
+    return writer
+
+
 def _note(r):
     note = f"{rep.citation_label(r)}\n{r['verdict_label']} : {r['explanation']}"
     return note + (f"\n{r['link']}" if r.get("link") else "")
@@ -240,7 +291,7 @@ def annotate(source, target, report):
     reader = PdfReader(source)
     if reader.is_encrypted:
         reader.decrypt("")      # un PDF protégé contre la modification seulement
-    writer = PdfWriter(clone_from=reader)
+    writer = _copy(reader)
     placed = 0
     for page, where, r in places:
         rects = find(letters.get(page, []), squeeze(where["text"]), where.get("nth", 0))
@@ -250,7 +301,7 @@ def annotate(source, target, report):
         light = rep.light(r["verdict"])
         writer.add_annotation(page - 1, _highlight(
             writer, rects, COLORS[light], _note(r), light == rep.UNCHECKED))
-        if r.get("link"):
+        if rep.safe_link(r.get("link")):
             for rect in rects:
                 writer.add_annotation(page - 1, _link(rect, r["link"]))
         placed += 1

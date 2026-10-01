@@ -72,8 +72,11 @@ def source_text(link, keys, client):
     return None, "ce programme ne lit pas encore le texte des décisions de cette base"
 
 
-def _missing(fragments, text):
-    body = _norm(text)
+# En dessous, la base a répondu sans le texte : on n'a rien lu, donc rien à comparer.
+MIN_TEXT = 100
+
+
+def _missing(fragments, body):
     return [f for f in fragments if f not in body]
 
 
@@ -93,7 +96,13 @@ def check(citation, result, keys, client=None):
                 f"{said})", actual, link)
     if text is None:
         return verdict, f"{why} ; passage cité non contrôlé ({base})", actual, link
-    missing = _missing(fragments, text)
+    body = _norm(text)
+    if len(body) < MIN_TEXT:
+        # Une réponse vide n'est pas un texte où le passage manque : « non retrouvé »
+        # accuserait le document à tort.
+        return (verdict, f"{why} ; passage cité non contrôlé ({base} a répondu sans le "
+                "texte de la décision)", actual, link)
+    missing = _missing(fragments, body)
     if not missing:
         return verdict, f"{why} ; passage cité retrouvé dans la décision ({base})", actual, link
     part = ("le passage cité entre guillemets" if len(missing) == len(fragments)

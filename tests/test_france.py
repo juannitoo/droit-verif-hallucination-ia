@@ -2,6 +2,7 @@
 `python -m citecheck --case cases/perigueux.json`."""
 import json
 import unittest
+import warnings
 from pathlib import Path
 
 from citecheck import report
@@ -1228,6 +1229,65 @@ class AnnotatedPdf(unittest.TestCase):
             self.assertIn(b"(?) Tj", annots[0]["/AP"]["/N"].get_object().get_data())
 
 
+    def test_the_copy_leaves_behind_what_acts_or_names(self):
+        import tempfile
+        from pathlib import Path
+        from pypdf import PdfReader, PdfWriter
+        from pypdf.generic import (ArrayObject, DictionaryObject, NameObject, NumberObject,
+                                   TextStringObject)
+        from citecheck import annotate
+
+        def annot(subtype, action):
+            return DictionaryObject({
+                NameObject("/Type"): NameObject("/Annot"), NameObject("/Subtype"):
+                NameObject(subtype), NameObject("/Rect"): ArrayObject([NumberObject(0)] * 4),
+                NameObject("/A"): DictionaryObject(action)})
+        with tempfile.TemporaryDirectory() as tmp:
+            plain, src = Path(tmp) / "plain.pdf", Path(tmp) / "Dupont c. Martin.pdf"
+            self.pdf(plain)
+            w = PdfWriter(clone_from=str(plain))
+            with warnings.catch_warnings():         # add_js : déprécié, mais c'est le but
+                warnings.simplefilter("ignore", DeprecationWarning)
+                w.add_js("app.alert('ouvert');")
+            w.add_attachment("piece-cachee.txt", b"nom-du-client-MARTIN-secret")
+            w.add_metadata({"/Author": "Maitre Jean Dupont", "/Title": "Dupont c. Martin"})
+            w._root_object[NameObject("/OpenAction")] = DictionaryObject({
+                NameObject("/S"): NameObject("/JavaScript"),
+                NameObject("/JS"): TextStringObject("app.alert(2)")})
+            launch = annot("/Link", {NameObject("/S"): NameObject("/Launch"),
+                                     NameObject("/F"): TextStringObject("C:/Windows/notepad.exe")})
+            script = annot("/Link", {NameObject("/S"): NameObject("/URI"),
+                                     NameObject("/URI"): TextStringObject("javascript:alert(1)")})
+            web = annot("/Link", {NameObject("/S"): NameObject("/URI"),
+                                  NameObject("/URI"): TextStringObject("https://exemple.fr/")})
+            for a in (launch, script, web):
+                w.add_annotation(0, a)
+            with open(src, "wb") as f:
+                w.write(f)
+            out = Path(tmp) / "out.pdf"
+            hostile = self.report(src, link="javascript:alert(3)")
+            self.assertEqual(annotate.annotate(src, out, hostile), (1, 1))
+            data = out.read_bytes()
+            for marker in (b"/JavaScript", b"/Launch", b"/OpenAction", b"/EmbeddedFile",
+                           b"alert", b"MARTIN-secret", b"Maitre Jean"):
+                self.assertNotIn(marker, data)
+            copy = PdfReader(out)
+            self.assertEqual(copy.attachments, {})
+            self.assertIsNone(copy.metadata.get("/Author"))
+            uris = [a.get_object()["/A"]["/URI"] for a in copy.pages[1]["/Annots"]
+                    if "/A" in a.get_object()]
+            self.assertEqual(uris, ["https://exemple.fr/"])      # the author's own web link
+
+    def test_only_official_https_links_survive(self):
+        for url in ("https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000032041571",
+                    "https://www.courdecassation.fr/decision/5fca7e0a7ec5c2c5b5a6d2a3"):
+            self.assertTrue(report.safe_link(url))
+        for url in ("javascript:alert(1)", "http://www.legifrance.gouv.fr/x",
+                    "https://www.legifrance.gouv.fr.exemple.fr/", "https://a@eur-lex.europa.eu/",
+                    "https://eur-lex.europa.eu:8443/", "file:///C:/x.pdf", None, 3):
+            self.assertFalse(report.safe_link(url), url)
+
+
 class PdfReport(unittest.TestCase):
     def test_the_pdf_report_says_the_same_with_working_links(self):
         import tempfile
@@ -1267,10 +1327,11 @@ class DecisionQuotes(unittest.TestCase):
             "par les articles 655 et 656 du code de procédure civile.")
     LINK = "https://www.courdecassation.fr/decision/658401878704660008a2970f"
 
-    def check(self, quote, verdict="CONFIRMED"):
+    def check(self, quote, verdict="CONFIRMED", text=None):
         from unittest import mock
         from citecheck.countries.france import decision_quotes
-        with mock.patch.object(decision_quotes, "judilibre_text", return_value=self.TEXT) as t:
+        with mock.patch.object(decision_quotes, "judilibre_text",
+                               return_value=self.TEXT if text is None else text) as t:
             out = decision_quotes.check({"quote": quote}, (verdict, "Judilibre date bien "
                                         "l'arrêt", "2023-12-21", self.LINK),
                                         {"PISTE_API_KEY": "k"})
@@ -1300,6 +1361,14 @@ class DecisionQuotes(unittest.TestCase):
             out, fetched = self.check(quote, verdict)
             self.assertEqual(out[0], verdict)
             fetched.assert_not_called()
+
+    def test_a_decision_sent_without_its_text_proves_nothing(self):
+        for empty in ("", "   ", " <p></p> "):
+            (v, why, _, _), _ = self.check("la signification à domicile est nulle de plein "
+                                           "droit sans grief", text=empty)
+            self.assertEqual(v, "CONFIRMED")
+            self.assertIn("non contrôlé", why)
+            self.assertNotIn("paraphrase", why)
 
     def test_the_passage_after_a_decision_is_attached_to_it(self):
         cits, _ = extract("Cass. 2e civ., 21 décembre 2023, n° 22-18.480 : « L'huissier de "

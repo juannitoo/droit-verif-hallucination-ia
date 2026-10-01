@@ -42,9 +42,31 @@ def _clean(v):
     return v
 
 
+# The only hosts a link may point to: the official databases this program reads. A link
+# is clicked straight from the report or the annotated PDF, so anything else is dropped.
+LINK_HOSTS = frozenset({"www.legifrance.gouv.fr", "www.courdecassation.fr",
+                        "www.conseil-etat.fr", "eur-lex.europa.eu", "hudoc.echr.coe.int"})
+
+
+def safe_link(url):
+    """True for an https address on one of LINK_HOSTS, with no user, password or port."""
+    from urllib.parse import urlsplit
+    try:
+        u = urlsplit(url) if isinstance(url, str) else None
+        return bool(u and u.scheme == "https" and u.netloc in LINK_HOSTS)
+    except ValueError:
+        return False
+
+
+def _linked(r):
+    if "link" in r and not safe_link(r["link"]):
+        r = {k: v for k, v in r.items() if k != "link"}
+    return r
+
+
 def build(source, country, results, remarks, options=None):
     options = options or {}
-    results = [_clean(r) for r in results]
+    results = [_linked(_clean(r)) for r in results]
     return {
         "program": f"{NAME} {__version__}",
         "date": date.today().isoformat(),

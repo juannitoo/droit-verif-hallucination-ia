@@ -134,7 +134,7 @@ def _table(pdf, report):
             row.cell(rep.citation_label(r, report))
             row.cell(t.VERDICTS[r["verdict"]],
                      style=FontFace(fill_color=FILLS[rep.light(r["verdict"])]))
-            if r.get("link"):
+            if rep.safe_link(r.get("link")):
                 row.cell(t.OPEN_LINK, link=r["link"],
                          style=FontFace(color=ACCENT, emphasis="UNDERLINE"))
             else:
@@ -158,7 +158,7 @@ def _details(pdf, report):
                  t.VERDICTS[r["verdict"]], fill=True, new_x="LMARGIN", new_y="NEXT")
         pdf.ln(0.8)
         _para(pdf, r["explanation"], size=9.5, indent=5, gap=0.8)
-        if r.get("link"):
+        if rep.safe_link(r.get("link")):
             _link(pdf, r["link"], 5)
         if r.get("quote"):
             q = r["quote"] if len(r["quote"]) <= 300 else r["quote"][:299] + "…"
