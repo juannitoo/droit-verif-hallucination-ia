@@ -104,7 +104,7 @@ RE_CONFLICTS = re.compile(r"\bn[°ºo]\s*(C?\s?\d{4,5})\b|\b(C\d{4})\b")
 RE_TCOM_COURT = re.compile(
     r"\bT\.\s?com\.|\bTAE\b|\bT\.\s?A\.\s?E\.|\b[Tt]ribunal\s+de\s+commerce\b"
     r"|\b[Tt]ribunal\s+des\s+activit[ée]s\s+[ée]conomiques\b")
-RE_TCOM_CITY = re.compile(r"\s*,?\s*(?:de\s+|d['’]\s*|du\s+)?")
+RE_TCOM_CITY = re.compile(r"\s*,?\s*(?:de\s+|d['’]\s*|du\s+|des\s+)?")
 # « 2025J05588 », « 2026004078 », « J2026000698 » : l'année d'enregistrement en tête.
 RE_TCOM_NUMBER = re.compile(r"\b((?:19|20)\d\d[A-Z]\d{5}|[A-Z]?(?:19|20)\d{8})\b")
 # Numéro de CAA : l'année, deux lettres de la cour, cinq chiffres. Aucune autre juridiction
@@ -395,7 +395,8 @@ def _extract(text):
     for m in caa:
         add("caa", "CAA", m.group(1), m)
     for m, court in tcom:
-        city = _city(text[court.end():][len(RE_TCOM_CITY.match(text, court.end()).group(0)):])
+        link = RE_TCOM_CITY.match(text, court.end())
+        city = _place(link.group(0), _city(text[link.end():]))
         d = dates.get(m.start())
         if seen.again(("tcom", city, m.group(1), d), m.span()):
             continue
@@ -509,6 +510,7 @@ def _extract(text):
             both[i]["quote"] = quote
     _decision_blocks(text, [c for c in both if c["kind"] == "decision" and c.get("number")],
                      date_places)
+    _apart(both)
     return both, remarks + article_remarks
 
 
@@ -521,14 +523,26 @@ def _extract(text):
 # qui est sûr. Interdire laissait toujours passer un cas oublié (audits du 01/10/2026).
 
 # Les juridictions nommées, et celle que chacune désigne.
-_COURT_NAMES = [(name, rx) for name, rx in MARK_ANY] + [("Cass.", rx) for rx, _ in CHAMBERS]
+# Pour le bloc, la Cour de justice et le Tribunal de l'Union sont deux juridictions : « Trib.
+# UE » n'entre pas dans le bloc d'un numéro C-, ni « CJUE » dans celui d'un T- (audit du
+# 01/10/2026). La CJCE est la Cour de justice sous son ancien nom ; le TPICE, le Tribunal.
+_EU_NAMES = [
+    ("CJUE", re.compile(r"\b(?:CJUE|CJCE|Cour\s+de\s+justice\s+(?:de\s+l['’]\s*Union"
+                        r"|des\s+Communautés))", re.I)),
+    ("Trib. UE", re.compile(r"\b(?:TPICE|Trib\.\s?UE|Tribunal\s+de\s+l['’]\s*Union)", re.I)),
+]
+_COURT_NAMES = ([(name, rx) for name, rx in MARK_ANY if name != EU] + _EU_NAMES
+                + [("Cass.", rx) for rx, _ in CHAMBERS])
 # Les mots de liaison permis entre deux morceaux retenus d'une décision.
 _LINK = re.compile(
     r"(?:[\s,.:;()]|\b(?:du|de|des|la|le|les|l['’]|en\s+date\s+du|pourvoi|arr[êe]t|décision|"
     r"rendue?|requête|req\.|RG|R\.G\.)(?![\w'’])|\bn[°º]\.?|\bno\b)*", re.I)
-# Une ville après une cour d'appel, un tribunal, une CAA : « CA Paris », « CAA de Nancy ».
-_CITY = re.compile(r"\s*(?:de\s+|d['’]\s*|du\s+)?[A-ZÀ-Þ][^\W\d_'’-]*(?:['’-][^\W\d_]+)*"
-                   r"(?:[\s-]+(?:sur|en|lès|les|la|le|de|du|des|[A-ZÀ-Þ][^\W\d_]*))*")
+# Une ville après une cour d'appel, un tribunal, une CAA : « CA Paris », « CAA de Nancy »,
+# « CA Aix-en-Provence », « TJ Le Mans ». Un seul lieu : un mot, ou des mots liés par des
+# traits d'union. « CA Paris Dupont » ou « CAA de Paris Le Conseil » : le mot de trop n'est
+# pas un mot de liaison, le bloc revient au numéro (audit du 01/10/2026).
+_CITY = re.compile(r"\s*(?:de\s+|d['’]\s*|du\s+|des\s+)?(?:(?:Le|La|Les)\s+|L['’]\s*)?"
+                   r"[A-ZÀ-Þ][^\W\d_'’-]*(?:['’-][^\W\d_]+)*(?:\s+de\s+La\s+Réunion)?")
 
 
 def _accepted(c):
@@ -538,7 +552,7 @@ def _accepted(c):
         return {"ca": {"CA"}, "tj": {"TJ"}, "tcom": {"T. com."}}.get(c.get("jurisdiction"),
                                                                      set())
     return {"judicial": {"Cass."}, "administrative": {"CE"}, "caa": {"CAA"},
-            "constitutional": {CONSTIT}, "eu": {EU}, "conflicts": {CONFLICTS},
+            "constitutional": {CONSTIT}, "eu": {c.get("court")}, "conflicts": {CONFLICTS},
             "ta": {"TA"}}.get(order, {c.get("court")} if order == "other" else set())
 
 
@@ -655,6 +669,44 @@ def _decision_blocks(text, decisions, date_places):
             c.setdefault("repeat_cores", {})[i] = (start, end)
     for c in decisions:
         c.pop("_chamber_at", None)
+
+
+def _apart(citations):
+    """Deux surlignages ne se touchent jamais : un bloc qui empiète sur une autre citation
+    (ou sur une reprise) revient à son numéro. Vérifié sur le résultat final, quel que soit le
+    chemin qui y a mené : les modèles disent ce qu'un bloc peut contenir, cette règle garantit
+    qu'aucun mot ne porte deux couleurs (audit du 01/10/2026)."""
+    places = [(c, None) for c in citations] + [(c, i) for c in citations
+                                               for i in range(len(c.get("repeats", [])))]
+
+    def span(place):
+        c, i = place
+        return tuple(c["span"] if i is None else c["repeats"][i])
+
+    def core(place):
+        c, i = place
+        if i is None:
+            return tuple(c.get("core", c["span"]))
+        return tuple(c.get("repeat_cores", {}).get(i, c["repeats"][i]))
+
+    changed = True
+    while changed:
+        changed = False
+        places.sort(key=lambda p: span(p)[0])
+        hit, reach, holder = [], -1, None
+        for place in places:
+            a, b = span(place)
+            if a < reach:
+                hit += [place, holder]
+            if b > reach:
+                reach, holder = b, place
+        for c, i in hit:
+            if span((c, i)) != core((c, i)):
+                if i is None:
+                    c["span"] = core((c, i))
+                else:
+                    c["repeats"][i] = core((c, i))
+                changed = True
 
 
 # Articles de codes
@@ -841,18 +893,42 @@ def _word_start(text, start, end):
 
 
 # Entre un article et son code : des mots de liaison, et au plus un alinéa.
-_TO_CODE = re.compile(r"\s*,?\s*(?:(?:alinéa|al\.)\s*(?:\d+|1er|premier)\s*,?\s*)?"
+_TO_CODE = re.compile(r"\s*,?\s*(?:(?:alinéa|al\.)\s*(?:\d{1,2}|1er|premier)\s*,?\s*)?"
                       r"(?:du|de\s+la|de\s+l['’]|des|de|au)?\s*", re.I)
-# Entre « convention collective » et son IDCC : son nom (« des hôtels, cafés,
-# restaurants (»), sans chiffre, sans fin de phrase, sans juridiction.
-_CONVENTION_NAME = re.compile(r"[^\d.;!?]{0,80}")
+# Entre « convention collective » et son IDCC : rien, ou son nom (« nationale des hôtels,
+# cafés, restaurants (»). Un nom suit « de », « du », « des » ou « d' », et n'est fait que de
+# mots, de virgules, de traits d'union et d'apostrophes : ni guillemets, ni deux-points, ni
+# chiffre. « convention collective : les salariés ont droit... (IDCC 1979) » ou « ... « le
+# salarié a droit » (IDCC 1979) » n'est pas un nom (audit du 01/10/2026).
+_CONVENTION_NAME = re.compile(
+    r"(?:\s+nationale)?(?:\s+(?:de\s+la|de\s+l['’]|des|du|de|d['’])\s*[^\W\d_]+"
+    r"(?:(?:\s*,\s*|\s+|['’-])[^\W\d_]+)*)?\s*,?\s*\(?\s*", re.I)
+# Des mots de phrase, pas de nom : « des salariés qui contestent ».
+_NOT_A_NAME = re.compile(r"\b(?:que|qu['’]|qui|dont|est|sont|a|ont|été|ne|pas|ce|cette|ces|"
+                         r"il|elle|ils|elles|on|selon|mais|car|donc|or|arr[êe]t|convention|"
+                         r"CCNT?|accord|avenant|article|art)\b", re.I)
 
 
 def _convention_name(text, lo, hi):
-    return (bool(_CONVENTION_NAME.fullmatch(text, lo, hi))
-            and not re.search(r"\b(?:convention|CCNT?|accord|avenant|article|art\.)",
-                              text[lo:hi], re.I)
+    return (hi - lo <= 80 and bool(_CONVENTION_NAME.fullmatch(text, lo, hi))
+            and not _NOT_A_NAME.search(text, lo, hi)
             and not any(rx.search(text, lo, hi) for _, rx in _COURT_NAMES))
+
+
+# « C. civ., art. 1240, C. trav., art. L. 1152-1 » : quand les citations nomment le code
+# AVANT l'article, un code ou un texte qui suit l'article, séparé de lui par une simple
+# virgule (ou « et »), et suivi d'un autre article, est celui de l'article suivant.
+# L'article 1240 était cherché dans le Code du travail, et dans « CGI, art. 46 quater ; loi
+# n° 89-462..., art. 22 », le 46 quater dans la loi de 1989 (audit du 01/10/2026).
+_THEN_ARTICLE = re.compile(r"[\s,;:]*\bart(?:icle)?s?\b", re.I)
+_ONLY_COMMAS = re.compile(r"[\s,;:]*(?:\b(?:et|ou)\b[\s,;:]*)?", re.I)
+
+
+def _of_next(text, at, lo, hi, written_before):
+    """True si ce qui est nommé dans text[at + lo:at + hi], après l'article qui finit à `at`,
+    annonce l'article suivant."""
+    return bool(written_before and _ONLY_COMMAS.fullmatch(text, at, at + lo)
+                and _THEN_ARTICLE.match(text, at + hi))
 
 
 def _fit(text, reach, core, count):
@@ -875,6 +951,7 @@ def extract_articles(text):
     citations, seen, no_code, attached = [], Seen(), [], []
     last_code = last_idcc = last_text = None
     idcc_taken = set()      # les IDCC déjà rattachés à un article (leur position)
+    taken_until = 0         # la fin de ce que l'article précédent a pris (son code, sa loi)
     for index, m in enumerate(matches):
         # Le code, le texte ou la convention se cherchent dans la même phrase : « L'article
         # 1240. Cette solution ne figure pas au code de commerce » ne cite pas le Code de
@@ -892,6 +969,7 @@ def extract_articles(text):
 
         if RE_ATTACHED.match(after):
             attached.extend(numbers)            # avenant, accord : pas le texte de base
+            taken_until = m.end()
             continue
         same = RE_SAME_CONVENTION.match(after)
         named = same or RE_CONVENTION.match(after)
@@ -913,6 +991,7 @@ def extract_articles(text):
                     if where >= reach[1] and _convention_name(text, reach[1], where):
                         reach = (reach[0], told.end())
             last_idcc = idcc or last_idcc
+            taken_until = reach[1]
             for number, core in zip(numbers, cores):
                 span = _fit(text, reach, core, len(numbers))
                 if seen.again(("idcc", idcc, number), span, core):
@@ -924,8 +1003,23 @@ def extract_articles(text):
                 seen[("idcc", idcc, number)] = citations[-1]
             continue
 
+        # Le code nommé après l'article : avant toute autre mention d'article (sinon il
+        # appartient à la citation suivante), sans autre texte nommé entre les deux
+        # (« article 22 de la loi du 6 juillet 1989 » n'est pas un article de code).
+        found = find_code(after)
+        found_before = find_code(before, last=True)
+        written_before = bool(found_before
+                              and re.fullmatch(r"[\s,;:]*", before[found_before[2]:]))
+        code_after = (found and not RE_ARTICLES.search(after[:found[1]])
+                      and not RE_OTHER_TEXT.search(after[:found[1]])
+                      and not _of_next(text, m.end(), found[1], found[2], written_before))
+
         # Un article de loi, d'ordonnance ou de décret non codifié.
         named = RE_TEXT_AFTER.match(after)
+        text_of_next = bool(named and _of_next(text, m.end(), named.start("nature"),
+                                               named.end(), written_before))
+        if text_of_next:
+            named = None
         ref = _text_ref(named)
         reach = (m.start(), m.end() + named.end()) if ref else m.span()
         same = RE_SAME_TEXT.match(after)
@@ -933,13 +1027,19 @@ def extract_articles(text):
                                                == last_text["text_nature"]):
             ref = last_text
             reach = (m.start(), m.end() + same.end())
-        if not ref and not find_code(before, last=True):
+        # Le texte nommé juste avant, sauf si l'article a son code après lui : « article 22
+        # de la loi n° 89-462 du 6 juillet 1989, article 1240 du Code civil » cherchait
+        # l'article 1240 dans la loi de 1989 (audit du 01/10/2026).
+        if not ref and not code_after and not found_before:
             named = RE_TEXT_BEFORE.search(text, max(0, m.start() - TEXT_BEFORE), m.start())
             ref = _text_ref(named)
             if ref:
                 reach = (_word_start(text, named.start(), m.start()), m.end())
+                if reach[0] < taken_until:
+                    reach = m.span()    # le texte est déjà dans le bloc de l'article précédent
         if ref:
             last_text = ref
+            taken_until = reach[1]
             for number, core in zip(numbers, cores):
                 span = _fit(text, reach, core, len(numbers))
                 key = ("text", ref["text_nature"], ref["text_number"], ref["text_date"], number)
@@ -953,13 +1053,8 @@ def extract_articles(text):
             continue
 
         code = None
-        found = find_code(after)
-        # Le code doit venir avant toute autre mention d'article (sinon il appartient à la
-        # citation suivante), et aucun autre texte ne doit être nommé entre les deux
-        # (« article 22 de la loi du 6 juillet 1989 » n'est pas un article de code).
         same = RE_SAME_CODE.search(after)
-        if (found and not RE_ARTICLES.search(after[:found[1]])
-                and not RE_OTHER_TEXT.search(after[:found[1]])):
+        if code_after:
             code = found[0]
             # Le bloc va jusqu'au code s'il n'en est séparé que par « du », « de la »,
             # « , alinéa 2, du »... : « article 1240, CE 5 juin 2009, du Code civil » laisse
@@ -969,16 +1064,22 @@ def extract_articles(text):
         elif same and last_code:
             code = last_code
             reach = (m.start(), m.end() + same.end())
-        elif not RE_OTHER_TEXT.match(after):
+        elif text_of_next or not RE_OTHER_TEXT.match(after):
             # Code placé avant : il doit être collé à l'article (« C. trav., art. L. 1152-1 »).
             found = find_code(before, last=True)
             if found and re.fullmatch(r"[\s,;:]*", before[found[2]:]):
                 code = found[0]
                 reach = (m.start() - len(before) + found[1], m.end())
+                if reach[0] < taken_until:
+                    # « article 1240 du Code civil, art. 1241 » : le code est déjà dans le
+                    # bloc du 1240 ; le 1241 garde son numéro seul.
+                    reach = m.span()
         if not code:
             no_code.extend(numbers)
+            taken_until = m.end()
             continue
         last_code = code
+        taken_until = reach[1]
         for number, core in zip(numbers, cores):
             span = _fit(text, reach, core, len(numbers))
             if seen.again((code, number), span, core):
@@ -1008,8 +1109,18 @@ def extract_articles(text):
 RE_RG = re.compile(r"(?:\bRG|\bR\.G\.|n[°º])\s*(?:n[°º]\s*)?:?\s*(\d{2}/\d{4,5})\b")
 RE_LOWER_COURT = re.compile(
     r"\b(?P<kind>CA|cour\s+d['’]\s*appel|TJ|TGI|tribunal\s+judiciaire|"
-    r"tribunal\s+de\s+grande\s+instance)\b\s*(?:de\s+|d['’]\s*)?", re.I)
+    r"tribunal\s+de\s+grande\s+instance)\b\s*(?P<link>de\s+|d['’]\s*|du\s+|des\s+)?", re.I)
 CITY_LINKS = {"en", "de", "du", "des", "sur", "les", "la", "le", "lès", "d", "l"}
+
+
+def _place(link, city):
+    """La ville avec son article : « tribunal judiciaire du Mans » -> « Le Mans », « des
+    Sables-d'Olonne » -> « Les Sables-d'Olonne ». Sans « du » ni « des » lus, ces tribunaux
+    n'étaient pas reconnus (01/10/2026)."""
+    word = link.split()[-1].lower() if link.strip() else ""
+    if city and word in ("du", "des"):
+        return ("Le " if word == "du" else "Les ") + city
+    return city
 
 
 def _city(text):
@@ -1039,7 +1150,8 @@ def extract_lower_courts(text, rgs, dates):
         for end in RE_SENTENCE_END.finditer(text, lo, m.start()):
             lo = end.end()
         courts = list(RE_LOWER_COURT.finditer(text, lo, m.start()))
-        city = _city(text[courts[-1].end():]) if courts else ""
+        city = (_place(courts[-1].group("link") or "", _city(text[courts[-1].end():]))
+                if courts else "")
         if not courts or not city:
             no_court.append(number)
             continue

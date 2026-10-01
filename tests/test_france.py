@@ -180,6 +180,28 @@ class CommercialCourts(unittest.TestCase):
         self.assertEqual(_simplify("Tribunal des activités économiques de Paris"), "paris")
         self.assertEqual(_simplify("Tribunal de commerce d'Arras"), "arras")
 
+    def test_a_city_with_its_article(self):
+        """« TJ Le Mans » est le « Tribunal judiciaire du Mans » de Judilibre."""
+        from citecheck.countries.france.lower_courts import _simplify
+        for official, written in [("Tribunal judiciaire du Mans", "Le Mans"),
+                                  ("Tribunal judiciaire des Sables-d'Olonne",
+                                   "Les Sables-d'Olonne"),
+                                  ("Tribunal de commerce du Havre", "Le Havre"),
+                                  ("Tribunal judiciaire de La Rochelle", "La Rochelle")]:
+            self.assertEqual(_simplify(official), _simplify(written), official)
+        for text, place in [("Tribunal judiciaire du Mans, 5 juin 2009, RG n° 11/18803.",
+                             "Le Mans"),
+                            ("TJ du Puy-en-Velay, 5 juin 2009, RG n° 11/18803.",
+                             "Le Puy-en-Velay"),
+                            ("tribunal judiciaire des Sables-d'Olonne, 5 juin 2009, RG n° "
+                             "11/18803.", "Les Sables-d'Olonne"),
+                            ("TJ Le Mans, 5 juin 2009, RG n° 11/18803.", "Le Mans"),
+                            ("T. com. du Havre, 5 juin 2009, n° 2025J05588.", "Le Havre")]:
+            self.assertEqual([c["place"] for c in extract(text)[0]], [place], text)
+        self.assertEqual(
+            [extract(t)[0][0]["span"] for t in ["TJ du Mans, 5 juin 2009, RG n° 11/18803."]],
+            [(0, 39)])
+
 
 class LocalAdministrativeBase(unittest.TestCase):
     """A local database built from opendata.justice-administrative.fr, on localhost."""
@@ -2045,6 +2067,89 @@ class BlockTemplates(unittest.TestCase):
                      if a.get_object()["/Subtype"] == "/Highlight"]
             self.assertEqual(len(rects), 2)
             self.assertLessEqual(rects[0][2], rects[1][0])      # côte à côte, jamais l'un sur l'autre
+
+
+class AuditPass6(unittest.TestCase):
+    """Audit du 01/10/2026 (6) : un code ou une loi n'est pas pris à l'article d'à côté, et
+    aucun mot ne porte deux couleurs."""
+
+    def read(self, text):
+        return [(c["number"], c["court"], text[slice(*c["span"])]) for c in extract(text)[0]]
+
+    def test_code_written_before_belongs_to_the_next_article(self):
+        self.assertEqual(self.read("C. civ., art. 1240, C. trav., art. L. 1152-1."),
+                         [("1240", "Code civil", "C. civ., art. 1240"),
+                          ("L1152-1", "Code du travail", "C. trav., art. L. 1152-1")])
+        self.assertEqual(self.read("C. com., art. L. 110-1, C. civ., art. 1240.")[0][:2],
+                         ("L110-1", "Code de commerce"))
+        self.assertEqual(
+            [r[:2] for r in self.read("Voir C. trav., art. L. 1152-1 et CGI, art. 46 quater-0 "
+                                      "ZZ bis ; loi n° 89-462 du 6 juillet 1989, art. 22.")],
+            [("L1152-1", "Code du travail"), ("46 quater-0 ZZ bis", "Code général des impôts"),
+             ("22", "Loi n° 89-462 du 6 juillet 1989")])
+        # Sans code écrit avant, le code qui suit reste celui de l'article.
+        self.assertEqual(self.read("art. L. 1152-1 C. trav., article 1240 du Code civil.")[0][:2],
+                         ("L1152-1", "Code du travail"))
+
+    def test_a_law_already_taken_is_not_taken_again(self):
+        self.assertEqual(
+            self.read("article 22 de la loi n° 89-462 du 6 juillet 1989, article 1240 du Code "
+                      "civil."),
+            [("22", "Loi n° 89-462 du 6 juillet 1989",
+              "article 22 de la loi n° 89-462 du 6 juillet 1989"),
+             ("1240", "Code civil", "article 1240 du Code civil")])
+        self.assertEqual(self.read("article 22 de la loi n° 89-462 du 6 juillet 1989, "
+                                   "article 23.")[1][2], "article 23")
+
+    def test_no_word_under_two_colours(self):
+        for text in ("C. civ., art. 1240, C. trav., art. L. 1152-1, art. 1241.",
+                     "article 1240 du Code civil, art. 1241.",
+                     "article 22 de la loi n° 89-462 du 6 juillet 1989, article 23.",
+                     "Cass. soc., 14 décembre 2017, n° 16-26694, article 1240 du Code civil.",
+                     "article 5 de la convention collective (IDCC 1979), Cass. soc., "
+                     "14 décembre 2017, n° 16-26694. Plus loin, Cass. soc., 14 décembre 2017, "
+                     "n° 16-26694."):
+            with self.subTest(text=text):
+                cs = extract(text)[0]
+                spans = sorted([tuple(c["span"]) for c in cs]
+                               + [tuple(s) for c in cs for s in c.get("repeats", [])])
+                for (_, b), (a, _) in zip(spans, spans[1:]):
+                    self.assertLessEqual(b, a)
+
+    def test_a_convention_name_is_a_name(self):
+        for text in ("article 5 de la convention collective « le salarié a droit au paiement "
+                     "du salaire » (IDCC 1979).",
+                     "article 5 de la convention collective : les salariés ont droit à un "
+                     "délai (IDCC 1979).",
+                     "article 5 de la convention collective, ce que le salarié conteste "
+                     "(IDCC 1979).",
+                     "article 5 de la convention collective applicable (IDCC 1979)."):
+            with self.subTest(text=text):
+                self.assertEqual(self.read(text),
+                                 [("5", "IDCC 1979", "article 5 de la convention collective")])
+        text = ("article 5 de la convention collective nationale des hôtels, cafés, restaurants "
+                "(IDCC 1979).")
+        self.assertEqual(self.read(text)[0][2], text[:-2])
+
+    def test_one_place_after_the_court(self):
+        self.assertEqual(self.read("CA Paris Dupont, 5 juin 2009, RG n° 11/18803.")[0][2],
+                         "RG n° 11/18803")
+        self.assertEqual(self.read("CAA de Paris Le Conseil, 12 avril 2018, n° 17NC01414.")[0][2],
+                         "17NC01414")
+        self.assertEqual(self.read("TJ Le Mans, 5 juin 2009, RG n° 11/18803.")[0][2],
+                         "TJ Le Mans, 5 juin 2009, RG n° 11/18803")
+
+    def test_court_and_tribunal_of_the_union_apart(self):
+        self.assertEqual(self.read("Trib. UE, 8 septembre 2015, C-561/19.")[0][2],
+                         "8 septembre 2015, C-561/19")
+        self.assertEqual(self.read("CJUE, 8 septembre 2015, T-12/15.")[0][2],
+                         "8 septembre 2015, T-12/15")
+        self.assertEqual(self.read("Trib. UE, 8 septembre 2015, T-12/15.")[0][2],
+                         "Trib. UE, 8 septembre 2015, T-12/15")
+
+    def test_a_small_paragraph_number_only(self):
+        self.assertEqual(self.read("article 1240, alinéa 1241, du Code civil.")[0][2],
+                         "article 1240")
 
 if __name__ == "__main__":
     unittest.main()

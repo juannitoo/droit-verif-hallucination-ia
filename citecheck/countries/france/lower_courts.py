@@ -55,8 +55,11 @@ def _simplify(name):
     name = unicodedata.normalize("NFKD", name.lower())
     name = "".join(ch for ch in name if not unicodedata.combining(ch))
     name = re.sub(r"^(?:cour d'appel|tribunal judiciaire|tribunal de commerce|tribunal des "
-                  r"activites economiques)\s*(?:de |d'|du )?", "", name.strip())
-    return " ".join(re.sub(r"[-'’]", " ", name).split())
+                  r"activites economiques)\s*(?:de |d'|du |des )?", "", name.strip())
+    name = " ".join(re.sub(r"[-'’]", " ", name).split())
+    # Sans article : le libellé officiel dit « du Mans », « des Sables-d'Olonne », l'avocat
+    # écrit « TJ Le Mans ». Les deux donnent « mans ».
+    return re.sub(r"^(?:le|la|les|l) ", "", name)
 
 
 class Courts:

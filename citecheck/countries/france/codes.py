@@ -245,12 +245,12 @@ def find_code(text, last=False):
     for m in RE_CODE.finditer(text):
         i = int(m.lastgroup[1:])
         title = _PATTERNS[i][1]
-        found = m.group(0)
-        if _ACRONYM.match(found) and found != found.upper():
+        word = m.group(0)
+        if _ACRONYM.match(word) and word != word.upper():
             continue
         before = text[m.start() - 1] if m.start() else " "
         after = text[m.end()] if m.end() < len(text) else " "
-        if _ACRONYM.match(found) and (before.isalnum() or after.isalnum()):
+        if _ACRONYM.match(word) and (before.isalnum() or after.isalnum()):
             continue
         found = (title, m.start(), m.end())
         if not last:
