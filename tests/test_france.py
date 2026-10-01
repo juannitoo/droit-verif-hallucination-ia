@@ -1845,5 +1845,115 @@ class ArticleAndItsCode(unittest.TestCase):
                                                                       [cit], []))
             self.assertEqual((placed, missed), (1, 0))
 
+class CleanBlocks(unittest.TestCase):
+    """Audit du 01/10/2026 (4) : un bloc surligné ne couvre que ce qui a été retenu. Sinon,
+    le numéro seul. Et l'étendue surlignée ne change jamais la citation extraite."""
+
+    def seen(self, text):
+        return [(c["court"], c["number"], c.get("cited_date"), c.get("chamber"),
+                 text[slice(*c["span"])]) for c in extract(text)[0]]
+
+    def test_a_number_next_to_another_court_is_not_an_appeal(self):
+        self.assertEqual(self.seen("La Cour de cassation et la CEDH, n° 16-26694."), [])
+        # La mention écartée n'avale pas la suivante, ni sa chambre.
+        self.assertEqual(
+            self.seen("La Cour de cassation et la CEDH, n° 16-26694 du 14 décembre 2017. "
+                      "Cass. soc., n° 16-26694 du 14 décembre 2017."),
+            [("Cass", "16-26694", "2017-12-14", "soc",
+              "Cass. soc., n° 16-26694 du 14 décembre 2017")])
+
+    def test_a_block_never_covers_another_citation(self):
+        seen = self.seen("IDCC 1979, Cass. soc., 14 décembre 2017, n° 16-26694, article 5 de "
+                         "la convention collective.")
+        self.assertEqual([s[-1] for s in seen],
+                         ["Cass. soc., 14 décembre 2017, n° 16-26694", "article 5"])
+        seen = self.seen("article 5 de la convention collective et article 12 de la "
+                         "convention collective (IDCC 1979).")
+        self.assertEqual(seen[0][-1], "article 5")
+        seen = self.seen("article 1240, CE 5 juin 2009 n° 402517, du Code civil.")
+        self.assertEqual([s[-1] for s in seen], ["article 1240", "CE 5 juin 2009 n° 402517"])
+        seen = self.seen("CE, n° 402517, article 1240 du Code civil, 5 juin 2009.")
+        self.assertEqual([s[-1] for s in seen], ["n° 402517", "article 1240 du Code civil"])
+
+    def test_a_block_never_covers_what_was_not_kept(self):
+        # « Cass. soc. » n'est pas la juridiction retenue.
+        self.assertEqual(self.seen("CE, n° 402517, Cass. soc. du 14 décembre 2017.")[0][-1],
+                         "n° 402517")
+        # Deux dates qui se contredisent : aucune n'est retenue, aucune n'est peinte.
+        self.assertEqual(self.seen("Cass., arrêt du 1er janvier 2010 (et non du 21 mars 2019), "
+                                   "n° 16-26694.")[0][-1], "16-26694")
+
+    def test_the_kept_chamber_is_in_the_block(self):
+        self.assertEqual(self.seen("La chambre sociale de la Cour de cassation, 14 décembre "
+                                   "2017, n° 16-26694.")[0][-1],
+                         "chambre sociale de la Cour de cassation, 14 décembre 2017, "
+                         "n° 16-26694")
+        self.assertEqual(self.seen("Cass., n° 16-26694, la deuxième chambre civile a jugé "
+                                   "cela.")[0][-1],
+                         "Cass., n° 16-26694, la deuxième chambre civile")
+        self.assertEqual(self.seen("Cass. soc., 14 décembre 2017, pourvoi n° 16-26.694.")[0][-1],
+                         "Cass. soc., 14 décembre 2017, pourvoi n° 16-26.694")
+
+    def test_a_block_never_crosses_a_page(self):
+        seen = self.seen("article 1240 du Code civil. C. trav.,\farticle 1240.")
+        self.assertEqual([(s[0], s[-1]) for s in seen],
+                         [("Code civil", "article 1240 du Code civil"),
+                          ("Code du travail", "article 1240")])
+
+    def test_the_report_follows_the_numbers_not_the_blocks(self):
+        seen = self.seen("IDCC 1979, Cass. soc., 14 décembre 2017, n° 16-26694, article 5 de "
+                         "la convention collective (IDCC 1979).")
+        self.assertEqual([s[1] for s in seen], ["16-26694", "5"])
+
+    def test_the_piece_is_not_kept_after_an_error(self):
+        import importlib
+        from unittest import mock
+        ex = importlib.import_module("citecheck.countries.france.extract")
+        with mock.patch.object(ex, "_cited_chamber", side_effect=RuntimeError):
+            with self.assertRaises(RuntimeError):
+                ex.extract("PIECE_SECRETE Cass. soc., 14 décembre 2017, n° 16-26694.")
+        self.assertIsNone(ex._ENDS[0])
+
+    def test_the_second_page_gets_its_own_highlight(self):
+        import tempfile
+        from pathlib import Path
+        from pypdf import PdfWriter
+        from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+        from citecheck import annotate, reader
+        from citecheck.engine import COUNTRIES
+        with tempfile.TemporaryDirectory() as tmp:
+            src, out = Path(tmp) / "deux.pdf", Path(tmp) / "out.pdf"
+            w = PdfWriter()
+            font = w._add_object(DictionaryObject({
+                NameObject("/Type"): NameObject("/Font"), NameObject("/Subtype"):
+                NameObject("/Type1"), NameObject("/BaseFont"): NameObject("/Helvetica")}))
+            for line in (b"article 1240 du Code civil. C. trav.,", b"article 1240."):
+                page = w.add_blank_page(595, 842)
+                page[NameObject("/Resources")] = DictionaryObject({NameObject("/Font"):
+                                                                   DictionaryObject({NameObject("/F1"): font})})
+                body = DecodedStreamObject()
+                body.set_data(b"BT /F1 12 Tf 72 700 Td (" + line + b") Tj ET")
+                page[NameObject("/Contents")] = w._add_object(body)
+            with open(src, "wb") as f:
+                w.write(f)
+            doc = reader.read(src)
+            citations, _ = extract(doc.text)
+            results = []
+            for c, verdict in zip(citations, ("ARTICLE_IN_FORCE", "ARTICLE_NOT_FOUND")):
+                start, end = c.pop("span")
+                core = c.pop("core", None)
+                loc = {"page": doc.locate(start)[0], "page_exact": True, "in_notes": False,
+                       "excerpt": "", **annotate.anchor(doc.text, start, end)}
+                if core:
+                    loc["core"] = annotate.anchor(doc.text, *core)
+                results.append({**c, "verdict": verdict, "explanation": "x", "location": loc})
+            self.assertEqual([r["location"]["page"] for r in results], [1, 2])
+            self.assertEqual(annotate.annotate(src, out, report.build("deux.pdf", "france",
+                                                                      results, [])), (2, 0))
+            from pypdf import PdfReader
+            pages = PdfReader(out).pages        # la page 0 est la notice
+            self.assertEqual(len(pages[1].get("/Annots", [])), 1)
+            self.assertEqual(len(pages[2].get("/Annots", [])), 1)
+
 if __name__ == "__main__":
     unittest.main()
