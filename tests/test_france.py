@@ -1611,5 +1611,67 @@ class AuditPass3BadAnswers(unittest.TestCase):
                 other_courts._celex_dates("62019CJ0561")
 
 
+class AuditPass3Reading(unittest.TestCase):
+    """Audit du 01/10/2026, lot B : une phrase mal lue ne doit pas faire vérifier un autre
+    article, une autre date, ni une « décision » que le texte ne cite pas."""
+
+    def _seen(self, text):
+        citations, remarks = extract(text)
+        return [(c["court"], c["number"], c.get("cited_date"), c.get("idcc"))
+                for c in citations], remarks
+
+    def test_a_suffix_followed_by_a_dot_is_kept(self):
+        for text, number in [("article 199 undecies B. du code général des impôts", "199 undecies B"),
+                             ("article 238 bis-0 I. du code général des impôts", "238 bis-0 I"),
+                             ("article 46 quater-0 ZZ. du CGI", "46 quater-0 ZZ"),
+                             ("art. 199 undecies B. du CGI", "199 undecies B")]:
+            with self.subTest(text=text):
+                self.assertEqual(self._seen(text)[0][0][1], number)
+        # « C. civ. » reste un nom de code, pas un suffixe.
+        self.assertEqual(self._seen("art. 1240 C. civ.")[0],
+                         [("Code civil", "1240", None, None)])
+
+    def test_the_code_is_not_taken_from_the_next_sentence(self):
+        seen, remarks = self._seen("L'article 1240. Cette solution ne figure pas au code de "
+                                   "commerce, article L. 110-1 du code de commerce.")
+        self.assertEqual(seen, [("Code de commerce", "L110-1", None, None)])
+        self.assertTrue(any("1240" in r for r in remarks))
+        seen, _ = self._seen("article L. 111-1. Le code de la consommation rappelle la règle.")
+        self.assertEqual(seen, [])
+        seen, _ = self._seen("article L. 110-1 du code de commerce. L'article 1240 du même code.")
+        self.assertEqual([n for _, n, _, _ in seen], ["L110-1", "1240"])
+
+    def test_a_number_without_a_court_is_not_a_decision(self):
+        for text in ("La pièce n° 308850 a été signée le 5 juin 2009 par le client Dupont.",
+                     "Référence 17-28.268 communiquée le 21 mars 2019 au client."):
+            with self.subTest(text=text):
+                seen, remarks = self._seen(text)
+                self.assertEqual(seen, [])
+                self.assertTrue(any("sans juridiction nommée" in r for r in remarks))
+        # Une juridiction, une chambre, « pourvoi » ou « arrêt » suffisent.
+        for text in ("CE, 5 juin 2009, n° 308850.", "Soc. 21 mars 2019, n° 17-28.268.",
+                     "pourvoi n° 17-28.268 rejeté le 21 mars 2019.",
+                     "arrêt du 7 juillet 2022, n° 21-11.484, la deuxième chambre civile a jugé."):
+            with self.subTest(text=text):
+                self.assertEqual(len(self._seen(text)[0]), 1)
+
+    def test_two_dates_for_one_number_check_neither(self):
+        seen, _ = self._seen("Cass. soc., arrêt du 1er janvier 1900 (et non du 21 mars 2019), "
+                             "n° 17-28.268.")
+        self.assertEqual(seen, [("Cass", "17-28.268", None, None)])
+        # La date d'une loi n'est pas en concurrence avec celle de l'arrêt.
+        seen, _ = self._seen("Cass. soc., 21 mars 2019, n° 17-28.268, appliquant la loi du "
+                             "8 août 2016.")
+        self.assertEqual(seen, [("Cass", "17-28.268", "2019-03-21", None)])
+
+    def test_an_idcc_is_not_lent_to_the_next_convention(self):
+        seen, _ = self._seen("article 5 de la convention collective (IDCC 1979) et article 99 "
+                             "de la convention collective nationale.")
+        self.assertEqual([i for *_, i in seen], ["1979", None])
+        seen, _ = self._seen("article 5 de la convention collective (IDCC 1979) et article 99 "
+                             "de la même convention.")
+        self.assertEqual([i for *_, i in seen], ["1979", "1979"])
+
+
 if __name__ == "__main__":
     unittest.main()

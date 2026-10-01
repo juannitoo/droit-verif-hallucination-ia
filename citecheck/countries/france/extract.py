@@ -122,6 +122,17 @@ UNNUMBERED_GAP = 60   # entre la juridiction et la date : « CE, Ass., sect., »
 RE_NOT_A_DECISION = re.compile(r"\b(?:loi|décret|ordonnance|arrêté|circulaire|directive|"
                                r"règlement|convention|accord|avenant|article|art\.)", re.I)
 RE_EU = re.compile(r"\b([CT])\s?[-‑–]\s?(\d{1,4})/(\d{2})\b")
+# La date d'un texte, juste avant elle : « la loi du 8 août 2016 », « décret n° 2016-1234 du
+# 29 septembre 2016 ». Ce n'est pas la date de la décision voisine.
+RE_TEXT_DATE = re.compile(
+    r"\b(?:loi|décret|ordonnance|arrêté|circulaire|directive|règlement|avenant|accord)s?"
+    r"(?:\s+organique)?(?:\s+n[°º]\s*[\d-]+)?\s+(?:du|en\s+date\s+du)\s+$", re.I)
+# Un pourvoi (« 17-28.268 ») n'est une décision de la Cour de cassation que si la phrase le
+# dit : une juridiction judiciaire ou une chambre nommée, ou les mots « pourvoi », « arrêt ».
+# « Référence 17-28.268 communiquée le 21 mars 2019 au client » n'est pas une citation
+# (audit du 01/10/2026).
+MARK_APPEAL = re.compile(r"\bpourvoi|\barr[êe]t|\bass(?:emblée)?\.?\s*pl[ée]n|\bch(?:ambre)?\.?\s*mixte"
+                         r"|\bch(?:ambres)?\.?\s*réunies", re.I)
 
 WINDOW = 160   # caractères de part et d'autre où l'on cherche la date et la juridiction
 
@@ -155,9 +166,10 @@ def assign_dates(text, spans, used=None):
     best = {}
     dates = [(m, _iso(m)) for m in RE_DATE_WORDS.finditer(text)]
     dates += [(m, _iso(m, False)) for m in RE_DATE_DIGITS.finditer(text)]
+    disputed = set()
     for m, day in dates:
-        if not day:
-            continue
+        if not day or RE_TEXT_DATE.search(text[max(0, m.start() - 60):m.start()]):
+            continue                        # « la loi du 8 août 2016 » : pas la décision
         candidates = []
         # Seuls les numéros à moins de WINDOW caractères comptent : on ne parcourt qu'eux.
         # (Tous, pour chaque date : un document de mille fois la même citation y passait
@@ -174,11 +186,19 @@ def assign_dates(text, spans, used=None):
             candidates.append((gap, start))
         if candidates:
             gap, start = min(candidates)
+            if start in best and best[start][1] != day:
+                # Deux dates pour un seul numéro, dans la même phrase : « arrêt du 1er
+                # janvier 1900 (et non du 21 mars 2019), n° 17-28.268 ». Choisir la plus
+                # proche pourrait confirmer celle que la phrase écarte : aucune n'est retenue,
+                # la date n'est pas contrôlée (audit du 01/10/2026).
+                disputed.add(start)
+                if used is not None:
+                    used.update((best[start][2], m.start()))
             if start not in best or gap < best[start][0]:
                 best[start] = (gap, day, m.start())
     if used is not None:
         used.update(where for _, _, where in best.values())
-    return {start: day for start, (_, day, _) in best.items()}
+    return {start: day for start, (_, day, _) in best.items() if start not in disputed}
 
 
 # La chambre de la Cour de cassation citée avant le pourvoi, dans la même phrase. Codes de
@@ -241,6 +261,14 @@ def _nearest(found):
     # la première chambre civile, pas « une chambre civile ».
     last = max(found, key=lambda f: f[1])
     return min((f for f in found if f[0] < last[1] and last[0] < f[1]), key=lambda f: f[2])[3]
+
+
+def _sentence_start(text, start):
+    """Le début de la phrase où se trouve `start`, sans remonter de plus de WINDOW."""
+    lo = max(0, start - WINDOW)
+    for end in RE_SENTENCE_END.finditer(text, lo, start):
+        lo = end.end()
+    return lo
 
 
 def _court_in_sentence(text, start, rx):
@@ -355,23 +383,34 @@ def extract(text):
                           "number": m.group(1), "cited_date": d, "span": m.span()})
         seen[("tcom", city, m.group(1), d)] = citations[-1]
 
-    for m in appeals:
+    unattached = []     # numéros sans juridiction nommée dans la phrase : montrés, pas envoyés
+    for i, m in enumerate(appeals):
         number, d = m.group(1), dates.get(m.start())
+        chamber = cited_chamber(text, m.start(), m.end(),
+                                appeals[i + 1].start() if i + 1 < len(appeals) else None)
+        if (not chamber and order_of(text, m.start(), None) != "judicial"
+                and not MARK_APPEAL.search(text, _sentence_start(text, m.start()), m.start())):
+            unattached.append(number)
+            continue
         if seen.again((number, d), m.span()):
             continue
         citations.append({"kind": "decision", "order": "judicial", "court": "Cass",
                           "number": number, "cited_date": d, "span": m.span(),
-                          "chamber": cited_chamber(
-                              text, m.start(), m.end(),
-                              min((a.start() for a in appeals if a.start() > m.start()),
-                                  default=None))})
+                          "chamber": chamber})
         seen[(number, d)] = citations[-1]
         if not d:
             undated.append(number)
 
     for m in requests:
         number = m.group(1)
-        order = order_of(text, m.start(), "administrative")
+        # Sans juridiction nommée dans la phrase, « n° 308850 » n'est pas une requête du
+        # Conseil d'État : « la pièce n° 308850 signée le 5 juin 2009 » n'est pas une
+        # citation, et pourrait être « confirmée » (audit du 01/10/2026).
+        order = order_of(text, m.start(), None)
+        if order is None and not RE_SLASH_YEAR.match(text, m.end()):
+            unattached.append(number)
+            continue
+        order = order or "administrative"
         if order == "judicial":
             set_aside.append(number)    # un n° à 5-7 chiffres près de « Cass. » : douteux
             continue
@@ -402,6 +441,11 @@ def extract(text):
     if undated:
         remarks.append(f"{len(undated)} numéro(s) sans date lisible à côté : "
                        f"{', '.join(undated)}. Leur date ne peut pas être contrôlée.")
+    if unattached:
+        remarks.append(f"{len(unattached)} numéro(s) en forme de décision, sans juridiction "
+                       f"nommée dans la phrase : {', '.join(unattached[:12])}"
+                       f"{'...' if len(unattached) > 12 else ''}. Non vérifiés : une citation "
+                       "nomme sa juridiction (« CE », « Cass. soc. », « pourvoi n° »...).")
     if set_aside:
         remarks.append(f"{len(set_aside)} numéro(s) écarté(s), à 5-7 chiffres mais près d'une "
                        f"juridiction judiciaire : {', '.join(set_aside)}. À vérifier à la main.")
@@ -455,8 +499,13 @@ LATIN = (r"(?:bis|ter|quater|quinquies|sexies|septies|octies|nonies|novies|decie
          r"duodecies|terdecies|quaterdecies|quindecies|sexdecies|septdecies|octodecies|"
          r"novodecies|vicies|unvicies|duovicies|tervicies|quatervicies|quinvicies|sexvicies|"
          r"septvicies|octovicies|novovicies|tricies)")
+# Une majuscule finale est un suffixe (« 199 undecies B »), même suivie d'un point devant
+# « du », « de », « des » (« 199 undecies B. du CGI » : sans ça, le B tombait et le
+# programme vérifiait l'article 199 undecies, audit du 01/10/2026). Devant un autre mot en
+# minuscule, c'est une abréviation (« C. civ. ») : pas un suffixe.
 SUFFIX = (rf"(?:\s{LATIN}\b|-0\b"
-          r"|\s(?-i:(?!C\.)[A-Z]{1,2})(?!\w)(?!\.\s*[a-zà-ÿ]))")
+          r"|\s(?-i:(?!C\.)[A-Z]{1,2})(?!\w)"
+          r"(?!\.\s*(?!(?:du|de|des|d['’])(?![a-zà-ÿ]))[a-zà-ÿ]))")
 NUM = rf"(?:[LRDA]\.?\s?\*?\s?)?(?:1er|\d+(?:[-‑.]\d+)*){SUFFIX}*\b"
 RE_ARTICLES = re.compile(
     r"\bart(?:icle)?s?\.?\s+(" + NUM + r"(?:\s*(?:,|et|à|ou)\s*" + NUM + r")*)", re.I)
@@ -473,7 +522,8 @@ RE_ATTACHED = re.compile(
     r"^\W{0,3}(?:de\s+l['’]\s*|du\s+)(?:avenant|accord\s+(?:de\s+branche|collectif|national))",
     re.I)
 RE_SAME_CONVENTION = re.compile(
-    r"^\W{0,3}(?:de\s+ladite\s+convention|de\s+la\s+(?:même\s+)?(?:convention|CCN)"
+    r"^\W{0,3}(?:de\s+ladite\s+convention|de\s+la\s+même\s+(?:convention|CCN)\b"
+    r"|de\s+la\s+(?:même\s+)?(?:convention|CCN)"
     r"(?:\s+collective)?(?:\s+nationale)?\s+(?:précitée|susvisée|susmentionnée))", re.I)
 RE_IDCC = re.compile(r"\bIDCC\s*(?:n[°ºo]\s*)?:?\s*(\d{1,4})\b", re.I)
 IDCC_WINDOW = 250
@@ -494,16 +544,18 @@ RE_SENTENCE_END = re.compile(
     + r"[.;!?]\s+(?=[A-ZÀ-ÖØ-Þ«])")
 
 
-def nearest_idcc(text, start, end):
-    """L'IDCC écrit dans la MÊME PHRASE que la citation, le plus proche, ou None. Jamais
+def nearest_idcc(text, start, end, taken=()):
+    """(position, IDCC) : l'IDCC écrit dans la MÊME PHRASE que la citation, le plus proche,
+    hors ceux déjà pris (`taken`, leurs positions) ; (None, None) s'il n'y en a pas. Jamais
     déduit d'un nom, jamais repris d'une phrase voisine (sauf « ladite convention »)."""
     lo, hi = max(0, start - IDCC_WINDOW), min(len(text), end + IDCC_WINDOW)
     for m in RE_SENTENCE_END.finditer(text, lo, start):
         lo = m.end()
     m = RE_SENTENCE_END.search(text, end, hi)
     hi = m.start() + 1 if m else hi
-    found = [(abs(m.start() - start), m.group(1)) for m in RE_IDCC.finditer(text, lo, hi)]
-    return min(found)[1] if found else None
+    found = [(abs(m.start() - start), m.start(), m.group(1))
+             for m in RE_IDCC.finditer(text, lo, hi) if m.start() not in taken]
+    return min(found)[1:] if found else (None, None)
 
 
 def normalize_number(raw):
@@ -608,8 +660,13 @@ def extract_articles(text):
     quotes = assign_quotes(text, [(m.start(), m.end()) for m in matches])
     citations, seen, no_code, attached = [], Seen(), [], []
     last_code = last_idcc = last_text = None
+    idcc_taken = set()      # les IDCC déjà rattachés à un article (leur position)
     for index, m in enumerate(matches):
-        after = text[m.end(): m.end() + CODE_AFTER]
+        # Le code, le texte ou la convention se cherchent dans la même phrase : « L'article
+        # 1240. Cette solution ne figure pas au code de commerce » ne cite pas le Code de
+        # commerce (audit du 01/10/2026).
+        stop = RE_SENTENCE_END.search(text, m.end(), m.end() + CODE_AFTER)
+        after = text[m.end(): stop.start() + 1 if stop else m.end() + CODE_AFTER]
         before = text[max(0, m.start() - CODE_BEFORE): m.start()]
         numbers = [normalize_number(x) for x in RE_ONE_NUM.findall(m.group(1))]
         quote = quotes.get(index) if len(numbers) == 1 else None
@@ -619,7 +676,15 @@ def extract_articles(text):
             continue
         same = RE_SAME_CONVENTION.match(after)
         if same or RE_CONVENTION.match(after):
-            idcc = last_idcc if same and last_idcc else nearest_idcc(text, m.start(), m.end())
+            if same and last_idcc:
+                idcc = last_idcc
+            else:
+                # Un IDCC déjà rattaché à l'article précédent n'est repris que par « la même
+                # convention » : « article 5 de la convention collective (IDCC 1979) et
+                # article 99 de la convention collective » ne dit pas laquelle est la seconde.
+                where, idcc = nearest_idcc(text, m.start(), m.end(), idcc_taken)
+                if idcc:
+                    idcc_taken.add(where)
             last_idcc = idcc or last_idcc
             for number in numbers:
                 if seen.again(("idcc", idcc, number), m.span()):
