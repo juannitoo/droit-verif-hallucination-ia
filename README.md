@@ -31,7 +31,7 @@ Pour juger sur pièces :
   fictives de deux pages, avec des citations exactes, inventées ou mal datées (dont celles
   relevées par le TJ de Périgueux) ;
 - fichiers générés suite au test :
-  - [conclusions-test-citations-vérifiées.pdf](exemples/conclusions-test-citations-v%C3%A9rifi%C3%A9es.pdf) :
+  - [conclusions-test-citations-verifiees.pdf](exemples/conclusions-test-citations-verifiees.pdf) :
     le document lui-même, chaque citation surlignée de la couleur de son verdict et
     cliquable, avec en première page le mode d'emploi des couleurs ;
   - [rapport-citations.pdf](exemples/rapport-citations.pdf) : le rapport, tableau et détail

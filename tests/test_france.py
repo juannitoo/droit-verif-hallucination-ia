@@ -1176,7 +1176,7 @@ class AnnotatedPdf(unittest.TestCase):
             self.pdf(src)
             before = src.read_bytes()
             target = annotate.output_name(src)
-            self.assertEqual(target.name, "conclusions-citations-vérifiées.pdf")
+            self.assertEqual(target.name, "conclusions-citations-verifiees.pdf")
             self.assertEqual(annotate.annotate(src, target, self.report(src)), (1, 1))
             self.assertEqual(src.read_bytes(), before)
             annots = self.annots(target)

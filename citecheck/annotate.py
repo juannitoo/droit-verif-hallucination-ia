@@ -59,8 +59,8 @@ def anchor(text, start, end):
 
 
 def output_name(path):
-    """« conclusions.pdf » -> « conclusions-citations-vérifiées.pdf »."""
-    return path.with_name(f"{path.stem}-citations-vérifiées{path.suffix}")
+    """« conclusions.pdf » -> « conclusions-citations-verifiees.pdf »."""
+    return path.with_name(f"{path.stem}-citations-verifiees{path.suffix}")
 
 
 # Les lettres d'une page, avec leur place

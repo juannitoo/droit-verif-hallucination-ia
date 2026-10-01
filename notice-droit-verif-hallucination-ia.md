@@ -73,7 +73,7 @@ python -m venv .venv
 .venv/bin/python -m citecheck                    # la fenêtre
 .venv/bin/python -m citecheck conclusions.pdf    # la ligne de commande
 .venv/bin/python -m citecheck conclusions.pdf --json
-.venv/bin/python -m citecheck conclusions.pdf --pdf  # + conclusions-citations-vérifiées.pdf
+.venv/bin/python -m citecheck conclusions.pdf --pdf  # + conclusions-citations-verifiees.pdf
 .venv/bin/python -m citecheck conclusions.docx -o rapport.pdf  # le rapport en PDF
 ```
 
@@ -85,7 +85,7 @@ python -m venv .venv
 .venv\Scripts\python -m citecheck                    # la fenêtre
 .venv\Scripts\python -m citecheck conclusions.pdf    # la ligne de commande
 .venv\Scripts\python -m citecheck conclusions.pdf --json
-.venv\Scripts\python -m citecheck conclusions.pdf --pdf  # + conclusions-citations-vérifiées.pdf
+.venv\Scripts\python -m citecheck conclusions.pdf --pdf  # + conclusions-citations-verifiees.pdf
 .venv\Scripts\python -m citecheck conclusions.docx -o rapport.pdf  # le rapport en PDF
 ```
 
@@ -117,7 +117,7 @@ enregistrent les sauts de page de leur dernier affichage), absente pour du texte
 citation placée dans une note de bas de page Word est signalée comme telle.
 
 **Le PDF annoté** (bouton « PDF annoté », ou `--pdf`) : une copie du document, nommée
-`<nom>-citations-vérifiées.pdf`, où chaque citation est surlignée : **bleu** confirmée,
+`<nom>-citations-verifiees.pdf`, où chaque citation est surlignée : **bleu** confirmée,
 **orange** à vérifier (autre date, autre chambre, autre version, texte cité non retrouvé :
 tout ce qui est douteux, jamais confirmé), **rouge** semble inventée, **gris avec « ? »**
 non vérifiée (clé absente, base en panne, période non couverte). Un clic ouvre ce qui a

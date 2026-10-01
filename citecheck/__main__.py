@@ -3,7 +3,7 @@
   python -m citecheck                               # the window
   python -m citecheck brief.pdf                     # text report
   python -m citecheck brief.pdf --json              # JSON report, for an AI
-  python -m citecheck brief.pdf --pdf               # + brief-citations-vérifiées.pdf
+  python -m citecheck brief.pdf --pdf               # + brief-citations-verifiees.pdf
   python -m citecheck brief.docx -o rapport.pdf     # the report as a PDF
   python -m citecheck brief.pdf --reference-date 2019-03-21   # articles read at that date
   python -m citecheck --number 17-28268 --date 2019-03-21
