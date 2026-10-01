@@ -36,7 +36,7 @@ _LEGIFRANCE = re.compile(r"https://www\.legifrance\.gouv\.fr/(?:cons|ceta|juri)/
 
 def _strip(html):
     import html as h
-    return h.unescape(re.sub(r"<[^>]+>", " ", html or ""))
+    return h.unescape(re.sub(r"<[^<>]*>", " ", html or ""))     # voir legifrance._strip_html
 
 
 def judilibre_text(decision_id, key):
@@ -74,6 +74,9 @@ def source_text(link, keys, client):
 
 # En dessous, la base a répondu sans le texte : on n'a rien lu, donc rien à comparer.
 MIN_TEXT = 100
+# Au-dessus, ce n'est plus une décision (les plus longues font quelques centaines de milliers
+# de caractères) : on ne compare que le début.
+MAX_TEXT = 2_000_000
 
 
 def _missing(fragments, body):
@@ -96,7 +99,7 @@ def check(citation, result, keys, client=None):
                 f"{said})", actual, link)
     if text is None:
         return verdict, f"{why} ; passage cité non contrôlé ({base})", actual, link
-    body = _norm(text)
+    body = _norm(text[:MAX_TEXT])
     if len(body) < MIN_TEXT:
         # Une réponse vide n'est pas un texte où le passage manque : « non retrouvé »
         # accuserait le document à tort.

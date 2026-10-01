@@ -466,8 +466,8 @@ class Window:
                 done = t.PDF_SAVED.format(path=path, placed=placed)
                 self.queue.put(("pdf", done + (t.PDF_MISSED.format(n=missed) if missed else "")))
             except Exception as e:
-                self.queue.put(("pdf", t.PDF_FAILED_ANNOTATE.format(
-                    error=f"{type(e).__name__} : {e}")))
+                why = str(e) if isinstance(e, annotate.TooHeavy) else f"{type(e).__name__} : {e}"
+                self.queue.put(("pdf", t.PDF_FAILED_ANNOTATE.format(error=why)))
 
         threading.Thread(target=work, daemon=True).start()
         self.root.after(100, self.poll)

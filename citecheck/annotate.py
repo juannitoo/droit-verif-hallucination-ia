@@ -19,6 +19,8 @@ TROUVER UNE CITATION SUR LA PAGE
 """
 import io
 import logging
+import os
+import time
 import unicodedata
 
 from pypdf import PdfReader, PdfWriter
@@ -32,6 +34,16 @@ from .reader import MAX_PAGES, PAGE
 # (Multiply) : le texte noir reste noir.
 COLORS = {light: tuple(round(v / 255, 3) for v in rgb) for light, rgb in rep.COLORS.items()}
 QUESTION = (0.35, 0.35, 0.35)       # le « ? » des citations non vérifiées
+
+# Un PDF reçu de l'extérieur peut être fait pour occuper le poste : des centaines de milliers
+# de tracés, des lettres par millions. Le lecteur (reader.py) a ses plafonds ; ceux-ci sont
+# ceux de l'annotation, qui relit les pages à sa façon.
+MAX_SECONDS = 60
+MAX_LETTERS = 200_000       # par page : une page pleine en compte quelques milliers
+
+
+class TooHeavy(Exception):
+    """Le PDF dépasse ce que l'annotation accepte : rien n'est écrit."""
 
 
 def squeeze(text):
@@ -74,10 +86,41 @@ def _page_ctm(page):
             270: (0, 1, -1, 0, y1, -x0)}.get(page.rotate % 360, (1, 0, 0, 1, -x0, -y0))
 
 
-def _letters(path, wanted):
+def _device(manager, deadline):
+    """Le lecteur de lettres de pdfminer, sans les tracés ni les images (on n'en a pas
+    besoin) et qui s'arrête au-delà des plafonds."""
+    from pdfminer.converter import PDFPageAggregator
+
+    class Letters(PDFPageAggregator):
+        count = 0
+
+        def _check(self):
+            if time.monotonic() > deadline:
+                raise TooHeavy(f"plus de {MAX_SECONDS} secondes pour relire ce PDF")
+            if self.count > MAX_LETTERS:
+                raise TooHeavy(f"plus de {MAX_LETTERS:_} lettres sur une page".replace("_", " "))
+
+        def begin_page(self, *args, **kw):
+            self.count = 0
+            super().begin_page(*args, **kw)
+
+        def render_char(self, *args, **kw):
+            self.count += 1
+            self._check()
+            return super().render_char(*args, **kw)
+
+        def paint_path(self, *args, **kw):
+            self._check()
+
+        def render_image(self, *args, **kw):
+            self._check()
+
+    return Letters(manager, laparams=None)
+
+
+def _letters(path, wanted, deadline):
     """{numéro de page (1...): [(lettre, x0, y0, x1, y1)]} pour les pages voulues, dans
     l'ordre où la page les écrit, en coordonnées de la page."""
-    from pdfminer.converter import PDFPageAggregator
     from pdfminer.layout import LTChar
     from pdfminer.pdfinterp import PDFPageInterpreter, PDFResourceManager
     from pdfminer.pdfpage import PDFPage
@@ -86,7 +129,7 @@ def _letters(path, wanted):
     # get FontBBox ») : sans effet sur la place des lettres, et du bruit pour l'utilisateur.
     logging.getLogger("pdfminer").setLevel(logging.ERROR)
     manager = PDFResourceManager()
-    device = PDFPageAggregator(manager, laparams=None)
+    device = _device(manager, deadline)
     interpreter = PDFPageInterpreter(manager, device)
     out = {}
     with open(path, "rb") as f:
@@ -287,7 +330,8 @@ def annotate(source, target, report):
             continue
         # La citation, et ses reprises plus loin dans le document, sous le même verdict.
         places += [(p["page"], p, r) for p in [loc] + loc.get("repeats", []) if p.get("page")]
-    letters = _letters(source, {page for page, _, _ in places})
+    letters = _letters(source, {page for page, _, _ in places},
+                       time.monotonic() + MAX_SECONDS)
     reader = PdfReader(source)
     if reader.is_encrypted:
         reader.decrypt("")      # un PDF protégé contre la modification seulement
@@ -311,6 +355,14 @@ def annotate(source, target, report):
     page = PdfReader(io.BytesIO(report_pdf.notice(
         report, float(first.mediabox.width), float(first.mediabox.height)))).pages[0]
     writer.insert_page(page, 0)
-    with open(target, "wb") as f:
-        writer.write(f)
+    # D'abord à côté, puis à sa place : un arrêt en cours d'écriture (fenêtre fermée, disque
+    # plein) ne laisse pas un PDF tronqué sous le nom choisi.
+    partial = f"{target}.partiel"
+    try:
+        with open(partial, "wb") as f:
+            writer.write(f)
+        os.replace(partial, target)
+    finally:
+        if os.path.exists(partial):
+            os.remove(partial)
     return placed, missed

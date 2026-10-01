@@ -100,9 +100,12 @@ def main(argv=None):
             return 2
         if a.pdf and Path(a.document).suffix.lower() == ".pdf":
             target = annotate.output_name(Path(a.document))
-            placed, missed = annotate.annotate(a.document, target, r)
-            log(t.PDF_SAVED.format(path=target, placed=placed)
-                + (t.PDF_MISSED.format(n=missed) if missed else ""))
+            try:
+                placed, missed = annotate.annotate(a.document, target, r)
+                log(t.PDF_SAVED.format(path=target, placed=placed)
+                    + (t.PDF_MISSED.format(n=missed) if missed else ""))
+            except annotate.TooHeavy as e:
+                log(t.PDF_FAILED_ANNOTATE.format(error=e))
         elif a.pdf:
             log(t.PDF_ONLY)
 

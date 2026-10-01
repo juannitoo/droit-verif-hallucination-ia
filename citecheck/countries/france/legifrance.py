@@ -339,5 +339,7 @@ def _day(ms):
 def _strip_html(html):
     import html as h
     import re
-    return h.unescape(re.sub(r"<[^>]+>", " ", html)).strip()
+    # [^<>] : une balise s'arrête au chevron suivant. Avec [^>], une réponse faite de
+    # chevrons ouvrants sans fermant relisait toute la suite à chacun (temps au carré).
+    return h.unescape(re.sub(r"<[^<>]*>", " ", html)).strip()
 

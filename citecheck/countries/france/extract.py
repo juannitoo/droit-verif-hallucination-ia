@@ -36,6 +36,7 @@ CE QU'IL NE FAIT JAMAIS
   Deviner. Un numéro sans date lisible sort sans date, et le contrôle de date est annoncé
   impossible. Tout ce qu'il n'a pas su rattacher est signalé : un trou est un trou.
 """
+import bisect
 import re
 import unicodedata
 from datetime import date
@@ -149,6 +150,8 @@ def assign_dates(text, spans, used=None):
     5 juin 2009, et le programme pouvait « confirmer » une association que le document n'a
     jamais faite."""
     starts = sorted(spans)
+    firsts = [start for start, _ in starts]
+    longest = max((end - start for start, end in starts), default=0)
     best = {}
     dates = [(m, _iso(m)) for m in RE_DATE_WORDS.finditer(text)]
     dates += [(m, _iso(m, False)) for m in RE_DATE_DIGITS.finditer(text)]
@@ -156,7 +159,12 @@ def assign_dates(text, spans, used=None):
         if not day:
             continue
         candidates = []
-        for start, end in starts:
+        # Seuls les numéros à moins de WINDOW caractères comptent : on ne parcourt qu'eux.
+        # (Tous, pour chaque date : un document de mille fois la même citation y passait
+        # des minutes, audit du 01/10/2026.)
+        lo = bisect.bisect_left(firsts, m.start() - WINDOW - longest)
+        hi = bisect.bisect_right(firsts, m.end() + WINDOW)
+        for start, end in starts[lo:hi]:
             gap = m.start() - end if m.start() >= end else start - m.end()
             if gap < 0 or gap > WINDOW:
                 continue

@@ -1278,6 +1278,20 @@ class AnnotatedPdf(unittest.TestCase):
                     if "/A" in a.get_object()]
             self.assertEqual(uris, ["https://exemple.fr/"])      # the author's own web link
 
+    def test_a_pdf_too_heavy_to_reread_writes_nothing(self):
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+        from citecheck import annotate
+        with tempfile.TemporaryDirectory() as tmp:
+            src, out = Path(tmp) / "c.pdf", Path(tmp) / "out.pdf"
+            self.pdf(src)
+            for ceiling in ({"MAX_SECONDS": -1}, {"MAX_LETTERS": 5}):
+                with mock.patch.multiple(annotate, **ceiling):
+                    with self.assertRaises(annotate.TooHeavy):
+                        annotate.annotate(src, out, self.report(src))
+            self.assertEqual(sorted(p.name for p in Path(tmp).iterdir()), ["c.pdf"])
+
     def test_only_official_https_links_survive(self):
         for url in ("https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000032041571",
                     "https://www.courdecassation.fr/decision/5fca7e0a7ec5c2c5b5a6d2a3"):
@@ -1375,6 +1389,29 @@ class DecisionQuotes(unittest.TestCase):
                           "justice n'a pas laissé l'avis de passage prévu par la loi ».")
         self.assertEqual(cits[0]["quote"], "L'huissier de justice n'a pas laissé l'avis de "
                                            "passage prévu par la loi")
+
+
+class HostileSizes(unittest.TestCase):
+    """A document or a response built to occupy the computer: the time must grow with the
+    size, not with its square."""
+
+    def test_a_thousand_times_the_same_citation_is_read_at_once(self):
+        import time
+        text = "Cass. soc., 21 mars 2019, n° 17-28.268. " * 8000
+        began = time.monotonic()
+        cits, _ = extract(text)
+        self.assertLess(time.monotonic() - began, 5)        # 13 s before, under 1 s now
+        self.assertEqual(len(cits), 1)
+
+    def test_tags_are_stripped_in_one_pass(self):
+        import time
+        from citecheck.countries.france.decision_quotes import _strip
+        from citecheck.countries.france.legifrance import _strip_html
+        began = time.monotonic()
+        _strip("<" * 1_000_000)
+        _strip_html("<" * 1_000_000)
+        self.assertLess(time.monotonic() - began, 2)        # minutes before
+        self.assertEqual(_strip_html("<p>Art. <b>1240</b></p>").split(), ["Art.", "1240"])
 
 
 class PisteCeiling(unittest.TestCase):
