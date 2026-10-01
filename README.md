@@ -68,10 +68,11 @@ grand cabinet, qui a, lui, les moyens de développer ses propres outils.
 ## État
 
 Programme en construction. Pas encore d'exécutable à télécharger. Audité par Claude Opus 5.5
-et Kimi K3 le 29 septembre 2026, puis deux fois par Grok 4.7, les 30 septembre et 1er octobre
-2026 (sécurité : lecture des fichiers reçus, ce qui part sur le réseau, rapport sans
-extraits, base locale, fichiers piégés, PDF annoté). Il reste à le vérifier sur des cas
-réels qui n'ont pas servi lors de la conception.
+et Kimi K3 le 29 septembre 2026, puis trois fois par Grok 4.7, du 30 septembre au 1er
+octobre 2026 (sécurité : lecture des fichiers reçus, ce qui part sur le réseau, rapport sans
+extraits, base locale, fichiers piégés, PDF annoté, réponses incomplètes des bases, lecture
+des phrases). Il reste à le vérifier sur des cas réels qui n'ont pas servi lors de la
+conception.
 
 Code écrit avec Claude Opus 5.5 (Claude Code, Anthropic), sous la direction de Jean BALANGUE.
 

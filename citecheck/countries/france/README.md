@@ -201,8 +201,9 @@ trousseau de votre système.
   de 80 citations (décisions réelles, dates fausses, chambres fausses, numéros inventés,
   codes abrogés, lois ambiguës), dont le cas du tribunal judiciaire de Périgueux.
 - Des **audits de sécurité** par trois modèles différents : Claude Opus 5.5 et Kimi K3 le 29
-  septembre 2026, puis Grok 4.7 les 30 septembre et 1er octobre 2026 (fichiers piégés, ce
-  qui part sur le réseau, rapport sans extraits, PDF annoté).
+  septembre 2026, puis Grok 4.7 à trois reprises, du 30 septembre au 1er octobre 2026
+  (fichiers piégés, ce qui part sur le réseau, rapport sans extraits, PDF annoté, réponses
+  incomplètes des bases, lecture des phrases).
 - Reste à faire avant diffusion : l'éprouver sur des cas réels de citations inventées, qui
   n'ont pas servi à le construire.
 

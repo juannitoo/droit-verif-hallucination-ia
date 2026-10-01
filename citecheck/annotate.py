@@ -320,6 +320,9 @@ def annotate(source, target, report):
     placed = 0
     for page, where, r in places:
         rects = find(letters.get(page, []), squeeze(where["text"]), where.get("nth", 0))
+        if not rects and where.get("core"):
+            core = where["core"]
+            rects = find(letters.get(page, []), squeeze(core["text"]), core.get("nth", 0))
         if not rects:
             missed += 1
             continue

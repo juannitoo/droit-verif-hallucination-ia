@@ -1792,5 +1792,58 @@ class AuditPass3Small(unittest.TestCase):
                     reader.text_of(src)
             self.assertIn("lente", str(said.exception))
 
+class ArticleAndItsCode(unittest.TestCase):
+    """Le PDF annoté surligne l'article et ce à quoi il est rattaché d'un seul tenant : le
+    lecteur voit sur la page quel code, quelle loi, quelle convention a été retenu."""
+
+    def spans(self, text):
+        return [text[slice(*c["span"])] for c in extract(text)[0]]
+
+    def test_one_block_for_the_article_and_its_code(self):
+        self.assertEqual(self.spans("Selon l'article 1240 du Code civil, tout fait."),
+                         ["article 1240 du Code civil"])
+        self.assertEqual(self.spans("C. trav., art. L. 1152-1."), ["C. trav., art. L. 1152-1"])
+        self.assertEqual(self.spans("article 22 de la loi n° 89-462 du 6 juillet 1989."),
+                         ["article 22 de la loi n° 89-462 du 6 juillet 1989"])
+        self.assertEqual(self.spans("article L. 110-1 du code de commerce. L'article 1240 du "
+                                    "même code."),
+                         ["article L. 110-1 du code de commerce", "article 1240 du même code"])
+        self.assertEqual(self.spans("article 5 de la convention collective (IDCC 1979)."),
+                         ["article 5 de la convention collective (IDCC 1979"])
+
+    def test_one_block_for_the_court_the_date_and_the_number(self):
+        self.assertEqual(self.spans("(CE, 30 novembre 2018, n° 402517)."),
+                         ["CE, 30 novembre 2018, n° 402517"])
+        self.assertEqual(self.spans("(Cass. soc., 14 décembre 2017, n° 16-26694)."),
+                         ["Cass. soc., 14 décembre 2017, n° 16-26694"])
+        self.assertEqual(self.spans("(CJUE, 6 octobre 2021, C-561/19)."),
+                         ["CJUE, 6 octobre 2021, C-561/19"])
+        self.assertEqual(self.spans("le Conseil constitutionnel (Cons. const., 12 mai 2010, "
+                                    "n° 2010-605 DC)."),
+                         ["Cons. const., 12 mai 2010, n° 2010-605 DC"])
+
+    def test_a_block_never_takes_what_belongs_to_the_previous_one(self):
+        self.assertEqual(self.spans("CE n° 308850 du 5 juin 2009 et n° 402517."),
+                         ["CE n° 308850 du 5 juin 2009", "n° 402517"])
+
+    def test_the_article_alone_when_the_block_is_not_on_the_page(self):
+        import tempfile
+        from pathlib import Path
+        from citecheck import annotate, reader
+        helper = AnnotatedPdf()
+        with tempfile.TemporaryDirectory() as tmp:
+            src, out = Path(tmp) / "c.pdf", Path(tmp) / "out.pdf"
+            helper.pdf(src)
+            doc = reader.read(src)
+            start = doc.text.index("article 1240")
+            cit = {"kind": "article", "code": "Code civil", "number": "1240",
+                   "court": "Code civil", "verdict": "ARTICLE_IN_FORCE", "explanation": "x",
+                   "location": {"page": 1, "page_exact": True, "in_notes": False,
+                                "excerpt": "", "text": "article 1240 introuvable", "nth": 0,
+                                "core": annotate.anchor(doc.text, start, start + 12)}}
+            placed, missed = annotate.annotate(src, out, report.build("c.pdf", "france",
+                                                                      [cit], []))
+            self.assertEqual((placed, missed), (1, 0))
+
 if __name__ == "__main__":
     unittest.main()

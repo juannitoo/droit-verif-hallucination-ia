@@ -152,7 +152,7 @@ def _iso(m, words=True):
     return iso
 
 
-def assign_dates(text, spans, used=None):
+def assign_dates(text, spans, used=None, places=None):
     """Rattache chaque date à UN seul numéro de décision : le plus proche, dans la même
     phrase. Renvoie {début du numéro: date}.
 
@@ -195,10 +195,13 @@ def assign_dates(text, spans, used=None):
                 if used is not None:
                     used.update((best[start][2], m.start()))
             if start not in best or gap < best[start][0]:
-                best[start] = (gap, day, m.start())
+                best[start] = (gap, day, m.start(), m.end())
     if used is not None:
-        used.update(where for _, _, where in best.values())
-    return {start: day for start, (_, day, _) in best.items() if start not in disputed}
+        used.update(where for _, _, where, _ in best.values())
+    if places is not None:      # où est écrite la date retenue, pour le PDF annoté
+        places.update({start: (a, b) for start, (_, _, a, b) in best.items()
+                       if start not in disputed})
+    return {start: day for start, (_, day, _, _) in best.items() if start not in disputed}
 
 
 # La chambre de la Cour de cassation citée avant le pourvoi, dans la même phrase. Codes de
@@ -263,12 +266,19 @@ def _nearest(found):
     return min((f for f in found if f[0] < last[1] and last[0] < f[1]), key=lambda f: f[2])[3]
 
 
-def _sentence_start(text, start):
-    """Le début de la phrase où se trouve `start`, sans remonter de plus de WINDOW."""
-    lo = max(0, start - WINDOW)
-    for end in RE_SENTENCE_END.finditer(text, lo, start):
-        lo = end.end()
-    return lo
+_ENDS = [None, []]      # [texte, fins de phrase] : calculées une fois par document
+
+
+def _sentence_start(text, start, floor=0):
+    """Le début de la phrase où se trouve `start`, sans remonter de plus de WINDOW, ni
+    avant `floor`. Les fins de phrase sont relevées une fois pour tout le texte : les
+    chercher devant chaque numéro rendait un document piégé (des milliers de fois la même
+    citation) plus de deux fois plus lent à lire."""
+    if _ENDS[0] is not text:
+        _ENDS[:] = [text, [m.end() for m in RE_SENTENCE_END.finditer(text)]]
+    ends = _ENDS[1]
+    i = bisect.bisect_right(ends, start) - 1
+    return max(floor, start - WINDOW, ends[i] if i >= 0 else 0)
 
 
 def _court_in_sentence(text, start, rx):
@@ -347,10 +357,10 @@ def extract(text):
     rgs = list(RE_RG.finditer(text))
     tcom = [(m, court) for m in RE_TCOM_NUMBER.finditer(text)
             for court in [_court_in_sentence(text, m.start(), RE_TCOM_COURT)] if court]
-    used = set()
+    used, date_places = set(), {}
     dates = assign_dates(text, [m.span() for m in
                                 appeals + requests + rgs + conflicts + constit + eu + caa]
-                         + [m.span() for m, _ in tcom], used)
+                         + [m.span() for m, _ in tcom], used, date_places)
     seen = Seen()       # (numéro, date) : un même numéro cité à deux dates = deux citations
 
     def add(order, court, number, m):
@@ -386,10 +396,14 @@ def extract(text):
     unattached = []     # numéros sans juridiction nommée dans la phrase : montrés, pas envoyés
     for i, m in enumerate(appeals):
         number, d = m.group(1), dates.get(m.start())
+        lo = _sentence_start(text, m.start())
+        named = (MARK_JUDICIAL.search(text, lo, m.start())
+                 or MARK_APPEAL.search(text, lo, m.start()))
+        if named and seen.again((number, d), m.span()):
+            continue                # une reprise : sa chambre a déjà été lue
         chamber = cited_chamber(text, m.start(), m.end(),
                                 appeals[i + 1].start() if i + 1 < len(appeals) else None)
-        if (not chamber and order_of(text, m.start(), None) != "judicial"
-                and not MARK_APPEAL.search(text, _sentence_start(text, m.start()), m.start())):
+        if not chamber and not named:
             unattached.append(number)
             continue
         if seen.again((number, d), m.span()):
@@ -476,10 +490,75 @@ def extract(text):
     # Le passage entre guillemets qui suit une décision, pour le chercher dans son texte
     # (decision_quotes.py). Articles et décisions concourent : un passage va à la citation
     # la plus proche. Celui des articles est déjà rattaché, entre articles seulement.
-    for i, quote in assign_quotes(text, [c["span"] for c in both]).items():
+    for i, quote in assign_quotes(text, [c.get("core", c["span"]) for c in both]).items():
         if both[i]["kind"] == "decision" and both[i].get("number"):
             both[i]["quote"] = quote
+    _decision_blocks(text, [c for c in both if c["kind"] == "decision" and c.get("number")],
+                     date_places)
+    _ENDS[:] = [None, []]       # ne pas garder le document en mémoire après sa lecture
     return both, remarks + article_remarks
+
+
+# Tout ce qui peut nommer la juridiction ou la chambre devant un numéro.
+# Une seule expression : une quinzaine de recherches devant chaque numéro rendaient un
+# document piégé (des milliers de fois la même citation) quatre fois plus lent à lire.
+_COURT_MARKS = [re.compile("|".join(
+    f"(?{'i' if rx.flags & re.I else '-i'}:{rx.pattern})"
+    for rx in [rx for _, rx in MARK_ANY] + [MARK_APPEAL] + [rx for rx, _ in CHAMBERS]))]
+_BETWEEN_MARKS = re.compile(r"[\s,.]*")
+
+
+def _court_start(text, lo, start):
+    """Le début de la juridiction nommée juste avant `start` (« Cass. soc. », « CE »), entre
+    `lo` et `start` ; None s'il n'y en a pas. Les marques collées (« Cass. » puis « soc. »)
+    forment un seul nom."""
+    found = sorted({(m.start(), m.end()) for rx in _COURT_MARKS
+                    for m in rx.finditer(text, lo, start)}, key=lambda f: f[1])
+    if not found:
+        return None
+    first = found[-1][0]
+    for a, b in reversed(found[:-1]):
+        if b <= first and _BETWEEN_MARKS.fullmatch(text, b, first):
+            first = a
+        elif b > first:
+            first = min(first, a)       # deux marques qui se chevauchent : la plus large
+    return first
+
+
+def _decision_blocks(text, decisions, date_places):
+    """Le surlignage d'une décision va de sa juridiction jusqu'à son numéro, date retenue
+    comprise, dans la même phrase : « CE, 30 novembre 2018, n° 402517 » d'un seul tenant. Le
+    lecteur voit sur la page quelle date et quelle juridiction le programme a lues pour ce
+    numéro. Un bloc ne remonte jamais avant le bloc précédent : « CE, 5 juin 2009, n° 308850
+    et n° 402517 » laisse le « CE » au premier. « core » : le numéro seul, si le bloc ne se
+    retrouve pas sur la page."""
+    previous = 0
+
+    def block(start, end):
+        lo = _sentence_start(text, start, min(previous, start))
+        first, last = start, end
+        day = date_places.get(start)
+        if day and day[0] >= lo:
+            first, last = min(first, day[0]), max(last, day[1])
+        court = _court_start(text, lo, first)
+        if court is not None:
+            first = court
+        return first, last
+
+    # La citation et ses reprises, dans l'ordre du texte : chacune a son bloc.
+    places = sorted([(c["span"], c, None) for c in decisions]
+                    + [(span, c, i) for c in decisions
+                       for i, span in enumerate(c.get("repeats", []))], key=lambda p: p[0][0])
+    for (start, end), c, i in places:
+        first, last = block(start, end)
+        previous = max(previous, last)
+        if (first, last) == (start, end):
+            continue
+        if i is None:
+            c["span"], c["core"] = (first, last), (start, end)
+        else:
+            c["repeats"][i] = (first, last)
+            c.setdefault("repeat_cores", {})[i] = (start, end)
 
 
 # Articles de codes
@@ -646,16 +725,32 @@ class Seen(dict):
     n'est vérifiée qu'une fois ; les places de ses reprises sont gardées (« repeats ») pour
     que le PDF annoté les marque aussi."""
 
-    def again(self, key, span):
-        """True si `key` est déjà relevée : la reprise est notée, rien d'autre à faire."""
+    def again(self, key, span, core=None):
+        """True si `key` est déjà relevée : la reprise est notée, rien d'autre à faire.
+        `core` : le numéro seul, quand `span` couvre aussi le code ou la juridiction."""
         if key in self:
-            self[key].setdefault("repeats", []).append(span)
+            repeats = self[key].setdefault("repeats", [])
+            if core and tuple(core) != tuple(span):
+                self[key].setdefault("repeat_cores", {})[len(repeats)] = core
+            repeats.append(span)
             return True
         return False
 
 
+def _word_start(text, start, end):
+    """Le premier caractère de mot à partir de `start` (avant `end`)."""
+    while start < end and not text[start].isalnum():
+        start += 1
+    return start
+
+
 def extract_articles(text):
-    """Renvoie (citations d'articles, remarques)."""
+    """Renvoie (citations d'articles, remarques).
+
+    « span » couvre l'article ET ce à quoi il est rattaché (« article 1240 du Code civil »,
+    « C. trav., art. L. 1152-1 », « article 22 de la loi n° 89-462 ») : le PDF annoté le
+    surligne d'un seul tenant, et un rattachement absurde se voit sur la page. « core » :
+    l'article seul, pour le retrouver si le bloc entier ne se retrouve pas sur la page."""
     matches = list(RE_ARTICLES.finditer(text))
     quotes = assign_quotes(text, [(m.start(), m.end()) for m in matches])
     citations, seen, no_code, attached = [], Seen(), [], []
@@ -675,7 +770,9 @@ def extract_articles(text):
             attached.extend(numbers)            # avenant, accord : pas le texte de base
             continue
         same = RE_SAME_CONVENTION.match(after)
-        if same or RE_CONVENTION.match(after):
+        named = same or RE_CONVENTION.match(after)
+        if named:
+            reach = (m.start(), m.end() + named.end())
             if same and last_idcc:
                 idcc = last_idcc
             else:
@@ -685,35 +782,44 @@ def extract_articles(text):
                 where, idcc = nearest_idcc(text, m.start(), m.end(), idcc_taken)
                 if idcc:
                     idcc_taken.add(where)
+                    # Le bloc surligné va jusqu'à l'IDCC qui a servi, avant ou après.
+                    told = RE_IDCC.match(text, where)
+                    reach = (min(reach[0], where), max(reach[1], told.end()))
             last_idcc = idcc or last_idcc
             for number in numbers:
-                if seen.again(("idcc", idcc, number), m.span()):
+                if seen.again(("idcc", idcc, number), reach, m.span()):
                     continue
                 citations.append({"kind": "convention_article", "order": "legislation",
                                   "court": f"IDCC {idcc}" if idcc else "convention collective",
                                   "idcc": idcc, "number": number, "cited_date": None,
-                                  "quote": quote, "span": m.span()})
+                                  "quote": quote, "span": reach, "core": m.span()})
                 seen[("idcc", idcc, number)] = citations[-1]
             continue
 
         # Un article de loi, d'ordonnance ou de décret non codifié.
-        ref = _text_ref(RE_TEXT_AFTER.match(after))
+        named = RE_TEXT_AFTER.match(after)
+        ref = _text_ref(named)
+        reach = (m.start(), m.end() + named.end()) if ref else m.span()
         same = RE_SAME_TEXT.match(after)
         if not ref and same and last_text and (TEXT_NATURES[same.group("nature").lower()]
                                                == last_text["text_nature"]):
             ref = last_text
+            reach = (m.start(), m.end() + same.end())
         if not ref and not find_code(before, last=True):
-            ref = _text_ref(RE_TEXT_BEFORE.search(text, max(0, m.start() - TEXT_BEFORE),
-                                                  m.start()))
+            named = RE_TEXT_BEFORE.search(text, max(0, m.start() - TEXT_BEFORE), m.start())
+            ref = _text_ref(named)
+            if ref:
+                reach = (_word_start(text, named.start(), m.start()), m.end())
         if ref:
             last_text = ref
             for number in numbers:
                 key = ("text", ref["text_nature"], ref["text_number"], ref["text_date"], number)
-                if seen.again(key, m.span()):
+                if seen.again(key, reach, m.span()):
                     continue
                 citations.append({"kind": "text_article", "order": "legislation",
                                   "court": _text_label(ref), **ref, "number": number,
-                                  "cited_date": None, "quote": quote, "span": m.span()})
+                                  "cited_date": None, "quote": quote, "span": reach,
+                                  "core": m.span()})
                 seen[key] = citations[-1]
             continue
 
@@ -722,26 +828,30 @@ def extract_articles(text):
         # Le code doit venir avant toute autre mention d'article (sinon il appartient à la
         # citation suivante), et aucun autre texte ne doit être nommé entre les deux
         # (« article 22 de la loi du 6 juillet 1989 » n'est pas un article de code).
+        same = RE_SAME_CODE.search(after)
         if (found and not RE_ARTICLES.search(after[:found[1]])
                 and not RE_OTHER_TEXT.search(after[:found[1]])):
             code = found[0]
-        elif RE_SAME_CODE.search(after) and last_code:
+            reach = (m.start(), m.end() + found[2])
+        elif same and last_code:
             code = last_code
+            reach = (m.start(), m.end() + same.end())
         elif not RE_OTHER_TEXT.match(after):
             # Code placé avant : il doit être collé à l'article (« C. trav., art. L. 1152-1 »).
             found = find_code(before, last=True)
             if found and re.fullmatch(r"[\s,;:]*", before[found[2]:]):
                 code = found[0]
+                reach = (m.start() - len(before) + found[1], m.end())
         if not code:
             no_code.extend(numbers)
             continue
         last_code = code
         for number in numbers:
-            if seen.again((code, number), m.span()):
+            if seen.again((code, number), reach, m.span()):
                 continue
             citations.append({"kind": "article", "order": "legislation", "court": code,
                               "code": code, "number": number, "cited_date": None,
-                              "quote": quote, "span": m.span()})
+                              "quote": quote, "span": reach, "core": m.span()})
             seen[(code, number)] = citations[-1]
     remarks = []
     if no_code:
