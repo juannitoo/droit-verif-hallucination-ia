@@ -133,6 +133,16 @@ Chaque citation du rapport porte sa **page** (exacte pour un PDF, approximative 
 LibreOffice, qui enregistrent les sauts de page de leur dernier affichage), un **extrait** du
 texte qui l'entoure, et l'indication **note de bas de page** quand elle y figure.
 
+## Taille du document
+
+Jusqu'à **3 000 pages** et 10 millions de caractères, soit environ 3 000 pages de
+conclusions. Au-delà, le programme refuse le document et le dit : rien n'est vérifié à
+moitié. Ces plafonds protègent l'ordinateur d'un fichier fabriqué pour le bloquer ; un
+dossier réel, même très lourd, reste en dessous.
+
+Le PDF annoté a une limite de plus : une minute pour relire les pages qui portent une
+citation. S'il ne peut pas être écrit, le rapport, lui, reste valable.
+
 ## Votre texte ne sort pas de votre ordinateur
 
 Seuls partent vers les bases publiques les numéros des décisions, les numéros d'articles

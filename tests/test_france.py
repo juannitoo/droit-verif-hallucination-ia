@@ -1414,6 +1414,47 @@ class HostileSizes(unittest.TestCase):
         self.assertEqual(_strip_html("<p>Art. <b>1240</b></p>").split(), ["Art.", "1240"])
 
 
+class NeverOverTheDocument(unittest.TestCase):
+    """The document is a court filing: no report, no annotated copy is ever written over it."""
+
+    def test_reports_refuse_the_document_and_its_other_names(self):
+        import os
+        import tempfile
+        from citecheck import annotate, output, report_pdf
+        with tempfile.TemporaryDirectory() as tmp:
+            doc = Path(tmp) / "Conclusions.pdf"
+            doc.write_bytes(b"%PDF-1.4 la piece")
+            other = Path(tmp) / "lien.pdf"
+            os.link(doc, other)                                 # a hard link: the same file
+            r = report.build(doc.name, "france", [], [])
+            for target in (doc, Path(tmp) / "conclusions.PDF", other):
+                with self.assertRaises(output.OverDocument):
+                    output.write(target, "rapport", document=doc)
+                with self.assertRaises(output.OverDocument):
+                    report_pdf.write(r, target, document=doc)
+                with self.assertRaises(output.OverDocument):
+                    annotate.annotate(doc, target, r)
+            self.assertEqual(doc.read_bytes(), b"%PDF-1.4 la piece")
+            output.write(Path(tmp) / "rapport.txt", "un deux", document=doc)
+            self.assertEqual(sorted(p.name for p in Path(tmp).iterdir()),
+                             ["Conclusions.pdf", "lien.pdf", "rapport.txt"])  # no .partiel
+
+    def test_the_command_line_stops_before_checking(self):
+        import contextlib
+        import io
+        import tempfile
+        from citecheck.__main__ import main
+        with tempfile.TemporaryDirectory() as tmp:
+            doc = Path(tmp) / "c.txt"
+            doc.write_text("Cass. soc., 21 mars 2019, n° 17-28.268.", encoding="utf-8")
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                self.assertEqual(main([str(doc), "-o", str(doc)]), 2)
+            self.assertIn("jamais remplacé", err.getvalue())
+            self.assertEqual(doc.read_text(encoding="utf-8"),
+                             "Cass. soc., 21 mars 2019, n° 17-28.268.")
+
+
 class PisteCeiling(unittest.TestCase):
     """PISTE gives the keys of Légifrance and Judilibre: a ceiling on the pace, and a full stop
     at its first « too many requests »."""

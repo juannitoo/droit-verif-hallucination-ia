@@ -184,6 +184,8 @@ PDF_SAVED = ("PDF annoté enregistré : {path}\n{placed} citation(s) surlignée(
 PDF_MISSED = ("\n{n} citation(s) non retrouvée(s) sur leur page, donc non surlignée(s) : "
               "voir le rapport.")
 PDF_ONLY = "--pdf : seul un document PDF peut être annoté ; aucun PDF écrit."
+NOT_OVER_DOCUMENT = ("Ce fichier est le document vérifié : il n'est jamais remplacé. "
+                     "Choisissez un autre nom.")
 PDF_NOT_OVER_ORIGINAL = "Le PDF annoté ne remplace jamais le document : choisissez un autre nom."
 PDF_FAILED_ANNOTATE = "Le PDF annoté n'a pas pu être écrit ({error}). Le rapport reste valable."
 REPORT_FILE = "rapport-citations"

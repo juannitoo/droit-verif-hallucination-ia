@@ -15,7 +15,7 @@ import sys
 
 from pathlib import Path
 
-from . import NAME, __version__, annotate, reader, report, report_pdf
+from . import NAME, __version__, annotate, output, reader, report, report_pdf
 from .countries import COUNTRIES, DEFAULT
 from .engine import check_citations, check_document, valid_date
 from .locales import t
@@ -86,6 +86,11 @@ def main(argv=None):
     if a.case:
         return benchmark(a.case)
 
+    if a.output and a.document and (output.same_file(a.output, a.document) or (
+            a.pdf and output.same_file(a.output, annotate.output_name(Path(a.document))))):
+        print(t.NOT_OVER_DOCUMENT, file=sys.stderr)    # avant de vérifier : rien n'est perdu
+        return 2
+
     if a.number:
         order = a.order or ("judicial" if "-" in a.number else "administrative")
         citation = {"order": order, "court": "Cass" if order == "judicial" else "CE",
@@ -113,10 +118,9 @@ def main(argv=None):
         r = report.without_excerpts(r)
     out = report.to_json(r) if a.json else report.to_text(r)
     if a.output and a.output.lower().endswith(".pdf"):
-        report_pdf.write(r, a.output)
+        report_pdf.write(r, a.output, document=a.document)
     elif a.output:
-        with open(a.output, "w", encoding="utf-8") as f:
-            f.write(out)
+        output.write(a.output, out, document=a.document)
     else:
         print(out)
     return 0

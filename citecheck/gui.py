@@ -16,7 +16,7 @@ from tkinter import filedialog
 
 import customtkinter as ctk
 
-from . import annotate, keys, reader, report, report_pdf, theme
+from . import annotate, keys, output, reader, report, report_pdf, theme
 from .countries import COUNTRIES, DEFAULT
 from .engine import check_document, valid_date
 from .locales import t
@@ -438,12 +438,14 @@ class Window:
         if not path:
             return
         r = report.without_excerpts(self.last) if without else self.last
-        if kind == "pdf":
-            report_pdf.write(r, path)
-            return
-        content = report.to_json(r) if kind == "json" else report.to_text(r)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(content)
+        try:
+            if kind == "pdf":
+                report_pdf.write(r, path, document=self.document)
+            else:
+                output.write(path, report.to_json(r) if kind == "json" else report.to_text(r),
+                             document=self.document)
+        except output.OverDocument as e:
+            self.write("\n" + str(e) + "\n")
 
     def save_pdf(self):
         source = Path(self.document)
@@ -453,7 +455,7 @@ class Window:
             initialfile=default.name, filetypes=[("PDF", "*.pdf")])
         if not path:
             return
-        if Path(path).resolve() == source.resolve():
+        if output.same_file(path, source):
             self.write("\n" + t.PDF_NOT_OVER_ORIGINAL + "\n")
             return
         self._highlight(self.b_pdf, False)
@@ -466,7 +468,8 @@ class Window:
                 done = t.PDF_SAVED.format(path=path, placed=placed)
                 self.queue.put(("pdf", done + (t.PDF_MISSED.format(n=missed) if missed else "")))
             except Exception as e:
-                why = str(e) if isinstance(e, annotate.TooHeavy) else f"{type(e).__name__} : {e}"
+                said = isinstance(e, (annotate.TooHeavy, output.OverDocument))
+                why = str(e) if said else f"{type(e).__name__} : {e}"
                 self.queue.put(("pdf", t.PDF_FAILED_ANNOTATE.format(error=why)))
 
         threading.Thread(target=work, daemon=True).start()

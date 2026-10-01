@@ -19,7 +19,6 @@ TROUVER UNE CITATION SUR LA PAGE
 """
 import io
 import logging
-import os
 import time
 import unicodedata
 
@@ -27,7 +26,7 @@ from pypdf import PdfReader, PdfWriter
 from pypdf.generic import (ArrayObject, DecodedStreamObject, DictionaryObject, FloatObject,
                            NameObject, NumberObject, TextStringObject)
 
-from . import NAME, report as rep, report_pdf
+from . import NAME, output, report as rep, report_pdf
 from .reader import MAX_PAGES, PAGE
 
 # Les couleurs du rapport (report.COLORS), en 0-1 pour le PDF, posées en « produit »
@@ -322,6 +321,8 @@ def annotate(source, target, report):
     ses extraits (ce sont eux qui disent où est chaque citation). Renvoie le nombre de
     places annotées (une citation reprise trois fois en compte trois) et celui des places
     qu'on n'a pas retrouvées sur leur page."""
+    if output.same_file(target, source):
+        raise output.OverDocument()
     places, missed = [], 0
     for r in report["citations"]:
         loc = r.get("location") or {}
@@ -355,14 +356,7 @@ def annotate(source, target, report):
     page = PdfReader(io.BytesIO(report_pdf.notice(
         report, float(first.mediabox.width), float(first.mediabox.height)))).pages[0]
     writer.insert_page(page, 0)
-    # D'abord à côté, puis à sa place : un arrêt en cours d'écriture (fenêtre fermée, disque
-    # plein) ne laisse pas un PDF tronqué sous le nom choisi.
-    partial = f"{target}.partiel"
-    try:
-        with open(partial, "wb") as f:
-            writer.write(f)
-        os.replace(partial, target)
-    finally:
-        if os.path.exists(partial):
-            os.remove(partial)
+    data = io.BytesIO()
+    writer.write(data)
+    output.write(target, data.getvalue(), document=source)
     return placed, missed

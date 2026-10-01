@@ -13,7 +13,7 @@ import customtkinter
 from fpdf import FPDF
 from fpdf.fonts import FontFace
 
-from . import report as rep
+from . import output, report as rep
 from .countries import COUNTRIES
 from .locales import t
 
@@ -212,8 +212,8 @@ def notice(report, width_pt, height_pt):
     return bytes(pdf.output())
 
 
-def write(report, target):
-    """Écrit le rapport en PDF dans `target`."""
+def write(report, target, document=None):
+    """Écrit le rapport en PDF dans `target`, jamais sur `document`."""
     pdf = _new(report)
     _head(pdf, report, t.TITLE)
     _how_to_read(pdf)
@@ -240,7 +240,7 @@ def write(report, target):
             _para(pdf, note, size=9.5)
     _para(pdf, t.NOT_CHECKED.format(what=COUNTRIES[report["country"]].not_checked_summary()),
           size=9, color=MUTED)
-    pdf.output(str(target))
+    output.write(target, bytes(pdf.output()), document=document)
 
 
 def output_name(document, without_excerpts):
