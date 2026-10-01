@@ -1066,6 +1066,22 @@ class KeyShape(unittest.TestCase):
             with self.subTest(bad=bad):
                 self.assertFalse(looks_like_key(bad))
 
+    def test_a_malformed_key_counts_as_missing_wherever_it_comes_from(self):
+        from unittest import mock
+        from citecheck import keys
+        crlf = chr(13) + chr(10)
+        for value in ("une clé avec des espaces", "0123456789" + crlf + "X-Autre: 1"):
+            with mock.patch.dict("os.environ", {"PISTE_API_KEY": value}):
+                self.assertIsNone(keys.get("PISTE_API_KEY"))
+        with mock.patch.dict("os.environ", {"PISTE_API_KEY": "d1c0d8d0-1234-4abc"}):
+            self.assertEqual(keys.get("PISTE_API_KEY"), "d1c0d8d0-1234-4abc")
+        with mock.patch.dict("os.environ", {"PISTE_API_KEY": ""}), \
+                mock.patch.object(keys, "keyring") as ring:
+            ring.get_password.return_value = "J'ai collé une phrase ici."
+            self.assertIsNone(keys.get("PISTE_API_KEY"))
+            self.assertFalse(keys.save("PISTE_API_KEY", "J'ai collé une phrase ici."))
+            ring.set_password.assert_not_called()
+
 
 class TableReport(unittest.TestCase):
     def report(self):
@@ -1476,6 +1492,26 @@ class PisteCeiling(unittest.TestCase):
             piste.wait()
             piste.wait()
         self.assertEqual(naps, [2.0, 4.0])      # 30 per minute: one every 2 seconds
+
+    def test_a_refusal_while_waiting_stops_the_request_that_waited(self):
+        import threading
+        from unittest import mock
+        from citecheck.countries.france import piste
+        with mock.patch.object(piste, "PER_MINUTE", 600):   # 0,1 s between two requests
+            piste.wait()                                    # the next one has to wait
+            outcome = []
+
+            def second():
+                try:
+                    piste.wait()
+                    outcome.append("sent")
+                except piste.Limited:
+                    outcome.append("stopped")
+            t = threading.Thread(target=second)
+            t.start()
+            piste.refused(429)                              # PISTE refuses meanwhile
+            t.join(5)
+        self.assertEqual(outcome, ["stopped"])
 
     def test_the_first_429_stops_every_piste_request(self):
         import io, urllib.error

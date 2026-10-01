@@ -5,3 +5,9 @@ keyring>=25.7.0
 pdfminer.six>=20260107   # la place de chaque lettre, pour le PDF annoté (licence MIT)
 fpdf2>=2.8.9             # le rapport en PDF (licence LGPL ; n'y entre que du texte)
 customtkinter==5.2.2     # la fenêtre, avec le style de l'assistant vocal (même version)
+# Ce qu'entraînent les précédents, avec leur propre plancher : sans lui, pip garderait une
+# vieille version déjà installée (audit du 01/10/2026).
+Pillow>=12.3.0           # par fpdf2 (GHSA-jjj6-mw9f-p565)
+fonttools>=4.60.2        # par fpdf2 (CVE-2025-66034)
+defusedxml>=0.7.1        # par fpdf2
+cryptography>=50.0.2     # par pdfminer.six

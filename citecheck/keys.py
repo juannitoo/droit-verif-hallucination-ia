@@ -15,15 +15,16 @@ except ImportError:          # no keyring: only environment variables work
 
 
 def get(name):
+    """La clé, ou None si elle manque ou n'a pas la forme d'une clé : une valeur mal formée
+    (variable d'environnement, ancien trousseau) ne part pas dans un en-tête, elle compte
+    comme absente, et la fenêtre propose de la saisir à nouveau."""
     value = os.environ.get(name, "").strip()
-    if value:
-        return value
-    if keyring:
+    if not value and keyring:
         try:
-            return (keyring.get_password(NAME, name) or "").strip() or None
+            value = (keyring.get_password(NAME, name) or "").strip()
         except Exception:
-            return None
-    return None
+            value = ""
+    return value if value and looks_like_key(value) else None
 
 
 def looks_like_key(value):
@@ -35,8 +36,9 @@ def looks_like_key(value):
 
 
 def save(name, value):
-    """Store the key in the keyring. Returns False if the system has none."""
-    if not keyring:
+    """Store the key in the keyring. Returns False if the system has none, or if the value
+    is not shaped like a key (looks_like_key)."""
+    if not keyring or not looks_like_key(value.strip()):
         return False
     try:
         keyring.set_password(NAME, name, value.strip())
