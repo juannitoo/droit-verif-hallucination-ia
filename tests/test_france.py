@@ -2100,8 +2100,10 @@ class AuditPass6(unittest.TestCase):
             [("22", "Loi n° 89-462 du 6 juillet 1989",
               "article 22 de la loi n° 89-462 du 6 juillet 1989"),
              ("1240", "Code civil", "article 1240 du Code civil")])
-        self.assertEqual(self.read("article 22 de la loi n° 89-462 du 6 juillet 1989, "
-                                   "article 23.")[1][2], "article 23")
+        # La loi de l'article 22 est sans doute celle du 23, mais rien ne le dit : non vérifié.
+        text = "article 22 de la loi n° 89-462 du 6 juillet 1989, article 23."
+        self.assertEqual([r[0] for r in self.read(text)], ["22"])
+        self.assertIn("pas certain : 23", " ".join(extract(text)[1]))
 
     def test_no_word_under_two_colours(self):
         for text in ("C. civ., art. 1240, C. trav., art. L. 1152-1, art. 1241.",
@@ -2183,8 +2185,8 @@ class AuditPass6(unittest.TestCase):
                              "art. L. 1152-1.", "Ordonnance n° 2020-306 du 25 mars 2020")]:
             with self.subTest(text=text):
                 self.assertEqual(self.read(text)[0][1], label)
-        self.assertEqual(self.read("C. civ., art. 1240, alinéa 2 du Code du travail.")[0][1],
-                         "Code du travail")
+        # Deux codes qui se contredisent : non vérifié.
+        self.assertEqual(self.read("C. civ., art. 1240, alinéa 2 du Code du travail."), [])
 
     def test_same_code_wins_over_the_next_one(self):
         for text in ("C. civ., art. 1240, art. 1241 du même code, C. trav., art. L. 1152-1.",
@@ -2202,6 +2204,57 @@ class AuditPass6(unittest.TestCase):
         self.assertEqual([r[2] for r in self.read("art. 1240 (C. civ.), art. L. 1152-1 "
                                                   "(C. trav.).")],
                          ["art. 1240 (C. civ.)", "art. L. 1152-1 (C. trav.)"])
+
+    def test_audit_9(self):
+        """Audit du 02/10/2026 (9)."""
+        law = "Loi n° 89-462 du 6 juillet 1989"
+        cases = [
+            # un nom de code derrière « de ce », « dudit », « du même » est lu...
+            ("article 222-33 de ce code du travail.", [("222-33", "Code du travail")]),
+            ("article 111-1 du même code du travail.", [("111-1", "Code du travail")]),
+            # ... mais s'il contredit le code ou la loi écrit devant : non vérifié
+            ("C. pén., article 222-33 de ce code du travail.", []),
+            ("loi n° 89-462 du 6 juillet 1989, article 22 dudit code civil.", []),
+            ("art. 1240, C. trav., art. L. 1152-1.", []),
+            ("art. 1240, al. 2, C. civ., art. L. 1152-1, al. 1, C. trav.", []),
+            ("art. 1240, C. civ., art. L. 1152-1, C. trav., art. L. 110-1.", []),
+            ("article 1240 du Code civil, art. 1241.", [("1240", "Code civil")]),
+            # « (du », un point, un saut de page, une virgule ne rattachent pas
+            ("loi n° 89-462 du 6 juillet 1989, article 22 (du code civil).", [("22", law)]),
+            ("C. civ., art. 1240. du Code du travail, art. L. 1152-1.",
+             [("1240", "Code civil"), ("L1152-1", "Code du travail")]),
+            ("C. civ., art. 1240 du\fCode du travail, art. L. 1152-1.",
+             [("1240", "Code civil"), ("L1152-1", "Code du travail")]),
+            ("Code civil, art. 1240, du Code du travail, art. L. 1152-1.",
+             [("1240", "Code civil"), ("L1152-1", "Code du travail")]),
+            # « modifiée », « dite » gardent la loi
+            ("loi n° 89-462 du 6 juillet 1989 modifiée, article 22, C. civ., art. 1240.",
+             [("22", law), ("1240", "Code civil")]),
+            ("loi n° 89-462 du 6 juillet 1989, dite loi Mermaz, article 22, C. civ., art. 1240.",
+             [("22", law), ("1240", "Code civil")]),
+            # « du code » seul ne reprend pas un code quand un complément suit
+            ("article 1240 du Code civil. L'article 6 du code de déontologie des avocats "
+             "s'applique.", [("1240", "Code civil")]),
+            ("article 1240 du Code civil. Le Code du travail est applicable. L'article "
+             "L. 1152-1 du même code prévoit le harcèlement.",
+             [("1240", "Code civil"), ("L1152-1", "Code du travail")]),
+            ("article 1241 du même code, C. trav., art. L. 1152-1.",
+             [("L1152-1", "Code du travail")]),
+            ("article L. 1152-1 du Code du travail. C. civ., art. 1240 du même code.",
+             [("L1152-1", "Code du travail"), ("1240", "Code civil")]),
+            # une convention citée après une virgule ne prend pas l'article qui a son code
+            ("C. civ., art. 1240, convention collective (IDCC 1979), art. L. 1152-1 C. trav.",
+             [("1240", "Code civil"), ("L1152-1", "Code du travail")]),
+            # l'ancien code civil n'est pas celui d'aujourd'hui
+            ("loi n° 89-462 du 6 juillet 1989, article 1382 de l'ancien code civil.", []),
+            ("article 1 du Code de la Légion d'honneur, de la Médaille militaire et de l'ordre "
+             "national du Mérite.",
+             [("1", "Code de la Légion d'honneur, de la Médaille militaire et de l'ordre "
+                    "national du Mérite")]),
+        ]
+        for text, want in cases:
+            with self.subTest(text=text):
+                self.assertEqual([r[:2] for r in self.read(text)], want)
 
     def test_a_law_written_before_is_kept(self):
         law = "Loi n° 89-462 du 6 juillet 1989"
