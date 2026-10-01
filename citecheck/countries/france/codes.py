@@ -224,7 +224,12 @@ def learn(titles):
     """Ajoute à la reconnaissance les titres que Légifrance connaît et pas nous. Renvoie les
     nouveaux. On n'en retire jamais : un code disparu de Légifrance reste une citation à
     repérer. Les abréviations, elles, ne s'apprennent pas : elles viennent de l'usage."""
-    new = sorted(set(titles) - set(TITLES) - set(ABROGATED))
+    # Un titre de code s'écrit « Code ... » (ou « Livre des procédures fiscales »), sur une
+    # ligne. Une liste usurpée qui ferait apprendre « de » ferait lire « article 1240 de la
+    # demande » comme une citation de code (audit du 01/10/2026).
+    titles = {t for t in titles if isinstance(t, str) and len(t) <= 150
+              and re.fullmatch(r"(?:Code|Livre)\s[^\x00-\x1f\x7f-\x9f  ]{3,}", t)}
+    new = sorted(titles - set(TITLES) - set(ABROGATED))
     if new:
         TITLES.extend(new)
         _build()

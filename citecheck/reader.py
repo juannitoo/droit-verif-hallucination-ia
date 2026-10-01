@@ -24,6 +24,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 import unicodedata
 import zipfile
 import xml.etree.ElementTree as ET
@@ -40,6 +41,11 @@ MAX_TEXT = 10_000_000     # characters of extracted text: some 3,000 pages of co
 MAX_PAGES = 3_000         # pages of a PDF: each one costs pypdf time and memory
 MAX_SPACES = 100          # <text:s text:c="n"/> is a run of spaces, never a page of them
 PDFTOTEXT_TIMEOUT = 120   # seconds
+# A page made of hundreds of thousands of drawn lines has no text, so the limits above
+# never see it, yet pypdf spends seconds on it (audit of 01/10/2026). A real page is read
+# in well under a second; a long document in a few minutes at most.
+MAX_PAGE_SECONDS = 30
+MAX_READ_SECONDS = 600
 PAGE = "\f"
 NOTES = "\x1e"      # separates the body of a Word document from its footnotes
 
@@ -171,11 +177,16 @@ def _pdf(path):
             raise Unreadable(t.TOO_MANY_PAGES.format(name=path.name, n=len(pages),
                                                      max=MAX_PAGES))
         texts, size = [], 0
+        started = time.monotonic()
         for pg in pages:
+            before = time.monotonic()
             texts.append(pg.extract_text() or "")
             size += len(texts[-1])
             if size > MAX_TEXT:
                 raise Unreadable(t.TOO_LONG.format(name=path.name))
+            now = time.monotonic()
+            if now - before > MAX_PAGE_SECONDS or now - started > MAX_READ_SECONDS:
+                raise Unreadable(t.TOO_SLOW.format(name=path.name))
         return PAGE.join(texts)
     except (Unreadable, RecursionError):
         raise

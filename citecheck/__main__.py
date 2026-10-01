@@ -70,7 +70,7 @@ def main(argv=None):
     for d in (a.reference_date, a.date):
         if d and not valid_date(d):
             ap.error(t.REFERENCE_INVALID)
-    if a.idcc and not a.idcc.isdigit():
+    if a.idcc and not (a.idcc.isdigit() and len(a.idcc) <= 4):
         ap.error(t.IDCC_INVALID)
 
     if a.scope:

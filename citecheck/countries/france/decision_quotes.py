@@ -72,8 +72,10 @@ def source_text(link, keys, client):
     return None, "ce programme ne lit pas encore le texte des décisions de cette base"
 
 
-# En dessous, la base a répondu sans le texte : on n'a rien lu, donc rien à comparer.
-MIN_TEXT = 100
+# En dessous, la base a répondu sans le texte, ou avec un simple avis (« document
+# indisponible ») : on n'a rien lu de la décision, donc rien à comparer. Une décision, même un
+# rejet non spécialement motivé, dépasse largement 500 caractères (audit du 01/10/2026).
+MIN_TEXT = 500
 # Au-dessus, ce n'est plus une décision (les plus longues font quelques centaines de milliers
 # de caractères) : on ne compare que le début.
 MAX_TEXT = 2_000_000

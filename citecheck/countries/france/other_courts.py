@@ -226,7 +226,7 @@ def _celex_dates(celex):
     # https : http.py refuse toute redirection, par principe.
     path = urllib.parse.urlsplit(location)
     if path.hostname != "publications.europa.eu" or not path.path.startswith("/resource/cellar/"):
-        raise Unavailable(f"redirection inattendue de CELLAR : {location[:80]}")
+        raise Unavailable("redirection inattendue de CELLAR")
     try:
         body = _get(CELLAR + path.path + ("?" + path.query if path.query else ""))
     except urllib.error.HTTPError as e:

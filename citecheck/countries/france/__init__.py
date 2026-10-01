@@ -195,7 +195,7 @@ def _verdict_judicial(record, cited_date, first_complete=None):
     if "_err" in record:
         return "ERROR", f"Judilibre n'a pas répondu ({record['_err']})", None
     actual = (record.get("decision_date") or "")[:10]
-    ident = f"{record.get('chamber', '?')}, {record.get('solution', '?')}"
+    ident = f"{_label(record.get('chamber'))}, {_label(record.get('solution'))}"
     link = links.judilibre(record.get("id"))
     if not cited_date:
         return ("EXISTS_DATE_UNCHECKED", f"existe, rendu le {actual} ({ident}) ; aucune date "
@@ -551,6 +551,14 @@ def _check_legislation(citations, keys, day, idcc, log):
     return (next(kinds[c["kind"]]) for c in citations)
 
 
+def _label(value, limit=60):
+    """Un libellé renvoyé par une base (chambre, solution), tel qu'il entre dans une
+    explication : une ligne, courte. Plus long, ou sur plusieurs lignes, ce n'est plus un
+    libellé, et il pourrait passer pour une ligne du rapport (audit du 01/10/2026)."""
+    text = " ".join(str(value or "?").split())
+    return text if len(text) <= limit else text[:limit] + "..."
+
+
 def prepare(keys, log=lambda s: None):
     """Avant l'extraction : complète la liste des codes par celle de Légifrance, pour qu'un
     code créé après cette version soit repéré dans le texte. Sans identifiants ou si
@@ -601,6 +609,8 @@ def check(citations, keys, log=lambda s: None, options=None):
 
 def _check(citations, keys, log, options):
     options = options or {}
+    if options.get("idcc") is not None and not re.fullmatch(r"\d{1,4}", str(options["idcc"])):
+        options = {**options, "idcc": None}     # pas un IDCC : rien n'est envoyé à sa place
     day = options.get("reference_date") or date.today().isoformat()
     legislation = iter(_check_legislation(
         [c for c in citations if c.get("kind") in LEGISLATION], keys, day,

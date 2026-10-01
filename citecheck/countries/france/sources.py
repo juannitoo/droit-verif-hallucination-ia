@@ -9,6 +9,7 @@ Seuls le numéro de la décision et, pour Judilibre, la clé partent sur le rés
 le texte du document.
 """
 import json
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -49,8 +50,10 @@ def ariane(number):
     dates = {}
     for doc in data.get("Documents") or []:
         numbers = {doc.get("SourceStr5", "")} | set((doc.get("SourceCsv1") or "").split(";"))
-        if str(number) in numbers and doc.get("SourceDateTime1"):
-            day = doc["SourceDateTime1"][:10]
+        day = str(doc.get("SourceDateTime1") or "")[:10]
+        # Seule une vraie date entre dans le verdict : autre chose (un texte, un saut de
+        # ligne) n'est pas une date de décision (audit du 01/10/2026).
+        if str(number) in numbers and re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
             dates[day] = links.arianeweb(str(number), day)
     return int(data.get("TotalCount", 0)), links.Found(dates)
 

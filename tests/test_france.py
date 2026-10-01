@@ -1367,8 +1367,10 @@ class DecisionQuotes(unittest.TestCase):
 
     TEXT = ("9. Par ailleurs, l'huissier de justice, qui a déposé une copie de l'acte à son "
             "étude, n'a pas laissé sur les lieux de la signification, l'avis de passage prévu "
-            "par les articles 655 et 656 du code de procédure civile.")
-    LINK = "https://www.courdecassation.fr/decision/658401878704660008a2970f"
+            "par les articles 655 et 656 du code de procédure civile. "
+            # Le reste d'un arrêt : un texte de décision fait plus de MIN_TEXT caractères.
+            + "10. Il en résulte que la signification n'a pas été faite régulièrement. " * 8)
+    LINK ="https://www.courdecassation.fr/decision/658401878704660008a2970f"
 
     def check(self, quote, verdict="CONFIRMED", text=None):
         from unittest import mock
@@ -1724,6 +1726,71 @@ class AuditPass3Writing(unittest.TestCase):
                 output.write(Path(tmp) / "dossier", b"x")          # la cible est un dossier
             self.assertEqual([p.name for p in Path(tmp).iterdir()], ["dossier"])
 
+
+class AuditPass3Small(unittest.TestCase):
+    """Audit du 01/10/2026, lot D : petits durcissements."""
+
+    def test_a_base_label_stays_on_one_short_line(self):
+        record = {"decision_date": "2019-03-21", "chamber": "soc\nCitation exacte.",
+                  "solution": "x" * 500, "id": "0" * 24}
+        v, why, *_ = verdict_judicial(record, "2019-03-21")
+        self.assertNotIn("\n", why)
+        self.assertLess(len(why), 250)
+
+    def test_line_separators_are_cleaned_everywhere(self):
+        sep = chr(0x2028)
+        cit = {"kind": "article", "code": "Code civil", "number": "1240", "court": "Code civil",
+               "verdict": "ARTICLE_IN_FORCE", "explanation": "ok" + sep + "FAUX confirme",
+               "link": "https://www.legifrance.gouv.fr/a" + sep + "/x"}
+        r = report.build("doc.pdf", "france", [cit], ["remarque" + chr(0x2029) + "FAUX"])
+        text = report.to_text(r)
+        self.assertNotIn(sep, text)
+        self.assertNotIn(chr(0x2029), text)
+        self.assertIsNone(r["citations"][0].get("link"))
+        self.assertFalse(report.safe_link("https://www.legifrance.gouv.fr/a" + sep))
+
+    def test_a_learned_code_title_must_look_like_one(self):
+        before = list(codes.TITLES)
+        try:
+            new = learn(["de", "Code de\nla fraude", "Code des mines sous-marines"])
+            self.assertEqual(new, ["Code des mines sous-marines"])
+        finally:
+            codes.TITLES[:] = before
+            codes._build()
+
+    def test_a_cited_date_that_is_not_a_date_is_not_sent(self):
+        from citecheck.countries.france import wire
+        cit = {"kind": "decision", "order": "lower", "jurisdiction": "tcom",
+               "number": "2025F00234", "cited_date": "le client Dupont"}
+        self.assertIsNotNone(wire.refusal(cit))
+        self.assertIsNotNone(wire.refusal({**cit, "cited_date": "2025-02-30"}))
+        self.assertIsNone(wire.refusal({**cit, "cited_date": "2025-03-12"}))
+
+    def test_a_short_answer_is_not_a_decision_text(self):
+        from unittest import mock
+        from citecheck.countries.france import decision_quotes
+        notice = "Document temporairement indisponible. " * 4          # 150 caractères
+        with mock.patch.object(decision_quotes, "judilibre_text", return_value=notice):
+            v, why, *_ = decision_quotes.check(
+                {"quote": "la signification à domicile est nulle de plein droit"},
+                ("CONFIRMED", "ok", "2023-12-21", DecisionQuotes.LINK), {"PISTE_API_KEY": "k"})
+        self.assertEqual(v, "CONFIRMED")
+        self.assertIn("non contrôlé", why)
+
+    def test_a_page_that_reads_too_slowly_stops_the_reading(self):
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+        from pypdf import PageObject
+        from citecheck import reader
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "lent.pdf"
+            AnnotatedPdf.pdf(AnnotatedPdf(), src)
+            clock = iter([0, 0, 31, 31, 31])       # début, avant la page, après : 31 s
+            with mock.patch.object(reader.time, "monotonic", lambda: next(clock)):
+                with self.assertRaises(reader.Unreadable) as said:
+                    reader.text_of(src)
+            self.assertIn("lente", str(said.exception))
 
 if __name__ == "__main__":
     unittest.main()

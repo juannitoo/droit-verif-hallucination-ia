@@ -382,7 +382,7 @@ class Window:
             self.write(t.REFERENCE_INVALID + "\n", clear=True)
             return
         idcc = self.idcc.get().strip() or None
-        if idcc and not idcc.isdigit():
+        if idcc and not (idcc.isdigit() and len(idcc) <= 4):
             self.write(t.IDCC_INVALID + "\n", clear=True)
             return
         self._ready(False)

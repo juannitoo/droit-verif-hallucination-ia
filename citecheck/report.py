@@ -28,8 +28,10 @@ def _capped(r):
 # labels sent back by a database (chamber, solution, court, title), and what is read in the
 # document. A line break in a label would add a line that looks like a verdict; an escape
 # sequence would hide or recolour lines in a terminal; a bidi override would show a number
-# reversed. None of them is ever part of a real label.
-_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f\u200e\u200f\u202a-\u202e\u2066-\u2069]")
+# reversed. None of them is ever part of a real label. U+2028 and U+2029 are line and
+# paragraph separators, U+200B a zero-width space (audit du 01/10/2026).
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f\u200b\u200e\u200f\u2028\u2029\u202a-\u202e"
+                      r"\u2066-\u2069]")
 
 
 def _clean(v):
@@ -49,10 +51,13 @@ LINK_HOSTS = frozenset({"www.legifrance.gouv.fr", "www.courdecassation.fr",
 
 
 def safe_link(url):
-    """True for an https address on one of LINK_HOSTS, with no user, password or port."""
+    """True for an https address on one of LINK_HOSTS, with no user, password or port, made
+    of visible ASCII only (a line separator would hide the rest of the address)."""
     from urllib.parse import urlsplit
+    if not isinstance(url, str) or not all("!" <= ch <= "~" for ch in url):
+        return False
     try:
-        u = urlsplit(url) if isinstance(url, str) else None
+        u = urlsplit(url)
         return bool(u and u.scheme == "https" and u.netloc in LINK_HOSTS)
     except ValueError:
         return False
@@ -81,7 +86,7 @@ def build(source, country, results, remarks, options=None):
         # `verdict` is a stable code, the same in every language; `verdict_label` is for humans.
         "citations": [{**_capped(r), "verdict_label": t.VERDICTS[r["verdict"]]}
                       for r in results],
-        "remarks": remarks,
+        "remarks": _clean(remarks),
     }
 
 

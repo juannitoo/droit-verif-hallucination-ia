@@ -37,6 +37,17 @@ def _is(pattern, value, flags=0):
         re.fullmatch(pattern, value, flags))
 
 
+def _is_day(value):
+    from datetime import date
+    if not _is(r"\d{4}-\d{2}-\d{2}", value):
+        return False
+    try:
+        date.fromisoformat(value)
+        return True
+    except ValueError:
+        return False
+
+
 def refusal(c):
     """None si la citation a la forme que l'extracteur produit ; sinon, pourquoi elle ne
     part pas."""
@@ -62,6 +73,10 @@ def refusal(c):
         return None
     if kind not in (None, "decision"):
         return "type de citation inconnu : non envoyé"
+    # La date citée part dans l'adresse d'une requête (tribunaux de commerce) : une vraie
+    # date, ou rien (audit du 01/10/2026).
+    if c.get("cited_date") is not None and not _is_day(c["cited_date"]):
+        return "date citée de forme inconnue : non envoyé"
     if order in NOT_SENT:
         return None
     if order == "lower":

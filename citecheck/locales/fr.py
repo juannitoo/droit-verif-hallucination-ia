@@ -117,6 +117,8 @@ TOO_DEEP = "{name} : structure anormalement imbriquée, refusée par prudence."
 TOO_BIG = "Document trop volumineux une fois décompressé ({name}) : refusé par prudence."
 TOO_LONG = "{name} : texte anormalement long, refusé par prudence."
 TOO_MANY_PAGES = "{name} : {n} pages, au-delà des {max} lues : refusé par prudence."
+TOO_SLOW = ("{name} : lecture anormalement lente (une page faite de milliers de tracés ?), "
+            "arrêtée par prudence. Rien n'a été vérifié.")
 SUSPICIOUS = ("{name} : structure qu'aucun traitement de texte n'écrit ({detail}), refusé par "
               "prudence.")
 NO_TEXT_PDF = ("{name} : aucun texte lisible. C'est sans doute un PDF scanné (une image) : "
@@ -164,7 +166,7 @@ REFERENCE_HINT = "AAAA-MM-JJ ; sinon la date du jour. Les articles sont lus à c
 IDCC = "IDCC de la convention (facultatif)"
 IDCC_HINT = ("Quatre chiffres, sur le bulletin de paie. Utilisé pour les articles de "
              "convention cités sans IDCC.")
-IDCC_INVALID = "IDCC invalide : des chiffres seulement, par exemple 1979."
+IDCC_INVALID = "IDCC invalide : quatre chiffres au plus, par exemple 1979."
 REFERENCE_INVALID = "Date des faits invalide : écrire AAAA-MM-JJ, par exemple 2019-03-21."
 KEY_NOT_A_KEY = ("ceci ne ressemble pas à une clé (espaces, accents ou retours à la ligne) : "
                  "non enregistrée. Recopiez la clé depuis PISTE, et elle seule")
