@@ -32,7 +32,11 @@ class Window:
     def __init__(self, root):
         self.root = root
         self.country = COUNTRIES[DEFAULT]
-        self.document = None
+        self.document = None    # le fichier choisi
+        # Le fichier dont `last` est le rapport, figé au lancement de la vérification : un
+        # autre peut être choisi ensuite, les enregistrements visent toujours celui-ci (audit
+        # du 01/10/2026).
+        self.checked = None
         self.last = None
         self.queue = queue.Queue()
         self.f_small = theme.font("small")
@@ -141,8 +145,8 @@ class Window:
         self.doc_label = ctk.CTkLabel(tab, text=t.NO_DOCUMENT, text_color=C["text_muted"],
                                       anchor="w")
         self.doc_label.grid(row=0, column=1, sticky="ew", padx=SM, pady=(SM, 0))
-        self._neutral(tab, t.CHOOSE, icon="folder-open", command=self.choose).grid(
-            row=0, column=2, padx=(0, SM), pady=(SM, 0))
+        self.b_choose = self._neutral(tab, t.CHOOSE, icon="folder-open", command=self.choose)
+        self.b_choose.grid(row=0, column=2, padx=(0, SM), pady=(SM, 0))
 
         ctk.CTkLabel(tab, text=t.REFERENCE_DATE, font=self.f_bold).grid(
             row=1, column=0, sticky="w", padx=(SM, 0), pady=(MD, 0))
@@ -382,6 +386,8 @@ class Window:
             self.write(t.IDCC_INVALID + "\n", clear=True)
             return
         self._ready(False)
+        self.b_choose.configure(state="disabled")
+        document = self.document
         for b in (self.b_txt, self.b_json):
             b.configure(state="disabled")
         for b in (self.b_report_pdf, self.b_pdf):
@@ -390,9 +396,9 @@ class Window:
 
         def work():
             try:
-                r = check_document(self.document, log=lambda s: self.queue.put(("line", s)),
+                r = check_document(document, log=lambda s: self.queue.put(("line", s)),
                                    options={"reference_date": reference, "idcc": idcc})
-                self.queue.put(("done", r))
+                self.queue.put(("done", (document, r)))
             except reader.Unreadable as e:
                 self.queue.put(("error", str(e)))
             except Exception as e:
@@ -414,17 +420,19 @@ class Window:
                 elif kind == "error":
                     self.write("\n" + content + "\n")
                     self._ready(True)
+                    self.b_choose.configure(state="normal")
                     return
                 else:
-                    self.last = content
-                    self.write(report.to_text(content), clear=True)
+                    self.checked, self.last = content
+                    self.write(report.to_text(self.last), clear=True)
                     self.output.see("1.0")         # le tableau d'abord
                     self._ready(True)
+                    self.b_choose.configure(state="normal")
                     for b in (self.b_txt, self.b_json):
                         b.configure(state="normal")
                     self._highlight(self.b_report_pdf, True)
                     self._highlight(self.b_pdf,
-                                    Path(self.document).suffix.lower() == ".pdf")
+                                    Path(self.checked).suffix.lower() == ".pdf")
                     return
         except queue.Empty:
             pass
@@ -432,7 +440,7 @@ class Window:
 
     def save(self, kind):
         without = self.no_excerpts.get()
-        initial = (report_pdf.output_name(self.document, without) if kind == "pdf"
+        initial = (report_pdf.output_name(self.checked, without) if kind == "pdf"
                    else f"{t.REPORT_FILE}.{kind}")
         path = filedialog.asksaveasfilename(defaultextension=f".{kind}", initialfile=initial)
         if not path:
@@ -440,15 +448,15 @@ class Window:
         r = report.without_excerpts(self.last) if without else self.last
         try:
             if kind == "pdf":
-                report_pdf.write(r, path, document=self.document)
+                report_pdf.write(r, path, document=self.checked)
             else:
                 output.write(path, report.to_json(r) if kind == "json" else report.to_text(r),
-                             document=self.document)
+                             document=self.checked)
         except output.OverDocument as e:
             self.write("\n" + str(e) + "\n")
 
     def save_pdf(self):
-        source = Path(self.document)
+        source = Path(self.checked)
         default = annotate.output_name(source)
         path = filedialog.asksaveasfilename(
             defaultextension=".pdf", initialdir=str(default.parent),

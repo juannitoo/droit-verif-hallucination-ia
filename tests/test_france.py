@@ -1276,8 +1276,17 @@ class AnnotatedPdf(unittest.TestCase):
                                      NameObject("/URI"): TextStringObject("javascript:alert(1)")})
             web = annot("/Link", {NameObject("/S"): NameObject("/URI"),
                                   NameObject("/URI"): TextStringObject("https://exemple.fr/")})
-            for a in (launch, script, web):
+            disguised = annot("/Link", {NameObject("/S"): NameObject("/URI"), NameObject(
+                "/URI"): TextStringObject("https://www.legifrance.gouv.fr@evil.example/")})
+            fake = DictionaryObject({
+                NameObject("/Type"): NameObject("/Annot"), NameObject("/Subtype"):
+                NameObject("/FreeText"), NameObject("/Rect"): ArrayObject([NumberObject(0)] * 4),
+                NameObject("/Contents"): TextStringObject("Verdict-FAUX : confirme")})
+            for a in (launch, script, web, disguised, fake):
                 w.add_annotation(0, a)
+            w.pages[0][NameObject("/AF")] = ArrayObject([TextStringObject("joint-de-page")])
+            w.pages[0][NameObject("/PieceInfo")] = DictionaryObject({
+                NameObject("/App"): TextStringObject("prive-du-cabinet")})
             with open(src, "wb") as f:
                 w.write(f)
             out = Path(tmp) / "out.pdf"
@@ -1285,14 +1294,18 @@ class AnnotatedPdf(unittest.TestCase):
             self.assertEqual(annotate.annotate(src, out, hostile), (1, 1))
             data = out.read_bytes()
             for marker in (b"/JavaScript", b"/Launch", b"/OpenAction", b"/EmbeddedFile",
-                           b"alert", b"MARTIN-secret", b"Maitre Jean"):
+                           b"alert", b"MARTIN-secret", b"Maitre Jean", b"evil.example",
+                           b"exemple.fr", b"Verdict-FAUX", b"joint-de-page",
+                           b"prive-du-cabinet"):
                 self.assertNotIn(marker, data)
             copy = PdfReader(out)
             self.assertEqual(copy.attachments, {})
             self.assertIsNone(copy.metadata.get("/Author"))
             uris = [a.get_object()["/A"]["/URI"] for a in copy.pages[1]["/Annots"]
                     if "/A" in a.get_object()]
-            self.assertEqual(uris, ["https://exemple.fr/"])      # the author's own web link
+            self.assertEqual(uris, [])      # none of the piece's links, even ordinary ones
+            self.assertEqual([a.get_object()["/Subtype"] for a in copy.pages[1]["/Annots"]],
+                             ["/Highlight"])                   # only the program's own
 
     def test_a_pdf_too_heavy_to_reread_writes_nothing(self):
         import tempfile
@@ -1671,6 +1684,45 @@ class AuditPass3Reading(unittest.TestCase):
         seen, _ = self._seen("article 5 de la convention collective (IDCC 1979) et article 99 "
                              "de la même convention.")
         self.assertEqual([i for *_, i in seen], ["1979", "1979"])
+
+
+class AuditPass3Writing(unittest.TestCase):
+    """Audit du 01/10/2026, lot C : le fichier écrit d'abord à côté a un nom imprévisible,
+    et ne réutilise jamais un fichier déjà là."""
+
+    def test_a_hard_link_waiting_under_the_old_name_is_untouched(self):
+        import os
+        import tempfile
+        from pathlib import Path
+        from citecheck import output
+        with tempfile.TemporaryDirectory() as tmp:
+            piece = Path(tmp) / "conclusions.pdf"
+            piece.write_bytes(b"la piece")
+            os.link(piece, Path(tmp) / "rapport.txt.partiel")    # l'ancien nom prévisible
+            output.write(Path(tmp) / "rapport.txt", "le rapport", document=piece)
+            self.assertEqual(piece.read_bytes(), b"la piece")
+            self.assertEqual((Path(tmp) / "rapport.txt").read_text("utf-8"), "le rapport")
+
+    def test_a_piece_named_like_the_old_temporary_is_untouched(self):
+        import tempfile
+        from pathlib import Path
+        from citecheck import output
+        with tempfile.TemporaryDirectory() as tmp:
+            piece = Path(tmp) / "conclusions.pdf.partiel"
+            piece.write_bytes(b"la piece")
+            output.write(Path(tmp) / "conclusions.pdf", b"le rapport",
+                         document=Path(tmp) / "autre.pdf")
+            self.assertEqual(piece.read_bytes(), b"la piece")
+
+    def test_nothing_is_left_beside_after_a_failure(self):
+        import tempfile
+        from pathlib import Path
+        from citecheck import output
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "dossier").mkdir()
+            with self.assertRaises(OSError):
+                output.write(Path(tmp) / "dossier", b"x")          # la cible est un dossier
+            self.assertEqual([p.name for p in Path(tmp).iterdir()], ["dossier"])
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ Le document est une pièce du dossier. Un nom mal choisi dans une boîte de dial
 `-o conclusions.pdf` en ligne de commande, ne doit pas la remplacer par un rapport.
 """
 import os
+import tempfile
 from pathlib import Path
 
 from .locales import t
@@ -36,9 +37,15 @@ def write(target, data, document=None):
         raise OverDocument()
     if isinstance(data, str):
         data = data.replace(chr(10), os.linesep).encode("utf-8")   # comme open(..., "w")
-    partial = f"{target}.partiel"
+    # Le fichier d'à côté a un nom tiré au hasard, et sa création échoue s'il existe déjà
+    # (mkstemp) : un nom prévisible (« rapport.txt.partiel ») pouvait être, d'avance, un
+    # second nom de la pièce ou d'un autre fichier, qui aurait été écrasé (audit du
+    # 01/10/2026).
+    target = Path(target)
+    fd, partial = tempfile.mkstemp(dir=target.parent, prefix=f"{target.name}.",
+                                   suffix=".partiel")
     try:
-        with open(partial, "wb") as f:
+        with os.fdopen(fd, "wb") as f:
             f.write(data)
         os.replace(partial, target)
     finally:

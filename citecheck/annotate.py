@@ -260,42 +260,22 @@ def _link(rect, url):
     })
 
 
-# La copie ne reprend de la pièce que ses pages, avec leurs commentaires et leurs liens
-# ordinaires. Le reste agit sans qu'on le voie (JavaScript, action à l'ouverture, lancement
-# d'un programme, fichier joint, formulaire) ou dit qui l'a écrit (auteur, titre, XMP) : la
-# copie annotée se transmet, cela ne doit pas partir avec elle. Les signets ne sont pas
-# repris non plus : un signet peut porter une action.
-_QUIET_ANNOTS = {"/Text", "/Highlight", "/Underline", "/StrikeOut", "/Squiggly", "/FreeText",
-                 "/Square", "/Circle", "/Line", "/Polygon", "/PolyLine", "/Ink", "/Stamp",
-                 "/Caret", "/Popup", "/Link"}
-
-
-def _harmless(action):
-    """Une action qui ne fait qu'aller à une page du document, ou ouvrir une page web."""
-    action = action.get_object() if action is not None else None
-    if not isinstance(action, DictionaryObject) or "/Next" in action:
-        return False
-    if action.get("/S") == "/GoTo":
-        return True
-    return action.get("/S") == "/URI" and str(action.get("/URI", "")).lower().startswith(
-        ("https://", "http://"))
+# La copie ne reprend de la pièce que le contenu de ses pages : le texte et les images,
+# tels qu'imprimés. Aucune annotation de la pièce (commentaire, lien, formulaire, fichier
+# joint) : un lien peut se déguiser (« https://www.legifrance.gouv.fr@autre-site/ » mène à
+# l'autre site), une note peut porter une action ou se faire passer pour un verdict
+# (« Verdict : confirmé »). Les seuls liens et notes de la copie sont ceux du programme, et
+# ses liens passent par report.safe_link (audit du 01/10/2026). Rien non plus de ce qui agit
+# sans qu'on le voie ou dit qui a écrit la pièce : actions de page, fichiers joints de page
+# (/AF), métadonnées XMP de page, données privées d'application (/PieceInfo), diaporama.
+_PAGE_KEYS_DROPPED = ("/Annots", "/AA", "/AF", "/Metadata", "/PieceInfo", "/PresSteps",
+                      "/Trans", "/B")
 
 
 def _disarm(page):
-    """La page, sans ses actions ni ses annotations actives."""
-    page.pop(NameObject("/AA"), None)
-    if "/Annots" not in page:
-        return
-    kept = ArrayObject()
-    for a in page["/Annots"] or []:
-        annot = a.get_object()
-        if not isinstance(annot, DictionaryObject) or annot.get("/Subtype") not in _QUIET_ANNOTS:
-            continue
-        annot.pop(NameObject("/AA"), None)
-        if "/A" in annot and not _harmless(annot["/A"]):
-            continue
-        kept.append(a)
-    page[NameObject("/Annots")] = kept
+    """La page, sans annotations ni rien qui agisse ou parle de son auteur."""
+    for key in _PAGE_KEYS_DROPPED:
+        page.pop(NameObject(key), None)
 
 
 def _copy(reader):
