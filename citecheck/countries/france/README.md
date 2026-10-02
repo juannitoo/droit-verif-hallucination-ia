@@ -79,7 +79,8 @@ part sur le réseau, jamais le passage.
 - **Le code et ses éditions successives** : « Code forestier » ou « Code pénal » sans
   précision est cherché d'abord dans le code actuel, puis dans les éditions abrogées si
   l'article n'y est pas en vigueur à la date des faits. Le rapport dit dans lequel il l'a
-  trouvé.
+  trouvé. Si deux éditions l'ont en vigueur le même jour (l'ancien Code rural l'est encore
+  en partie), ou si le code actuel existait sans ce numéro : à vérifier, jamais confirmé.
 - **Les numéros du Code général des impôts** et de ses annexes I à IV, suffixes empilés
   compris (« 46 quater-0 ZZ bis », « 238 bis-0 I », « 302 bis ZA »).
 - **Les lois, lois organiques, ordonnances et décrets non codifiés** : « article 22 de la loi
@@ -102,7 +103,8 @@ verdict reste « à regarder à la main » : c'est à vous de dire laquelle est 
 Un verdict confirmé doit être sûr. Si la phrase ne rattache pas l'article à un seul code ou
 à un seul texte de façon certaine (« article 22 du Code civil ou de la loi du 6 juillet
 1989 », « art. 1240, C. trav., art. L. 1152-1 », où le code peut être celui de l'un ou de
-l'autre), l'article n'est pas vérifié : le rapport le signale, et vous renvoie à la pièce.
+l'autre), l'article n'est pas vérifié : le rapport le signale, et le PDF annoté le surligne
+en gris avec un « ? », pour que vous sachiez où regarder dans la pièce.
 Mieux vaut une citation juste laissée en gris qu'une citation confirmée sur le mauvais
 texte.
 

@@ -25,7 +25,7 @@ from .articles import check_articles
 from .texts import check_text_articles
 from .conventions import check_convention_articles
 from .lower_courts import Courts, check_lower_courts
-from .extract import extract
+from . import extract as _extract
 from .legifrance import Client, Unavailable
 from .scope import not_checked_summary, scope
 from ... import ISSUES_URL
@@ -583,6 +583,12 @@ def prepare(keys, log=lambda s: None):
             "correction (pull request)."]
 
 
+def extract(text):
+    """Les citations du document, avec ce qui est relevé sans pouvoir être vérifié : le
+    rapport et le PDF annoté le montrent en gris."""
+    return _extract.extract(text, unverified=True)
+
+
 def check(citations, keys, log=lambda s: None, options=None):
     """Vérifie chaque citation. Renvoie un résultat par citation, dans l'ordre.
 
@@ -593,13 +599,16 @@ def check(citations, keys, log=lambda s: None, options=None):
       reference_date  AAAA-MM-JJ, la date à laquelle les articles sont lus (défaut : jour)
       idcc            l'IDCC à utiliser pour une convention citée sans IDCC"""
     piste.reset()
-    refused = [wire.refusal(c) for c in citations]
+    # Relevé sans être vérifiable (code incertain, RG sans juridiction) : rien n'est envoyé.
+    refused = [c.get("reason") or "non vérifié" if c.get("kind") == "unverified"
+               else wire.refusal(c) for c in citations]
     checked = iter(_check([c for c, why in zip(citations, refused) if not why], keys, log,
                           options))
     results = []
     for c, why in zip(citations, refused):
         if why:
-            log(f"  {str(c.get('number'))[:40]!r} : {why}")
+            if c.get("kind") != "unverified":
+                log(f"  {str(c.get('number'))[:40]!r} : {why}")
             results.append({**c, "verdict": "NOT_TESTED", "explanation": why,
                             "actual_date": None, "link": None})
         else:

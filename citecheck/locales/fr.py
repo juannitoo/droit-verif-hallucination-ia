@@ -45,6 +45,8 @@ UNNUMBERED_LINE = "{court}, décision du {date} (aucun numéro lu)"
 RG_LINE = "{court}, RG {number}, {date}"
 ARTICLE_LINE = "{code}, article {number}"
 CONVENTION_LINE = "Convention collective IDCC {idcc}, article {number}"
+UNVERIFIED_ARTICLE_LINE = "Article {number} (code ou texte non retenu)"
+UNVERIFIED_RG_LINE = "RG {number} (juridiction non reconnue)"
 IDCC_UNKNOWN = "non indiqué"
 QUOTE_LINE = "texte cité : « {quote} »"
 LINK_LINE = "     lien : {link}"
@@ -84,7 +86,9 @@ HOW_COLORS = {
     "invented": ("Rouge : semble inventé.", "Introuvable dans une base qui publie tout : à "
                  "vérifier avant toute conclusion."),
     "unchecked": ("Gris : non vérifié.", "Clé absente, base indisponible, période non couverte, "
-                  "ou vérification à faire à la main. Ce n'est pas une faute du document."),
+                  "ou vérification à faire à la main : un article dont le code ou le texte "
+                  "n'est pas certain, une juridiction non publiée (prud'hommes). Ce n'est pas "
+                  "une faute du document."),
 }
 HOW_LINKS_ANNOTATED = ("Liens : chaque passage surligné mène à la source officielle, et son "
                        "survol montre le verdict (selon le lecteur de PDF). Pour l'ouvrir dans "

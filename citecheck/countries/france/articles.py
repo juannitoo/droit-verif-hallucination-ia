@@ -22,7 +22,7 @@ import re
 import unicodedata
 
 from . import links
-from .codes import AMBIGUOUS, LABELS, SUCCESSION
+from .codes import ABROGATED, AMBIGUOUS, LABELS, SUCCESSION
 from .legifrance import Unavailable
 
 MIN_WORDS = 4
@@ -99,9 +99,24 @@ def _check_succession(client, citation, day, texts):
     applique : on s'arrête là. Sinon on montre ce que chacun contient."""
     code, number = citation["code"], citation["number"]
     found = []
-    for title in SUCCESSION[code]:
+    titles = SUCCESSION[code]
+    for i, title in enumerate(titles):
         result = _check_one(client, {**citation, "code": title}, day, texts)
         if result[0] in IN_FORCE:
+            # Bleu seulement si aucune autre édition ne peut être visée (audit du 02/10/2026) :
+            # aucune autre où l'article est aussi en vigueur ce jour-là (un code que
+            # Légifrance dit abrogé en entier avant ce jour n'en a aucun), et les plus
+            # récentes ne l'avaient pas encore.
+            also = [(t, r) for t in titles[i + 1:] if ABROGATED.get(t, "9999") > day
+                    for r in [_check_one(client, {**citation, "code": t}, day, texts)]
+                    if r[0] in IN_FORCE]
+            other = [(t, r) for t, r in found
+                     if not r[1].startswith("pas encore en vigueur")] + also
+            if other:
+                return ("DOUBTFUL", f"« {code} » désigne plusieurs éditions : l'article {number}"
+                        f" est en vigueur le {day} dans {_the(title)} : {result[1]} ; mais "
+                        + " ; ".join(f"dans {_the(t)}, {r[1]}" for t, r in other)
+                        + " ; vérifiez quelle édition vise la pièce", result[2], *result[3:])
             if not found and title == code:
                 return result           # le cas courant : le code nommé, sans bruit
             head = f"« {code} » : "

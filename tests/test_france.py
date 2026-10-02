@@ -616,6 +616,19 @@ class Succession(unittest.TestCase):
     def test_in_none(self):
         self.assertEqual(self.check({}, {})[0], "ARTICLE_NOT_FOUND")
 
+    def test_two_editions_in_force_never_blue(self):
+        """Audit du 02/10/2026 (11) : l'ancien Code rural est encore en partie en vigueur."""
+        client = FakeLegifrance({"Code rural et de la pêche maritime": {"L1": self.NOW},
+                                 "Code rural (ancien)": {"L1": self.NOW}})
+        verdict, why, *_ = check_article(client, {"code": "Code rural", "number": "L1"},
+                                         "2026-09-30", {})
+        self.assertEqual(verdict, "DOUBTFUL")
+        self.assertIn("vérifiez quelle édition", why)
+
+    def test_only_in_an_older_edition_never_blue(self):
+        verdict, why, *_ = self.check({}, {"L124-1": self.OLD}, day="2010-06-01")
+        self.assertEqual(verdict, "DOUBTFUL")    # le nouveau n'a pas ce numéro : erreur ?
+
 
 class UncodifiedTexts(unittest.TestCase):
     """Articles of laws, ordinances and decrees that are not in a code."""
@@ -682,6 +695,17 @@ class UncodifiedTexts(unittest.TestCase):
     def test_nature_must_match(self):
         texts = {"A": ("Décret n° 89-462 du 6 juillet 1989 x", {"22": self.V})}
         self.assertEqual(self.check(texts, text_number="89-462")[0], "TEXT_NOT_FOUND")
+
+    def test_a_title_that_does_not_read(self):
+        """Audit du 02/10/2026 (11) : un texte sans numéro peut être celui que vise la pièce ;
+        ni « semble inventé », ni bleu pour l'autre."""
+        texts = {"A": ("Loi du 29 juillet 1881 sur la liberté de la presse", {})}
+        self.assertEqual(self.check(texts, text_date="1881-07-29")[0], "NOT_TESTED")
+        texts = {"A": ("Loi du 6 juillet 1989 x", {}),
+                 "B": ("Loi n° 89-462 du 6 juillet 1989 y", {"22": self.V})}
+        verdict, why, *_ = self.check(texts, text_date="1989-07-06")
+        self.assertEqual(verdict, "DOUBTFUL")
+        self.assertIn("dont le titre ne se lit pas", why)
 
     def test_extraction(self):
         for text, ref in [
@@ -2313,6 +2337,109 @@ class AuditPass6(unittest.TestCase):
 
     def test_a_small_paragraph_number_only(self):
         self.assertEqual(self.read("article 1240, alinéa 1241, du Code civil."), [])
+
+    def test_audit_11(self):
+        """Audit du 02/10/2026 (11) : des modèles autorisés qui laissaient passer un doute."""
+        civ, trav, law = "Code civil", "Code du travail", "Loi n° 89-462 du 6 juillet 1989"
+        cases = [
+            # « du même code » : nommé tout près, et seul autour
+            ("Le Code pénal s'applique. " + "Texte sans article. " * 80
+             + "L'article 222-33 du même code.", []),
+            # celui de l'article d'avant, tout près, si aucun autre n'est nommé depuis
+            ("Le Code pénal pose le principe. L'article 1240 du Code civil s'applique. "
+             "L'article 6 du même code.", [("1240", civ), ("6", civ)]),
+            ("La loi n° 2014-366 du 24 mars 2014 s'applique. L'article 22 de la loi n° 89-462 "
+             "du 6 juillet 1989 est cité. L'article 2 de la même loi.", [("22", law), ("2", law)]),
+            ("article 1240 du Code civil. Le Code du travail est applicable. L'article "
+             "L. 1152-1 du même code.", [("1240", civ)]),
+            ("article 1240 du Code civil, voir le Code pénal, article 1241 du même code.",
+             [("1240", civ)]),
+            ("selon l'article 1719 du code civil, le bailleur délivre la chose, et l'article "
+             "1720 du même code met à sa charge les réparations.", [("1719", civ), ("1720", civ)]),
+            ("Le logement relève de la loi n° 89-462 du 6 juillet 1989 : l'article 6 de cette "
+             "loi impose un logement décent.", [("6", law)]),
+            # formes courantes (document exemples/cas-courants.pdf)
+            ("Le bail est régi par les articles L. 145-1 et suivants du code de commerce.",
+             [("L145-1", "Code de commerce")]),
+            ("V. art. 1240 et s. C. civ.", [("1240", civ)]),
+            ("Vu l'article L. 1235-3 du code du travail, dans sa rédaction issue de la loi "
+             "n° 2018-217 du 29 mars 2018 :", [("L1235-3", trav)]),
+            ("Dans sa rédaction issue de l'ordonnance n° 2017-1387 du 22 septembre 2017, "
+             "l'article L. 1235-3-1 du code du travail écarte le barème.", [("L1235-3-1", trav)]),
+            ("la rupture relève de l'article L. 442-1, II, du code de commerce.",
+             [("L442-1", "Code de commerce")]),
+            ("Le Code du travail est applicable. L'article L. 1152-1 du même code.",
+             [("L1152-1", trav)]),
+            ("article 1240 du Code civil, article 1241 du même code.",
+             [("1240", civ), ("1241", civ)]),
+            ("art. 1240 C. civ., art. 1241 dudit code.", [("1240", civ), ("1241", civ)]),
+            # un autre texte, même sans « de » : CEDH, RGPD, Charte, TFUE, CJUE, règlement
+            ("article 8 du Code civil ou CEDH.", []),
+            ("article 6 du Code civil ou RGPD.", []),
+            ("article 8 du Code civil ou la Charte.", []),
+            ("article 1240 du Code civil ou le TFUE.", []),
+            ("article 1240 du Code civil ou le règlement général.", []),
+            ("article L. 1152-1 du Code du travail, à la lumière du RGPD.", []),
+            # un sigle, en minuscules aussi, est un mot entier
+            ("article L. 2315-1 de la cssct.", []),
+            ("article 700 cpcx.", []),
+            ("article 700 du cpce.", [("700", "Code des procédures civiles d'exécution")]),
+            # l'espace, comme la virgule, quand un autre article suit sans son code
+            ("art. 1240 C. trav., art. L. 1152-1.", []),
+            ("art. 1240 C. trav. art. L. 1152-1.", []),
+            ("art. 222-33 C. pén., art. 1240 C. civ.",
+             [("222-33", "Code pénal"), ("1240", civ)]),
+            ("art. 1240 C. civ. et article 31 du décret n° 2016-334 du 21 mars 2016.",
+             [("1240", civ), ("31", "Décret n° 2016-334 du 21 mars 2016")]),
+            # deux IDCC dans la phrase, ou un IDCC écarté
+            ("IDCC 1979 ou IDCC 1486, article 5 de la convention collective.", []),
+            ("article 5 de la convention collective, et non l'IDCC 1979.", []),
+            ("IDCC 1979, Cass. soc., 14 décembre 2017, n° 16-26694, article 5 de la convention "
+             "collective (IDCC 1979).", [("16-26694", "Cass"), ("5", "IDCC 1979")]),
+            # le CGI et une annexe écrits tous les deux
+            ("article 46 du CGI (annexe III).", []),
+            ("art. 46 du CGI, annexe III.", []),
+            ("article 46 de l'annexe III au CGI.", [("46", "Code général des impôts, annexe III")]),
+            ("CGI, ann. III, art. 46.", [("46", "Code général des impôts, annexe III")]),
+            # un numéro nu et un numéro en L. sous un seul code
+            ("articles 1240 et L. 1152-1 du Code du travail.", []),
+            ("articles 1 ou L. 1152-1 du Code du travail.", []),
+            ("articles L. 1152-1 et R. 1152-2 du Code du travail.",
+             [("L1152-1", trav), ("R1152-2", trav)]),
+        ]
+        for text, want in cases:
+            self.assertEqual([c[:2] for c in self.read(text)], want, text)
+
+    def test_what_is_not_checked_is_shown(self):
+        """Ce qui est relevé sans être vérifié sort en gris sur la page, jamais envoyé."""
+        from citecheck.countries.france import check, extract as country_extract
+        text = ("art. 1240, C. trav., art. L. 1152-1. L'article 6 de la Convention. "
+                "(CPH Bordeaux, 6 octobre 2022, RG n° 21/01458).")
+        self.assertEqual(extract(text)[0], [])          # pas pour l'extraction seule
+        found = country_extract(text)[0]
+        self.assertEqual([(c["kind"], c["number"], text[slice(*c["span"])]) for c in found],
+                         [("unverified", "1240", "art. 1240"),
+                          ("unverified", "L1152-1", "art. L. 1152-1"),
+                          ("unverified", "6", "article 6"),
+                          ("unverified", "21/01458", "RG n° 21/01458")])
+        results = check(found, {})
+        self.assertEqual({r["verdict"] for r in results}, {"NOT_TESTED"})
+        self.assertIn("prud'hommes", results[-1]["explanation"])
+
+    def test_decision_dates_as_doctrine_writes_them(self):
+        for text, day, block in [
+                ("Cass. 2e civ., 7 avr. 2022, n° 20-19.977 rappelle", "2022-04-07",
+                 "Cass. 2e civ., 7 avr. 2022, n° 20-19.977"),
+                ("(Cass. ass. plén., avis, 17 juill. 2019, n° 19-70.010)", "2019-07-17",
+                 "Cass. ass. plén., avis, 17 juill. 2019, n° 19-70.010"),
+                ("(CE, sect., 19 juillet 2017, n° 403928)", "2017-07-19",
+                 "CE, sect., 19 juillet 2017, n° 403928"),
+                ("Les demandes antérieures au 9 juin 2018 sont prescrites (Cass. soc., 30 juin "
+                 "2021, n° 19-10.161).", "2021-06-30", "Cass. soc., 30 juin 2021, n° 19-10.161"),
+                ("arrêt du 1er janvier 1900 (et non du 21 mars 2019), n° 17-28.268.", None,
+                 "17-28.268")]:
+            c = extract(text)[0][0]
+            self.assertEqual((c["cited_date"], text[slice(*c["span"])]), (day, block), text)
 
 if __name__ == "__main__":
     unittest.main()

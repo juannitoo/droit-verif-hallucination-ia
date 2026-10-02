@@ -122,8 +122,8 @@ def to_json(report):
 
 LEGISLATION = ("article", "convention_article", "text_article")
 
-# Le feu de chaque verdict, le même dans le rapport et dans le PDF annoté : vert (bleu à
-# l'écran) ce qui est confirmé, rouge ce qui semble inventé, gris ce qui n'a pas été vérifié,
+# Le feu de chaque verdict, le même dans le rapport et dans le PDF annoté : bleu ce qui
+# est confirmé, rouge ce qui semble inventé, gris ce qui n'a pas été vérifié,
 # et orange tout le reste. Un verdict douteux n'est jamais « confirmé ».
 CONFIRMED, CHECK, INVENTED, UNCHECKED = "ok", "check", "invented", "unchecked"
 LIGHTS = {
@@ -151,6 +151,9 @@ def citation_label(r, report=None):
         return t.ARTICLE_LINE.format(code=r["code"], number=r["number"])
     if r.get("kind") == "text_article":
         return t.ARTICLE_LINE.format(code=r["court"], number=r["number"])
+    if r.get("kind") == "unverified":
+        return (t.UNVERIFIED_RG_LINE if r.get("what") == "rg"
+                else t.UNVERIFIED_ARTICLE_LINE).format(number=r["number"])
     if r.get("kind") == "convention_article":
         idcc = r.get("idcc") or (report or {}).get("idcc") or t.IDCC_UNKNOWN
         return t.CONVENTION_LINE.format(idcc=idcc, number=r["number"])

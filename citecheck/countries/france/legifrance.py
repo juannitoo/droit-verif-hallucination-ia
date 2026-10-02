@@ -352,7 +352,7 @@ _PLAUSIBLE = re.compile(r"(1[6-9]\d\d|2\d\d\d)-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[
 def dated(versions, number):
     """Les versions, si chacune a une vraie date de début (et de fin, quand elle en a une).
     Sinon Unavailable : une version sans début passerait pour « en vigueur depuis
-    toujours » et ferait un feu vert que la base n'a pas donné (audit du 01/10/2026)."""
+    toujours » et ferait un bleu que la base n'a pas donné (audit du 01/10/2026)."""
     for v in versions:
         if not _PLAUSIBLE.fullmatch(v["debut"] or "") or (
                 v["fin"] and not _PLAUSIBLE.fullmatch(v["fin"])):

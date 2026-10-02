@@ -234,25 +234,29 @@ def learn(titles):
         TITLES.extend(new)
         _build()
     return new
-# Les sigles (CSS, CPC...) ne valent qu'en majuscules et en mot entier.
-_ACRONYM = re.compile(r"^[A-Z]{2,7}$")
+# Les sigles (CSS, CPC, cpce...) ne valent qu'en mot entier : « cssct » n'est pas le Code de
+# la sécurité sociale (audit du 02/10/2026).
+_ACRONYM = re.compile(r"^[A-Za-z]{2,7}$")
 
 
 def find_code(text, last=False):
     """Premier code nommé dans `text` (ou le dernier si `last`) : (titre exact, début, fin),
     ou None."""
     found = None
+    for found in find_codes(text):
+        if not last:
+            return found
+    return found
+
+
+def find_codes(text):
+    """Tous les codes nommés dans `text`, dans l'ordre : (titre exact, début, fin)."""
     for m in RE_CODE.finditer(text):
         i = int(m.lastgroup[1:])
         title = _PATTERNS[i][1]
         word = m.group(0)
-        if _ACRONYM.match(word) and word != word.upper():
-            continue
         before = text[m.start() - 1] if m.start() else " "
         after = text[m.end()] if m.end() < len(text) else " "
         if _ACRONYM.match(word) and (before.isalnum() or after.isalnum()):
             continue
-        found = (title, m.start(), m.end())
-        if not last:
-            return found
-    return found
+        yield title, m.start(), m.end()

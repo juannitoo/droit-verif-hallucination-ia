@@ -56,33 +56,60 @@ def label(nature, number=None, day=None):
     return text
 
 
+RE_NATURE = re.compile(r"\s*(loi(?:\s+organique)?|ordonnance|d[ée]cret(?:-loi)?)\b", re.I)
+
+
 def candidates(client, citation):
-    """[(identifiant, nature, numéro, date)] des textes que la citation peut désigner."""
+    """([(identifiant, nature, numéro, date)] des textes que la citation peut désigner, nombre
+    de textes de cette nature que Légifrance a renvoyés mais dont le titre ne se lit pas :
+    sans numéro, « Loi du 29 juillet 1881 », ou d'une forme imprévue ; ils peuvent être celui
+    que vise la pièce)."""
     nature, number = citation["text_nature"], citation.get("text_number")
     if number:
         found = client.texts_by_number(number)
     else:
         found = client.texts_by_title(in_words(citation["text_date"]), nature)
-    out = []
+    out, unread = [], 0
     for text_id, title in found:
         o = own(title)
-        if not o or o[0] != nature:
+        if not o:
+            n = RE_NATURE.match(title)
+            unread += bool(n and NATURES.get(" ".join(n.group(1).lower().split())) == nature)
+            continue
+        if o[0] != nature:
             continue
         if number and o[1] != number:
             continue
         if not number and o[2] != citation["text_date"]:
             continue
         out.append((text_id,) + o)
-    return out
+    return out, unread
 
 
 def check_text_article(client, citation, day, texts):
-    """(verdict, explication, date de début de la version retenue[, lien])."""
+    """(verdict, explication, date de début de la version retenue[, lien]).
+
+    Un texte de ce nom dont le titre ne se lit pas (« Loi du 29 juillet 1881 », sans numéro)
+    peut être celui que vise la pièce : on ne l'a pas fouillé, donc aucun verdict sûr, ni bleu
+    ni « semble inventé » (audit du 02/10/2026)."""
+    number = citation["number"]
+    found, unread = candidates(client, citation)
+    if not unread:
+        return _check(client, citation, day, texts, found)
+    note = (f"Légifrance a {unread} autre{'s' if unread > 1 else ''} texte"
+            f"{'s' if unread > 1 else ''} de ce nom dont le titre ne se lit pas ici (sans "
+            "numéro, ou d'une forme imprévue), où l'article n'a pas été cherché")
+    if not found:
+        return ("NOT_TESTED", f"{note} ; à vérifier à la main", None)
+    verdict, why, start, *link = _check(client, citation, day, texts, found)
+    return ("DOUBTFUL", f"{why} ; mais {note} : vérifiez lequel vise la pièce", start, *link)
+
+
+def _check(client, citation, day, texts, found):
     nature, number = citation["text_nature"], citation["number"]
     cited_text = label(nature, citation.get("text_number"), citation.get("text_date"))
     bare = re.sub(r"^(?:la |le |l')", "", cited_text)   # « loi n° 89-462 du 6 juillet 1989 »
     female = nature in FEMININE
-    found = candidates(client, citation)
     if not found:
         return ("TEXT_NOT_FOUND", f"aucun{'e' if female else ''} {bare} dans Légifrance : ce "
                 "texte ne semble pas exister ; à vérifier", None)

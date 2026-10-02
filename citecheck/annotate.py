@@ -4,7 +4,9 @@ couleur de son verdict, et mène d'un clic à ce qui a été trouvé.
   bleu    confirmé : la décision existe à la date citée, l'article est en vigueur
   orange  à vérifier : autre date, autre chambre, autre version, texte cité non retrouvé...
   rouge   semble inventé : introuvable dans une base qui publie tout
-  gris ?  non vérifié : pas de clé, base en panne, période non couverte, à voir à la main
+  gris ?  non vérifié : pas de clé, base en panne, période non couverte, à voir à la main ;
+          aussi ce qui est relevé sans pouvoir être vérifié (article dont le code n'est
+          pas certain, RG d'une juridiction non publiée) : le lecteur voit où regarder
 
 Le document d'origine n'est jamais modifié. Un PDF ne se recompose pas : on ne peut pas y
 insérer un signe entre deux mots sans déplacer tout le texte. On pose donc par-dessus des
