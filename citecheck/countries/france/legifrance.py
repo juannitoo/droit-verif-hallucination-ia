@@ -141,15 +141,32 @@ class Client:
         found = self._search_versions(code_title, code_id, number)
         if not found:
             return []
-        # La fiche d'une version porte la liste complète ; la recherche, non.
-        article = self._post("/consult/getArticle", {"id": found[0]["id"]}).get("article") or {}
-        complete = [{"id": v.get("id"), "etat": v.get("etat"), "debut": _day(v.get("dateDebut")),
-                     "fin": _day(v.get("dateFin"))}
-                    for v in article.get("articleVersions") or [] if v.get("id")]
-        if len(complete) < len(found):
-            raise Unavailable(f"liste des versions de {number} incohérente "
-                              f"({len(complete)} dans la fiche, {len(found)} dans la recherche)")
-        return sorted(dated(complete, number), key=lambda v: v["debut"])
+        # La fiche d'une version porte la liste complète ; la recherche, non. Un code recodifié
+        # (CESEDA en 2021, consommation en 2016) a eu deux articles différents sous le même
+        # numéro, chacun avec sa fiche : on les lit toutes (relevé le 02/10/2026 ; avant, le
+        # programme abandonnait, « liste des versions incohérente »).
+        complete, sheets = {}, []
+        for f in found:
+            if f["id"] in complete:
+                continue
+            article = self._post("/consult/getArticle", {"id": f["id"]}).get("article") or {}
+            sheet = [{"id": v["id"], "etat": v.get("etat"), "debut": _day(v.get("dateDebut")),
+                      "fin": _day(v.get("dateFin"))}
+                     for v in article.get("articleVersions") or [] if v.get("id")]
+            complete.update((v["id"], v) for v in sheet)
+            sheets.append(dated(sheet, number))
+        if any(f["id"] not in complete for f in found):
+            raise Unavailable(f"liste des versions de {number} incohérente (une version de la "
+                              "recherche n'est sur aucune fiche)")
+        # Deux articles différents de ce numéro en vigueur le même jour : lequel est cité ?
+        # (Les versions d'un même article peuvent se chevaucher, effets différés : c'est
+        # version_at qui choisit, comme avant.)
+        spans = sorted((min(v["debut"] for v in s), max(v["fin"] or "2999-01-01" for v in s))
+                       for s in sheets if s)
+        for (_, end), (start, _) in zip(spans, spans[1:]):
+            if start < end:
+                raise Unavailable(f"deux articles {number} en vigueur en même temps")
+        return sorted(complete.values(), key=lambda v: v["debut"])
 
     def _search_versions(self, code_title, code_id, number):
         """Les versions que la recherche veut bien montrer : incomplet, voir plus haut."""
@@ -209,11 +226,11 @@ class Client:
         raise Unavailable(f"recherche de la décision {number} incomplète ({read} résultats "
                           f"lus sur {total})")
 
-    def _text_search(self, champs, filtres=(), pagination="DEFAUT"):
-        """Tous les résultats d'une recherche dans LODA_ETAT, ou Unavailable."""
+    def _text_search(self, champs, filtres=(), pagination="DEFAUT", fond="LODA_ETAT"):
+        """Tous les résultats d'une recherche dans LODA_ETAT (ou `fond`), ou Unavailable."""
         results, read = [], 0
         for page in range(1, MAX_PAGES + 1):
-            data = self._post("/search", {"fond": "LODA_ETAT", "recherche": {
+            data = self._post("/search", {"fond": fond, "recherche": {
                 "champs": [{"typeChamp": t, "operateur": "ET", "criteres": [
                     {"typeRecherche": "EXACTE", "valeur": v, "operateur": "ET"}]}
                     for t, v in champs],
@@ -248,6 +265,21 @@ class Client:
             if t.get("id"):
                 out[t["id"].split("_")[0]] = _strip_html(t.get("title") or "")
         return sorted(out.items())
+
+    def jorf_articles(self, text_number, number):
+        """[(titre du texte, identifiant JORFARTI)] : l'article `number` des textes n°
+        `text_number` dans leur version publiée au Journal officiel. Un article qui modifie un
+        autre texte (« article 1er de la loi ALUR ») n'est souvent pas dans la version
+        consolidée : seulement ici (relevé le 02/10/2026)."""
+        out = []
+        for r in self._text_search([("NUM", text_number), ("NUM_ARTICLE", number)],
+                                   pagination="ARTICLE", fond="JORF"):
+            title = _strip_html(((r.get("titles") or [{}])[0]).get("title") or "")
+            for section in r.get("sections") or []:
+                for ext in section.get("extracts") or []:
+                    if ext.get("num") == number and str(ext.get("id", "")).startswith("JORFARTI"):
+                        out.append((title, ext["id"]))
+        return out
 
     def text_state(self, text_id, day):
         """L'état d'un texte entier à la date `day` : (état, date de cet état), par exemple

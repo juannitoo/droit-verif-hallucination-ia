@@ -519,6 +519,39 @@ class FakeLegifrance:
         return self.articles[title].get(number, [])
 
 
+class RecodifiedArticle(unittest.TestCase):
+    """CESEDA L611-1 (relevé le 02/10/2026) : deux articles successifs sous le même numéro,
+    chacun avec sa fiche. Avant : « liste des versions incohérente »."""
+
+    def client(self, sheets, found):
+        from citecheck.countries.france.legifrance import Client
+        c = object.__new__(Client)
+        c._search_versions = lambda *a: found
+        c._post = lambda route, body: {"article": {"articleVersions": sheets[body["id"]]}}
+        return c
+
+    MS = {"2005": 1109635200000, "2013": 1357084800000, "2021": 1619827200000,
+          "2999": 32472144000000}
+
+    def test_two_chains_are_merged(self):
+        ms = self.MS
+        old = [{"id": "o1", "etat": "MODIFIE", "dateDebut": ms["2005"], "dateFin": ms["2013"]},
+               {"id": "o2", "etat": "ABROGE", "dateDebut": ms["2013"], "dateFin": ms["2021"]}]
+        new = [{"id": "n1", "etat": "VIGUEUR", "dateDebut": ms["2021"], "dateFin": ms["2999"]}]
+        found = [{"id": i} for i in ("o1", "o2", "n1")]
+        versions = self.client({"o1": old, "o2": old, "n1": new}, found).versions("C", "X", "L611-1")
+        self.assertEqual([(v["id"], v["debut"]) for v in versions],
+                         [("o1", "2005-03-01"), ("o2", "2013-01-02"), ("n1", "2021-05-01")])
+
+    def test_two_in_force_the_same_day_is_not_chosen(self):
+        from citecheck.countries.france.legifrance import Unavailable
+        ms = self.MS
+        a = [{"id": "a", "etat": "VIGUEUR", "dateDebut": ms["2013"], "dateFin": ms["2999"]}]
+        b = [{"id": "b", "etat": "VIGUEUR", "dateDebut": ms["2021"], "dateFin": ms["2999"]}]
+        with self.assertRaises(Unavailable):
+            self.client({"a": a, "b": b}, [{"id": "a"}, {"id": "b"}]).versions("C", "X", "L1")
+
+
 class AmbiguousCode(unittest.TestCase):
     V = [{"id": "x", "etat": "VIGUEUR", "debut": "2011-03-01", "fin": "2999-01-01"}]
 
@@ -647,6 +680,9 @@ class UncodifiedTexts(unittest.TestCase):
         def text_article_versions(self, text_number, text_id, number):
             return self.texts[text_id][1].get(number, [])
 
+        def jorf_articles(self, text_number, number):
+            return getattr(self, "jorf", {}).get((text_number, number), [])
+
         def text_state(self, text_id, day):
             # (état, depuis), « Vigueur » depuis 1992 sauf indication (états de legiPart)
             return getattr(self, "states", {}).get(text_id, ("Vigueur", "1992-01-01"))
@@ -699,6 +735,25 @@ class UncodifiedTexts(unittest.TestCase):
     def test_nature_must_match(self):
         texts = {"A": ("Décret n° 89-462 du 6 juillet 1989 x", {"22": self.V})}
         self.assertEqual(self.check(texts, text_number="89-462")[0], "TEXT_NOT_FOUND")
+
+    def test_an_article_only_in_the_journal_officiel(self):
+        """« article 1er de la loi n° 2014-366 » (ALUR) : absent de la version consolidée,
+        publié au JO (relevé le 02/10/2026). Ni inventé, ni confirmé."""
+        from citecheck.countries.france.texts import check_text_article
+        texts = {"A": ("LOI n° 2014-366 du 24 mars 2014 pour l'accès au logement", {})}
+        client = self.Fake(texts)
+        client.jorf = {("2014-366", "1"): [
+            ("Décision n° 2014-366 du 16 juillet 2014 autorisant", "JORFARTI000029347624"),
+            ("LOI n° 2014-366 du 24 mars 2014 pour l'accès au logement",
+             "JORFARTI000028772281")]}
+        c = {"kind": "text_article", "text_nature": "LOI", "text_number": "2014-366",
+             "text_date": "2014-03-24", "number": "1"}
+        verdict, why, _, link = check_text_article(client, c, "2026-09-30", {})
+        self.assertEqual(verdict, "DOUBTFUL")
+        self.assertIn("version publiée au Journal officiel", why)
+        self.assertTrue(link.endswith("/jorf/article_jo/JORFARTI000028772281"))
+        self.assertEqual(check_text_article(self.Fake(texts), c, "2026-09-30", {})[0],
+                         "ARTICLE_NOT_FOUND")
 
     def test_a_whole_text(self):
         """Un texte cité en entier : existe-t-il, avec ce numéro, cette nature, cette date ?"""

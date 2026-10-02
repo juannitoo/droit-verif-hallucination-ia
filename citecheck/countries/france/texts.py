@@ -119,6 +119,9 @@ def _check(client, citation, day, texts, found):
         name = label(nature, text_number, text_day)
         result = verdict_versions(client, citation, day, texts, versions, name,
                                   links.text_article)
+        if result[0] == "ARTICLE_NOT_FOUND":
+            result = _published_only(client, citation, nature, text_number, text_day, name,
+                                     result)
         if result[0] == "ARTICLE_NOT_IN_FORCE" and day < text_day:
             # Le texte lui-même est postérieur aux faits : le dire, c'est plus fort que « pas
             # encore en vigueur » (une IA applique le droit actuel à des faits anciens).
@@ -260,6 +263,23 @@ def check_texts(citations, client, day):
             yield check_text(client, c, day)
         except Unavailable as e:
             yield "ERROR", f"Légifrance n'a pas répondu ({e})", None
+
+
+def _published_only(client, citation, nature, text_number, text_day, name, result):
+    """Un article absent de la version consolidée, mais publié au Journal officiel dans ce
+    même texte : le plus souvent un article qui en modifie un autre. Jamais « inventé »,
+    jamais confirmé : à vérifier."""
+    if not text_number:
+        return result
+    number = citation["number"]
+    for title, article_id in client.jorf_articles(text_number, number):
+        o = own(title)
+        if o and o == (nature, text_number, text_day):
+            return ("DOUBTFUL", f"l'article {number} de {name} existe dans sa version publiée "
+                    "au Journal officiel, mais pas dans sa version consolidée : le plus souvent "
+                    "un article qui modifie un autre texte, dont le contenu se lit dans le texte "
+                    "modifié ; à vérifier", None, links.jorf_article(article_id))
+    return result
 
 
 def check_text_articles(citations, client, day):

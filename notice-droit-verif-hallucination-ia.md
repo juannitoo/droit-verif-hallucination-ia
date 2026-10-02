@@ -52,6 +52,7 @@ ouvre dans son navigateur.
 | `citecheck/http.py` | le seul point de sortie réseau, qui refuse toute redirection (une redirection emporterait les clés) |
 | `cases/` | bancs d'essai dont la réponse est connue : `perigueux.json` (cas réel jugé), `articles.json`, `conventions.json`, `lower_courts.json`, `other_courts.json`, `abrogated_codes.json` et `abrogated_codes_2010.json` (codes abrogés, lus à deux dates), `cgi.json` (suffixes et annexes du CGI), `commercial_courts.json`, `chambers.json`, `texts.json` et `texts_2010.json` |
 | `tests/` | tests hors réseau |
+| `probes/` | sondes Légifrance : ce que la base renvoie vraiment, quand le code en dépend (état d'un texte entier, articles d'un code recodifié, article publié au seul Journal officiel) ; chacune dit ce qu'elle a montré et quel code en dépend |
 
 **Langues du code.** Noms de fichiers, de fonctions, de variables, codes de verdict, clés du
 JSON et options de la ligne de commande : en anglais. Commentaires du tronc commun : en
@@ -181,6 +182,14 @@ de juridiction et le numéro lui sont envoyés.
 .venv/bin/python -m citecheck --case cases/chambers.json             # réseau, 6/6
 .venv/bin/python -m citecheck --case cases/texts.json                # réseau, 7/7
 .venv/bin/python -m citecheck --case cases/texts_2010.json           # réseau, 2/2
+```
+
+Quand une réponse de Légifrance surprend, une sonde de `probes/` la montre telle quelle, avec vos propres identifiants (réseau ; la sortie va dans `probes/out/`, non versionné) :
+
+```bash
+.venv/bin/python probes/text_state.py            # vigueur d'un texte entier
+.venv/bin/python probes/recodified_articles.py   # un numéro, plusieurs articles
+.venv/bin/python probes/journal_officiel.py      # article absent de la version consolidée
 ```
 
 ## Les trois règles, à ne jamais affaiblir

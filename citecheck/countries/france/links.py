@@ -64,6 +64,13 @@ def text(text_id):
     return None
 
 
+def jorf_article(article_id):
+    """Un article tel que publié au Journal officiel."""
+    if re.fullmatch(r"JORFARTI\d{12}", article_id or ""):
+        return f"{LEGIFRANCE}/jorf/article_jo/{article_id}"
+    return None
+
+
 def convention_article(version_id):
     """Une version d'un article de convention collective (fonds KALI)."""
     if _KALIARTI.fullmatch(version_id or ""):
