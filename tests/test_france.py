@@ -2769,5 +2769,96 @@ class AuditPass6(unittest.TestCase):
             c = extract(text)[0][0]
             self.assertEqual((c["cited_date"], text[slice(*c["span"])]), (day, block), text)
 
+
+class GrokReview(unittest.TestCase):
+    """Les vingt vraies décisions relues par Grok (02/10/2026) : les citations qui n'étaient
+    pas relevées."""
+
+    def read(self, text):
+        return [(c["kind"], c["number"], c["court"], c.get("cited_date"))
+                for c in extract(text, unverified=True, whole_texts=True)[0]]
+
+    def test_articles(self):
+        cpp, civ, trav = "Code de procédure pénale", "Code civil", "Code du travail"
+        for text, want in [
+                # le tiret coupé par une espace, au passage à la ligne
+                ("en application de l'article R 4624 -31 du code du travail.",
+                 [("article", "R4624-31", trav, None)]),
+                ("au titre de l'article L. 761- 1 du code de justice administrative.",
+                 [("article", "L761-1", "Code de justice administrative", None)]),
+                # une liste qui passe par un autre texte
+                ("a méconnu les articles 6 de la convention européenne des droits de l'homme, "
+                 "préliminaire, 495-14, 591 et 593 du code de procédure pénale.",
+                 [("unverified", "6", None, None),
+                  ("unverified", None, "Convention européenne des droits de l'homme", None),
+                  ("unverified", "Préliminaire", None, None),
+                  ("article", "495-14", cpp, None), ("article", "591", cpp, None),
+                  ("article", "593", cpp, None)]),
+                ("Vu les articles 1134, alinéa 1er, dans sa rédaction antérieure à celle issue de "
+                 "l'ordonnance n° 2016-131 du 10 février 2016, et 1869 du code civil :",
+                 [("unverified", "1134", None, None),
+                  ("text", "2016-131", "Ordonnance n° 2016-131 du 10 février 2016", None),
+                  ("article", "1869", civ, None)]),
+                # l'ordonnance d'une formule de version, citée par sa seule date
+                ("au regard de l'article 1134 du code civil dans sa rédaction antérieure à "
+                 "l'ordonnance du 24 février 2016.",
+                 [("article", "1134", civ, None),
+                  ("text", None, "Ordonnance du 24 février 2016", None)]),
+                # mais pas la suite d'une liste que rien ne rattache à un texte
+                ("les articles 5 de la convention, et 12 des locataires.",
+                 [("unverified", "5", None, None)])]:
+            self.assertEqual(self.read(text), want, text)
+
+    def test_decisions_named_after_their_date(self):
+        for text, want in [
+                ("contre l'arrêt rendu le 31 janvier 2025 par la cour d'appel de Lyon "
+                 "(chambre sociale C).", [("decision", None, "CA", "2025-01-31")]),
+                ("Selon l'arrêt attaqué (Lyon, 31 janvier 2025), M. X a été engagé.",
+                 [("decision", None, "CA", "2025-01-31")]),
+                ("Par jugement en date du 10 septembre 2015, rendu en formation de départage, "
+                 "le Conseil de Prudhommes a fait droit.",
+                 [("decision", None, "CPH", "2015-09-10")]),
+                ("Confirmer le jugement rendu par le conseil des prud'hommes de Basse-Terre le "
+                 "12 décembre 2024.", [("decision", None, "CPH", "2024-12-12")]),
+                # une saisine, une décision sans juridiction : rien
+                ("Mme [G] a saisi le Conseil de prudhommes de BESANCON le 31 mars 2014.", []),
+                ("Par jugement du 5 juillet 2019, la dissolution de la SCI a été prononcée.", []),
+                # la date collée devant le pourvoi, à la manière des recueils
+                ("Selon l'arrêt attaqué (Lyon, 28 novembre 2024), rendu sur renvoi après "
+                 "cassation (Com., 4 octobre 2023, pourvoi n° 22-18.358), la société.",
+                 [("decision", None, "CA", "2024-11-28"),
+                  ("decision", "22-18.358", "Cass", "2023-10-04")]),
+                ("( Cass. Soc, 6 mai 2009 numéro 07 44 485)",
+                 [("decision", "07-44.485", "Cass", "2009-05-06")]),
+                ("(CEDH, arrêt du 15 novembre 2016, Dubská et Krejzová, n° 28859/11 et "
+                 "28473/12, §§ 174-178)", [("decision", "28859/11", "CEDH", "2016-11-15"),
+                                          ("decision", "28473/12", "CEDH", "2016-11-15")]),
+                # « ce tribunal » : le tribunal administratif nommé juste avant
+                ("M. B... a demandé au tribunal administratif de Nice la décharge. Par un "
+                 "jugement n° 2200015 du 18 juillet 2024, ce tribunal a rejeté sa demande.",
+                 [("decision", "2200015", "TA", "2024-07-18")]),
+                ("Par une ordonnance n° 2416353 du 2 mai 2025, le premier vice-président du "
+                 "tribunal administratif de Montreuil a rejeté sa demande.",
+                 [("decision", "2416353", "TA", "2025-05-02")])]:
+            self.assertEqual(self.read(text), want, text)
+
+    def test_other_texts_are_grey(self):
+        got = self.read("Vu : - la Constitution ; - le règlement (UE) 2017/1001 du Parlement "
+                        "européen et du Conseil du 14 juin 2017 ; - l'arrêté du 4 août 2004 "
+                        "relatif aux commissions de réforme ; - la délibération n° 139/CP du 26 "
+                        "mars 2004 ; - le code de justice administrative.")
+        self.assertEqual(got, [("unverified", None, t, None) for t in [
+            "Constitution du 4 octobre 1958", "Règlement (UE) 2017/1001",
+            "Arrêté du 4 août 2004", "Délibération n° 139/CP",
+            "Code de justice administrative"]])
+        # le code d'un article n'est pas un code cité seul, ni « la constitution d'une société »
+        self.assertEqual(self.read("l'article 1134 ancien du code civil ; la constitution d'une "
+                                   "société."), [("unverified", "1134", None, None)])
+        self.assertEqual(self.read("la méconnaissance des articles UC 1, 2 et 13 du règlement "
+                                   "du plan local d'urbanisme."),
+                         [("unverified", None, "Plan local d'urbanisme, articles UC 1, UC 2, "
+                           "UC 13", None)])
+
+
 if __name__ == "__main__":
     unittest.main()

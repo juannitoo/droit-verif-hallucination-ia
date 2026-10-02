@@ -156,6 +156,8 @@ def citation_label(r, report=None):
     if r.get("kind") == "unverified":
         if r.get("what") == "range":
             return t.UNVERIFIED_RANGE_LINE.format(code=r["court"], number=r["number"])
+        if r.get("what") == "text":
+            return t.UNVERIFIED_TEXT_LINE.format(text=r["court"])
         return (t.UNVERIFIED_RG_LINE if r.get("what") == "rg"
                 else t.UNVERIFIED_ARTICLE_LINE).format(number=r["number"])
     if r.get("kind") == "convention_article":

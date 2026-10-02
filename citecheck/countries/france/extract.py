@@ -23,14 +23,17 @@ CE QU'IL SAIT LIRE
                   jamais envoyés dans ArianeWeb comme des décisions du Conseil d'État
   sans numéro   : « CE, Ass., 30 octobre 2009, Mme Perreux », « Cass. soc., 10 juillet
                   2013 » : une juridiction suivie de près d'une date, sans numéro, est
-                  rendue « à vérifier à la main ». Jamais cherchée : il faudrait envoyer le
-                  nom des parties, qui vient du document
+                  rendue « à vérifier à la main » ; de même « l'arrêt rendu le 31 janvier
+                  2025 par la cour d'appel de Lyon », la juridiction après la date. Jamais
+                  cherchée : il faudrait envoyer le nom des parties, qui vient du document
   dates en toutes lettres (« 5 juin 2009 ») et en chiffres (05/06/2009)
   articles      : « article L. 3121-2 du Code du travail », « art. 1240 C. civ. »,
                   « C. trav., art. L. 1152-1 », « articles L. 1234-1 et L. 1234-5 du ... »,
                   « du même code » ; et le texte cité entre guillemets juste à côté
   conventions   : « article 21 de la convention collective nationale des HCR (IDCC
                   1979) » ; l'IDCC est lu à proximité, jamais déduit du nom
+  autres textes : conventions internationales, textes de l'Union, arrêtés, textes locaux,
+                  code ou Constitution sans article : relevés en gris, jamais vérifiés
 
 CE QU'IL NE FAIT JAMAIS
   Deviner. Un numéro sans date lisible sort sans date, et le contrôle de date est annoncé
@@ -56,6 +59,30 @@ DATE_MONTHS = {**MONTHS, **SHORT_MONTHS}
 
 # Numéro de pourvoi : deux chiffres, tiret, deux chiffres, point facultatif, trois chiffres.
 RE_APPEAL = re.compile(r"\b(\d{2}-\d{2}\.?\d{3})\b")
+# « Soc, 6 mai 2009 numéro 07 44 485 » : des espaces à la place du tiret et du point, admis
+# seulement derrière « numéro », « n° » ou « pourvoi » (vraies décisions du 02/10/2026).
+RE_APPEAL_SPACED = re.compile(r"(?:\bnuméro|\bn[°ºo]|\bpourvoi)\s*(\d{2})\s(\d{2})\s(\d{3})\b",
+                              re.I)
+
+
+class _Spaced:
+    """Un pourvoi écrit « 07 44 485 », lu comme « 07-44.485 » (mêmes méthodes qu'un résultat
+    de RE_APPEAL)."""
+
+    def __init__(self, m):
+        self._m = m
+
+    def start(self, _=0):
+        return self._m.start(1)
+
+    def end(self, _=0):
+        return self._m.end(3)
+
+    def span(self, _=0):
+        return self.start(), self.end()
+
+    def group(self, _=0):
+        return "{}-{}.{}".format(*self._m.groups())
 # Numéro de requête administrative : 5 à 7 chiffres précédés d'un marqueur n°.
 RE_REQUEST = re.compile(r"n[°ºo]\s*(\d{5,7})\b", re.I)
 RE_DATE_WORDS = re.compile(
@@ -119,11 +146,15 @@ RE_TCOM_NUMBER = re.compile(r"\b((?:19|20)\d\d[A-Z]\d{5}|[A-Z]?(?:19|20)\d{8})\b
 RE_CAA = re.compile(r"\b(\d{2}[A-Z]{2}\d{5})\b")
 # Pour les décisions citées sans numéro : toute juridiction, suivie de près d'une date.
 MARK_ANY = [("CE", MARK_ADMIN), ("Cass.", MARK_JUDICIAL),
-            ("CA", re.compile(r"\bCA\b|\b[Cc]our\s+d['’]\s*appel\b")),
+            # « confirmée par arrêt de la Cour de ce siège en date du 27 mars 2015 »
+            ("CA", re.compile(r"\bCA\b|\b[Cc]our\s+d['’]\s*appel\b|\b[Cc]our\s+de\s+ce\s+siège\b")),
+            ("CNDA", re.compile(r"\bCNDA\b|\b[Cc]our\s+nationale\s+du\s+droit\s+d['’]\s*asile\b")),
             ("TJ", re.compile(r"\b(?:TJ|TGI)\b|\b[Tt]ribunal\s+(?:judiciaire|de\s+grande\s+"
                               r"instance)\b")),
             ("T. com.", RE_TCOM_COURT),
-            ("CPH", re.compile(r"\bCPH\b|\b[Cc]onseil\s+de\s+prud['’]\s*hommes\b"))
+            # « conseil des prud'hommes », « Conseil de Prudhommes »
+            ("CPH", re.compile(r"\bCPH\b|\b[Cc]onseil\s+des?\s+[Pp]rud['’]?\s*hommes\b")),
+            ("T. corr.", re.compile(r"\b[Tt]ribunal\s+correctionnel\b"))
             ] + MARK_OTHER
 UNNUMBERED_GAP = 60   # entre la juridiction et la date : « CE, Ass., sect., »
 # « la Cour de cassation applique la loi du 6 juillet 1989 » : la date est celle d'un texte.
@@ -173,6 +204,13 @@ RE_EVENT_DATE = re.compile(r"\b(?:au|avant\s+le|après\s+le|depuis\s+le|compter\
 RE_GLUED_DATE = re.compile(
     r"(?:/\d{1,2})?\s*,?\s*(?:du|en\s+date\s+du)\s+(\d{1,2})(?:er)?\s+("
     + "|".join(map(re.escape, DATE_MONTHS)) + r")\s+(\d{4})\b", re.I)
+# Collée devant, à la manière des recueils : « rendu sur renvoi après cassation (Com., 4
+# octobre 2023, pourvoi n° 22-18.358) », la date de l'arrêt attaqué plus haut dans la phrase
+# ne lui dispute pas la sienne (vraies décisions du 02/10/2026).
+RE_GLUED_BEFORE = re.compile(
+    r"\b(\d{1,2})(?:er)?\s+(" + "|".join(map(re.escape, DATE_MONTHS)) + r")\s+(\d{4})"
+    r"\s*,\s*(?:pourvoi\s+)?(?:n[°ºo]\s*)?$", re.I)
+RE_NEGATED = re.compile(r"\b(?:non|pas|ni|ou|plutôt|sauf)\b", re.I)
 
 
 def assign_dates(text, spans, used=None, places=None):
@@ -227,6 +265,11 @@ def assign_dates(text, spans, used=None, places=None):
     # 21 mars 2019), n° 17-28.268 »).
     for start, end in starts:
         glued = RE_GLUED_DATE.match(text, end)
+        if not glued:
+            glued = RE_GLUED_BEFORE.search(text, max(0, start - 50), start)
+            # « arrêt du 1er janvier 1900 et non du 21 mars 2019, n° 17-28.268 » : écartée.
+            if glued and RE_NEGATED.search(text, _sentence_start(text, start), glued.start()):
+                glued = None
         day = glued and _iso(glued)
         if day:
             if start in best and best[start][1] != day and used is not None:
@@ -342,11 +385,57 @@ RE_UNNUMBERED_GAP = re.compile(
     r"|chambres?|ch\.|sect(?:ion|\.)|ass(?:emblée|\.)|plén(?:ière|\.)?|réunies|mixte"
     r"|civ(?:ile|\.)?|soc(?:iale|\.)?|com(?:merciale|\.)?|crim(?:inelle|\.)?"
     r"|correctionnelle|sociale|formation|départage|référés?|juge|avis"
+    # les sections d'un conseil de prud'hommes : « de Basse-Terre - section commerce - du »
+    r"|commerce|industrie|agriculture|activités\s+diverses|encadrement"
     r"|\d{1,2}(?:e|è|ème|ère|re|er)|1re|1ère|Gde|grande"
     # « Le Conseil d'État a jugé le 5 juin 2009 »
     r"|a\s+(?:jugé|statué|décidé|retenu|rappelé)(?:\s*,)?\s+le)(?![\w'’])"
     # une ville : « CA Paris », « tribunal administratif de Toulon », « de BESANCON »
     r"|(?-i:[A-ZÀ-Þ][\w'’]*(?:-[\w'’]+)*))*", re.I)
+
+
+# La juridiction écrite APRÈS la date, selon un seul modèle : une décision nommée, sa date,
+# puis la juridiction qui l'a rendue. « contre l'arrêt rendu le 31 janvier 2025 par la cour
+# d'appel de Lyon », « Par jugement du 12 décembre 2024, le conseil de prud'hommes de
+# Basse-Terre », « l'arrêt rendu le 28 novembre 2024, entre les parties, par la cour d'appel
+# de Lyon », « par un arrêt du 26 juin 2003, la cour administrative d'appel de Marseille »
+# (vraies décisions du 02/10/2026). « Par jugement du 5 juillet 2019, la dissolution » ne
+# nomme aucune juridiction : rien.
+RE_DECISION_BEFORE = re.compile(
+    r"\b(?:arrêt|jugement|ordonnance|décision)(?:\s+(?:attaquée?|contradictoire|déférée?"
+    r"|de\s+non-conciliation|de\s+référé|rendue?))*\s+(?:le|du|en\s+date\s+du)\s+$", re.I)
+RE_COURT_FOLLOWING = re.compile(
+    r"\s*,?\s*(?:[-–]\s*)?(?:entre\s+les\s+parties\s*,\s*)?"
+    r"(?:rendue?\s+en\s+formation\s+de\s+départage\s*,\s*)?"
+    r"(?:par\s+(?:laquelle|lequel)\s+|par\s+)?(?:(?:le|la|l['’])\s*)?"
+    r"(?:(?:juge\s+des\s+référés|juge\s+aux\s+affaires\s+familiales"
+    r"|(?:premier\s+)?(?:vice-)?présidente?|magistrate?\s+désignée?)"
+    r"(?:\s+de\s+la\s+\d{1,2}(?:e|ème|è)\s+chambre)?\s+(?:du|de\s+la|de\s+l['’])\s*)?", re.I)
+# « Selon l'arrêt attaqué (Lyon, 31 janvier 2025) » : un arrêt de cour d'appel, la ville
+# devant la date, entre parenthèses.
+RE_ATTACKED = re.compile(r"\barrêt\s+attaqué\s*\(\s*(?-i:[A-ZÀ-Þ])[\w'’-]*(?:\s+[\w'’-]+){0,3}"
+                         r"\s*,\s*$", re.I)
+
+
+RE_RENDERED_BY = re.compile(r"\b(?:arrêt|jugement|ordonnance|décision)\s+rendue?\s+par\s+"
+                            r"(?:le|la|l['’])\s*$", re.I)
+
+
+def _court_following(text, m):
+    """(juridiction, début, fin) d'une décision citée par sa date puis sa juridiction (date
+    `m`), selon les modèles ci-dessus ; sinon None."""
+    before = RE_ATTACKED.search(text, max(0, m.start() - 60), m.start())
+    if before and text[m.end():m.end() + 1] == ")":
+        return "CA", before.start(), m.end() + 1
+    before = RE_DECISION_BEFORE.search(text, max(0, m.start() - 80), m.start())
+    if not before:
+        return None
+    link = RE_COURT_FOLLOWING.match(text, m.end())
+    for court, rx in MARK_ANY:
+        found = rx.match(text, link.end())
+        if found:
+            return court, before.start(), found.end()
+    return None
 
 
 def unnumbered(text, used):
@@ -356,7 +445,17 @@ def unnumbered(text, used):
     found += [(m, _iso(m, False)) for m in RE_DATE_DIGITS.finditer(text)]
     out = []
     for m, day in found:
-        if not day or m.start() in used:
+        if not day:
+            continue
+        # (Une date disputée par un numéro voisin reste celle d'une décision ainsi désignée :
+        # « Selon l'arrêt attaqué (Lyon, 28 novembre 2024), rendu sur renvoi après cassation
+        # (Com., 4 octobre 2023, pourvoi n° 22-18.358) ». Prise par un numéro, elle est écartée
+        # plus loin comme une reprise.)
+        after = _court_following(text, m)
+        if after:
+            out.append((after[0], day, (after[1], after[2])))
+            continue
+        if m.start() in used:
             continue
         lo = max(0, m.start() - UNNUMBERED_GAP - 40)
         for end in RE_SENTENCE_END.finditer(text, lo, m.start()):
@@ -376,7 +475,13 @@ def unnumbered(text, used):
         # d'appel de Paris, sur appel de M. L..., a annulé la décision du 11 juin 2019 » ne
         # citent aucune décision (décisions du 02/10/2026).
         if not RE_UNNUMBERED_GAP.fullmatch(text, end, m.start()):
-            continue
+            # « le jugement rendu par le conseil des prud'hommes de Basse-Terre le 12 décembre
+            # 2024 » ; pas « Mme [G] a saisi le Conseil de prud'hommes de Besançon le 31 mars
+            # 2014 », une saisine (vraies décisions du 02/10/2026).
+            on = re.search(r"\s+le\s+$", text[end:m.start()])
+            if not (on and RE_UNNUMBERED_GAP.fullmatch(text, end, end + on.start())
+                    and RE_RENDERED_BY.search(text, max(0, start - 40), start)):
+                continue
         # « directive 2008/115/CE du 16 décembre 2008 », « règlement (CE) n° 44/2001 » : le
         # « CE » de la Communauté européenne, pas le Conseil d'État (audit visuel du
         # 02/10/2026).
@@ -406,10 +511,16 @@ RE_COURT_AFTER = re.compile(
     r"|greffe\s+de\s+(?:la\s+cour|ce\s+tribunal)))?"
     r"\s*,?\s*(?:par\s+(?:laquelle|lequel)\s+|rendue?\s+le\s+" + _DAY + r"\s+par\s+)?"
     r"(?:(?:le|la|l['’])\s*)?"
-    r"(?:(?:juge\s+des\s+référés|(?:vice-)?présidente?|magistrate?\s+désignée?)"
+    r"(?:(?:juge\s+des\s+référés|(?:premier\s+)?(?:vice-)?présidente?|magistrate?\s+désignée?)"
     r"(?:\s+de\s+la\s+\d{1,2}(?:e|ème|è)\s+chambre)?\s+(?:du|de\s+la|de\s+l['’])\s*)?"
     r"(?P<court>tribunal\s+administratif|cour\s+administrative\s+d['’]\s*appel"
-    r"|Conseil\s+d['’]\s*[ÉE]tat)\b", re.I)
+    r"|Conseil\s+d['’]\s*[ÉE]tat|ce\s+tribunal)\b", re.I)
+# « M. B... a demandé au tribunal administratif de Nice ... Par un jugement n° 2200015 du 18
+# juillet 2024, ce tribunal a rejeté sa demande » : « ce tribunal » est le dernier nommé, s'il
+# l'est tout près (vraies décisions du 02/10/2026).
+RE_LAST_TRIBUNAL = re.compile(r"\btribunal\s+(administratif|judiciaire|de\s+commerce"
+                              r"|correctionnel|de\s+grande\s+instance)\b", re.I)
+THIS_TRIBUNAL_BACK = 600
 
 
 def court_after(text, end):
@@ -419,8 +530,24 @@ def court_after(text, end):
     if not m:
         return None
     court = m.group("court").lower()
+    if court.startswith("ce "):
+        named = list(RE_LAST_TRIBUNAL.finditer(text, max(0, end - THIS_TRIBUNAL_BACK), end))
+        return "TA" if named and named[-1].group(1).lower() == "administratif" else None
     return "TA" if court.startswith("tribunal") else "CAA" if court.startswith("cour") \
         else "administrative"
+
+
+RE_JOINED = re.compile(r"\s*(?:,|et)\s+(\d{3,6}/\d{2,4})\b")
+
+
+def _joined(text, end):
+    """Les requêtes jointes écrites à la suite de celle qui finit à `end`."""
+    out = []
+    m = RE_JOINED.match(text, end)
+    while m:
+        out.append(m)
+        m = RE_JOINED.match(text, m.end())
+    return out
 
 
 def order_of(text, start, default):
@@ -453,7 +580,9 @@ def extract(text, unverified=False, whole_texts=False):
 
 def _extract(text, with_unverified=False, whole_texts=False):
     citations, undated, set_aside = [], [], []
-    appeals = list(RE_APPEAL.finditer(text))
+    appeals = sorted(list(RE_APPEAL.finditer(text))
+                     + [_Spaced(m) for m in RE_APPEAL_SPACED.finditer(text)],
+                     key=lambda m: m.start())
     appeal_numbers = {m.group(1) for m in appeals}
     conflicts = [m for m in RE_CONFLICTS.finditer(text)
                  if order_of(text, m.start(), None) == CONFLICTS]
@@ -549,13 +678,18 @@ def _extract(text, with_unverified=False, whole_texts=False):
             if slash:
                 number += slash.group(0)
             span = (m.start(), slash.end() if slash else m.end())
-            if seen.again(("other", number, d), span):
-                continue
-            citations.append({"kind": "decision", "order": "ta" if order == "TA" else "other",
-                              "court": order if order != "administrative"
-                              else "juridiction non nommée",
-                              "number": number, "cited_date": d, "span": span})
-            seen[("other", number, d)] = citations[-1]
+            # « n° 28859/11 et 28473/12 » : une affaire jointe, sans « n° » devant la seconde
+            # requête (vraies décisions du 02/10/2026).
+            more = [(x.group(1), x.span(1)) for x in _joined(text, span[1])] if slash else []
+            for number, span in [(number, span)] + more:
+                if seen.again(("other", number, d), span):
+                    continue
+                citations.append({"kind": "decision",
+                                  "order": "ta" if order == "TA" else "other",
+                                  "court": order if order != "administrative"
+                                  else "juridiction non nommée",
+                                  "number": number, "cited_date": d, "span": span})
+                seen[("other", number, d)] = citations[-1]
             continue
         if seen.again((number, d), m.span()):
             continue
@@ -598,11 +732,13 @@ def _extract(text, with_unverified=False, whole_texts=False):
                               "number": None, "cited_date": day, "span": span})
             seen[("unnumbered", court, day)] = citations[-1]
 
-    articles, article_remarks, unverified, text_used = extract_articles(text)
+    articles, article_remarks, unverified, text_used, named_used = extract_articles(text)
     if with_unverified:
         articles += unverified + lower_unverified
     if whole_texts:
         articles += extract_texts(text, text_used)
+        if with_unverified:
+            articles += extract_other_texts(text, named_used)
     # Dans l'ordre du document, celui des numéros (pas du début de leur bloc) : c'est l'ordre
     # dans lequel l'avocat relira.
     both = sorted(citations + articles, key=lambda c: c.get("core", c["span"])[0])
@@ -838,15 +974,23 @@ LATIN = (r"(?:bis|ter|quater|quinquies|sexies|septies|octies|nonies|novies|decie
 SUFFIX = (rf"(?:\s{LATIN}\b|-0\b"
           r"|\s(?-i:(?!C\.)[A-Z]{1,2})(?!\w)"
           r"(?!\.\s*(?!(?:du|de|des|d['’])(?![a-zà-ÿ]))[a-zà-ÿ]))")
-NUM = rf"(?:[LRDA]\.?\s?\*?\s?)?(?:1er|\d+(?:[-‑.]\d+)*){SUFFIX}*\b"
+# « L 3251- 2 », « R 4624 -31 » : le tiret d'un article de code coupé par une espace, au
+# passage à la ligne du PDF (vraies décisions du 02/10/2026 : l'article L. 761 était lu). Avec
+# la lettre seulement : « article 3 - Durée » est un titre d'article.
+NUM = (rf"(?:[LRDA]\.?\s?\*?\s?(?:\d+(?:[-‑.]\d+|\s?[-‑]\s?\d+)*)"
+       rf"|(?:1er|\d+(?:[-‑.]\d+)*)){SUFFIX}*\b")
 # « articles 620, alinéa 1, et 1015 du code de procédure civile » : un alinéa dans la liste
 # (vraies décisions du 02/10/2026). Son numéro n'est pas un article (_LIST_PARA, retiré).
 _LIST_PARA = (r"\s*,\s*(?:alinéas\s*\d{1,2}(?:\s*(?:,|et)\s*\d{1,2})+"
               r"|(?:alinéa|al\.?|§)\s*(?:\d{1,2}|1er|premier))\b")
+# « l'article préliminaire du code de procédure pénale » : un article sans numéro, relevé,
+# jamais envoyé (PRELIMINARY).
+ITEM = rf"(?:{NUM}|préliminaire\b)"
+# « à l'article "L 3141-3 ouvre droit » : un guillemet ouvrant devant le numéro.
 RE_ARTICLES = re.compile(
-    r"\bart(?:icle)?s?\.?\s+(" + NUM + r"(?:(?:" + _LIST_PARA + r"\s*,?)?\s*(?:,|et|à|ou)\s*"
-    + NUM + r")*)", re.I)
-RE_ONE_NUM = re.compile(NUM, re.I)
+    r"\bart(?:icle)?s?\.?\s+\"?(" + ITEM + r"(?:(?:" + _LIST_PARA + r"\s*,?)?\s*(?:,|et|à|ou)\s*"
+    + ITEM + r")*)", re.I)
+RE_ONE_NUM = re.compile(ITEM, re.I)
 RE_LIST_PARA = re.compile(_LIST_PARA, re.I)
 
 
@@ -915,6 +1059,7 @@ def normalize_number(raw):
     « 46 Quater-0 ZZ  bis » -> « 46 quater-0 ZZ bis » (une espace entre les suffixes)."""
     n = unicodedata.normalize("NFKC", raw).replace("‑", "-")
     n = re.sub(r"^([LRDA])[\s.*]+", r"\1", n, flags=re.I)   # « L. » : le point du préfixe seul
+    n = re.sub(r"\s*-\s*", "-", n)                           # « L3251- 2 » -> « L3251-2 »
     n = " ".join(n.split())                                  # « 25.1 » garde son point
     n = re.sub(LATIN, lambda m: m.group(0).lower(), n, flags=re.I)
     if n.lower() == "1er":                                   # Légifrance écrit « 1 »
@@ -1096,7 +1241,10 @@ _BEFORE_LINK = re.compile(r"\s*[,;:]?\s*")
 _SAME_OR_AMENDING = (["dite ", "dit ", "par la ", "par le ", "par l'", "par l’", "cette ",
                       "même ", "ladite ", "présente "]
                      + [f"{w} {p}" for w in ("issue", "issu", "résultant")
-                        for p in ("de la ", "de l'", "de l’", "du ")])
+                        for p in ("de la ", "de l'", "de l’", "du ")]
+                     # « dans sa rédaction antérieure à l'ordonnance du 24 février 2016 »
+                     + ["antérieure à la ", "antérieure à l'", "antérieure à l’",
+                        "antérieure au "])
 # (« délibéré conformément à la loi », dans l'en-tête de chaque arrêt de la Cour de
 # cassation, « la loi pénale », « déterminés par un décret en Conseil d'État », « le champ
 # d'application de la loi », « ordonnance du 7 novembre 1958 portant loi organique » (son
@@ -1239,8 +1387,9 @@ class _Number:
     """Un numéro qui continue une liste d'articles, lu comme un article (mêmes méthodes
     qu'un résultat de RE_ARTICLES)."""
 
-    def __init__(self, m):
+    def __init__(self, m, loose=False):
         self._m = m
+        self.loose = loose      # derrière un texte qui n'est ni un code ni une loi
 
     def start(self, group=0):
         return self._m.start(1)
@@ -1261,9 +1410,26 @@ class _Number:
 # « articles 111-4, 111-5 et 432-14 du code pénal, 591 et 593 du code de procédure pénale » :
 # une liste entière, et autant de listes que la phrase en enchaîne (vraies décisions du
 # 02/10/2026).
-RE_CONTINUED = re.compile(r"\s*(?:,|et)\s+(" + NUM + r"(?:\s*(?:,|et|à)\s*" + NUM + r")*)"
-                          r"(?=\s*(?:,\s*" + _PARA + r"\s*,\s*)?\s+(?:de\s+la|du|de\s+l['’]|des)\s)",
+RE_CONTINUED = re.compile(r"\s*(?:,\s*et|,|et)\s+(" + ITEM + r"(?:\s*(?:,|et|à)\s*" + ITEM
+                          + r")*)(?=\s*(?:,\s*" + _PARA + r"\s*,\s*)?\s+(?:de\s+la|du|de\s+l['’]|des)\s)",
                           re.I)
+# Derrière un autre texte (une convention, une directive, la Déclaration...) : « articles 6 de
+# la convention européenne des droits de l'homme, préliminaire, 495-14, 591 et 593 du code de
+# procédure pénale », « articles 8 de la Convention ... et 3 de la convention relative aux
+# droits de l'enfant » (vraies décisions du 02/10/2026). La suite n'est lue que si un texte la
+# suit aussitôt ; elle est ensuite rattachée comme tout article.
+RE_TEXT_HEAD = re.compile(r"\s*(?:,\s*" + _PARA + r"\s*,\s*)?\s*(?:de\s+la|du|de\s+l['’]|des)\s*"
+                          r"(?:même\s+|ladite\s+|dudit\s+)?"
+                          r"(?:codes?|conventions?|directives?|règlements?|chartes?|pactes?"
+                          r"|traités?|protocoles?|déclarations?|constitution|lois?|décrets?"
+                          r"|ordonnances?|arrêtés?|accords?|délibérations?"
+                          r"|(?-i:[A-Z]{2,})\b|C\.)"
+                          # « articles 1134, alinéa 1er, dans sa rédaction antérieure à celle
+                          # issue de l'ordonnance n° 2016-131 du 10 février 2016, et 1869 du
+                          # code civil »
+                          r"|\s*(?:,\s*" + _PARA + r"\s*)?,\s*dans\s+(?:sa|leur)\s+rédaction\b",
+                          re.I)
+CONTINUED_GAP = 250
 
 
 def _continued(text, matches):
@@ -1282,7 +1448,12 @@ def _continued(text, matches):
                                                                        named.start("nature")):
                 end += named.end()
             else:
-                break
+                more = _after_other_text(text, end)
+                if not more:
+                    break
+                out.append(_Number(more, loose=True))
+                end = more.end(1)
+                continue
             more = RE_CONTINUED.match(text, end)
             if not more:
                 break
@@ -1291,13 +1462,27 @@ def _continued(text, matches):
     return out
 
 
+def _after_other_text(text, end):
+    """La suite d'une liste d'articles derrière un texte qui n'est ni un code ni une loi, dans
+    la même phrase, sans autre « article » entre les deux ; sinon None."""
+    if not RE_TEXT_HEAD.match(text, end):
+        return None
+    stop = RE_SENTENCE_END.search(text, end, end + CONTINUED_GAP)
+    hi = stop.start() if stop else min(len(text), end + CONTINUED_GAP)
+    more = RE_CONTINUED.search(text, end, hi)
+    if (not more or re.search(r"\bart(?:icle)?s?\b", text[end:more.start()], re.I)
+            or not RE_TEXT_HEAD.match(text, more.end(1))):
+        return None
+    return more
+
+
 RE_OWN_ARTICLE = re.compile(r"\s*[:\-–]\s")
 RE_OWN_ARTICLE_BEFORE = re.compile(r"(?:^|[.;:\n\f]\s*|\s{2,})$")
 
 
 def extract_articles(text):
     """Renvoie (citations d'articles, remarques, relevés non vérifiés, places des lois qui ont
-    servi à un article).
+    servi à un article, places de tous les codes et textes qui ont servi à un article).
 
     « span » couvre l'article ET ce à quoi il est rattaché (« article 1240 du Code civil »,
     « C. trav., art. L. 1152-1 », « article 22 de la loi n° 89-462 ») : le PDF annoté le
@@ -1316,6 +1501,7 @@ def extract_articles(text):
     unchecked = []          # (numéro, place, pourquoi) : relevés, jamais envoyés
     ranges = []             # (« 131-6 à 131-11 », place, code ou texte) : jamais envoyés
     text_used = []          # où sont écrites les lois qui ont servi à un article
+    named_used = []         # où sont écrits les codes et textes qui ont servi à un article
     last_code = last_idcc = last_text = None
     code_at = text_at = -1  # où commence l'article qui a pris last_code, last_text
     codes_of = {}           # numéro -> codes auxquels il a déjà été rattaché
@@ -1367,6 +1553,10 @@ def extract_articles(text):
             for i, j in ranged.items():
                 ranges.append((f"{numbers[i]} à {numbers[j]}", (cores[i][0], cores[j][1]),
                                court))
+            for k, n in enumerate(numbers):
+                if n == "Préliminaire":
+                    skip.add(k)
+                    unchecked.append((n, cores[k], PRELIMINARY))
             return [(n, c) for k, (n, c) in enumerate(zip(numbers, cores)) if k not in skip]
 
         def unsure(contested=None):
@@ -1389,7 +1579,7 @@ def extract_articles(text):
             unchecked.extend((n, c, ATTACHED) for n, c in zip(numbers, cores))
             used_until, last_kind = m.end(), None
             continue
-        if len({n[0].isdigit() for n in numbers}) > 1:
+        if len({n[0].isdigit() for n in numbers if n != "Préliminaire"}) > 1:
             # « articles 1240 et L. 1152-1 du Code du travail » : un numéro nu et un numéro en
             # L., R. ou D. ne sont pas toujours du même code (audit du 02/10/2026).
             unsure()
@@ -1402,7 +1592,11 @@ def extract_articles(text):
         rest_end = end.start() if end else limit
         # Devant : un code ou une loi collé, que l'article précédent n'a pas pris (déjà lu
         # par l'article précédent, comme ce qui est écrit devant son suivant).
-        written = (ahead[1] if ahead and ahead[0] == m.start()
+        # (La suite d'une liste derrière un autre texte n'a rien devant elle : ce qui précède
+        # est le texte du numéro d'avant, « articles 6 de la convention ..., 591 et 593 du code
+        # de procédure pénale ».)
+        follows = getattr(m, "loose", False)
+        written = (None if follows else ahead[1] if ahead and ahead[0] == m.start()
                    else _written_before(text, m.start()))
         ahead = None
         if not end and index + 1 < len(matches):
@@ -1423,7 +1617,7 @@ def extract_articles(text):
         # Ce qui précède, dans la phrase, depuis ce que l'article d'avant a pris : aucun autre
         # code ni texte (« C. pén. et C. trav., art. L. 1152-1 », « loi du 6 juillet 1989 et
         # loi du 24 mars 2014, article 22 » : l'article est peut-être celui des deux).
-        head_start = max(used_until, m.start() - WINDOW)
+        head_start = m.start() if follows else max(used_until, m.start() - WINDOW)
         for sentence in RE_SENTENCE_END.finditer(text, head_start, m.start()):
             head_start = sentence.end()
         head_end = mine_before[2] if mine_before else m.start()
@@ -1639,6 +1833,7 @@ def extract_articles(text):
             # La loi qui a servi à l'article : elle n'est pas vérifiée une seconde fois
             # comme texte cité en entier.
             text_used.append((start, m.start()) if mine_before else (m.end(), reach[1]))
+        named_used.append((start, m.start()) if mine_before else (m.end(), reach[1]))
         used_until, last_kind = max(m.end(), reach[1]), kind
         if kind == "text":
             last_text, text_at = value, m.start()
@@ -1695,7 +1890,7 @@ def extract_articles(text):
                     "what": "range", "number": label, "cited_date": None, "reason": RANGE,
                     "span": place})
         seen[key] = out[-1]
-    return citations, remarks, out, text_used
+    return citations, remarks, out, text_used, named_used
 
 
 # Ce qui est relevé sans être vérifié : sur le PDF annoté, en gris avec son « ? », pour que
@@ -1710,6 +1905,7 @@ ATTACHED = ("article d'un avenant ou d'un accord collectif : seul le texte de ba
             "conventions est vérifié")
 RANGE = ("intervalle d'articles : les articles compris entre les bornes ne sont pas vérifiés "
          "un par un : non vérifié, à vérifier à la main")
+PRELIMINARY = ("article préliminaire, sans numéro : non vérifié, à vérifier à la main")
 NO_COURT = ("numéro RG sans cour d'appel ni tribunal judiciaire reconnu dans la phrase (les "
             "jugements de prud'hommes, par exemple, ne sont pas publiés) : non vérifié")
 
@@ -1723,12 +1919,20 @@ NO_COURT = ("numéro RG sans cour d'appel ni tribunal judiciaire reconnu dans la
 RE_WHOLE_TEXT = re.compile(r"\b" + _TEXT_REF, re.I)
 
 
+# Sauf dans la formule des versions : « dans sa rédaction antérieure à celle issue de
+# l'ordonnance du 10 février 2016 » est un texte, jamais celle d'un juge (vraies décisions du
+# 02/10/2026).
+RE_VERSION_OF = re.compile(r"(?:rédaction|version)\s+(?:antérieure\s+à\s+(?:celle\s+)?)?"
+                           r"(?:issue\s+de\s+|résultant\s+de\s+)?l['’]\s*$", re.I)
+
+
 def extract_texts(text, used):
     """Les textes cités en entier, hors ceux qui ont servi à un article (`used`)."""
     out, seen = [], Seen()
     for m in RE_WHOLE_TEXT.finditer(text):
         ref = _text_ref(m)
-        if not ref or (ref["text_nature"] == "ORDONNANCE" and not ref["text_number"]):
+        if not ref or (ref["text_nature"] == "ORDONNANCE" and not ref["text_number"]
+                       and not RE_VERSION_OF.search(text, max(0, m.start() - 60), m.start())):
             continue
         span = (m.start("nature"), m.end())
         if any(a < span[1] and span[0] < b for a, b in used):
@@ -1738,6 +1942,116 @@ def extract_texts(text, used):
             continue
         out.append({"kind": "text", "order": "legislation", "court": _text_label(ref), **ref,
                     "number": ref["text_number"], "cited_date": None, "span": span})
+        seen[key] = out[-1]
+    return out
+
+
+# Les autres textes cités, que ce programme ne vérifie pas encore : relevés en gris, pour que
+# le lecteur sache qu'ils sont là (vraies décisions du 02/10/2026, relues par Grok : « Vu : -
+# le code de l'urbanisme », « la Charte des droits fondamentaux », « le règlement (UE)
+# 2017/1001 », « l'arrêté du 4 août 2004 relatif aux commissions de réforme »...). Un seul
+# relevé par texte ; ses autres mentions sont des reprises. Liste fermée : un nom inconnu
+# n'est pas deviné.
+_D = (r"(?:1er|\d{1,2})\s+(?:" + "|".join(map(re.escape, MONTHS)) + r")\s+\d{4}")
+_APOS = r"['’]\s*"
+OTHER_TEXTS = [(re.compile(rx, re.I), label) for rx, label in [
+    (r"\bconvention\s+(?:européenne\s+(?:de\s+sauvegarde\s+)?des\s+droits\s+de\s+l" + _APOS
+     + r"homme|de\s+sauvegarde\s+des\s+droits\s+de\s+l" + _APOS + r"homme)"
+     r"(?:\s+et\s+des\s+libertés\s+fondamentales)?|\b(?-i:CESDH|CSDH)\b",
+     "Convention européenne des droits de l'homme"),
+    (r"\bconvention\s+(?:internationale\s+)?relative\s+aux\s+droits\s+de\s+l" + _APOS
+     + r"enfant", "Convention internationale relative aux droits de l'enfant"),
+    (r"\bcharte\s+des\s+droits\s+fondamentaux(?:\s+de\s+l" + _APOS + r"Union\s+européenne)?",
+     "Charte des droits fondamentaux de l'Union européenne"),
+    (r"\bpacte\s+international\s+relatif\s+aux\s+droits\s+civils\s+et\s+politiques",
+     "Pacte international relatif aux droits civils et politiques"),
+    (r"\bpacte\s+international\s+relatif\s+aux\s+droits\s+économiques,?\s+sociaux\s+et"
+     r"\s+culturels", "Pacte international relatif aux droits économiques, sociaux et culturels"),
+    (r"\bdéclaration\s+universelle\s+des\s+droits\s+de\s+l" + _APOS + r"homme",
+     "Déclaration universelle des droits de l'homme"),
+    (r"\bconvention\s+sur\s+les\s+droits\s+de\s+l" + _APOS + r"homme\s+et\s+la\s+biomédecine",
+     "Convention sur les droits de l'homme et la biomédecine"),
+    (r"\bconvention\s+sur\s+l" + _APOS + r"élimination\s+de\s+toutes\s+les\s+formes\s+de"
+     r"\s+discrimination\s+à\s+l" + _APOS + r"égard\s+des\s+femmes",
+     "Convention sur l'élimination de toutes les formes de discrimination à l'égard des femmes"),
+    (r"\bconvention\s+n[°º]\s*(\d{1,3})\s+de\s+l" + _APOS
+     + r"(?:OIT|Organisation\s+internationale\s+du\s+travail)",
+     "Convention n° {} de l'Organisation internationale du travail"),
+    (r"\bconvention\s+d" + _APOS + r"application\s+de\s+l" + _APOS
+     + r"accord\s+de\s+Schengen", "Convention d'application de l'accord de Schengen"),
+    (r"\btraité\s+sur\s+le\s+fonctionnement\s+de\s+l" + _APOS + r"Union\s+européenne"
+     r"|\b(?-i:TFUE)\b", "Traité sur le fonctionnement de l'Union européenne"),
+    (r"\btraité\s+sur\s+l" + _APOS + r"Union\s+européenne|\b(?-i:TUE)\b",
+     "Traité sur l'Union européenne"),
+    # Avec sa majuscule : « la constitution d'une société » n'en est pas une.
+    (r"\b(?-i:Constitution)\b(?!\s+(?:du\s+27\s+octobre\s+1946|de\s+1946|de\s+1848))",
+     "Constitution du 4 octobre 1958"),
+    (r"\bdéclaration\s+des\s+droits\s+de\s+l" + _APOS + r"homme\s+et\s+du\s+citoyen"
+     r"|\bDéclaration\s+de\s+1789\b|\b(?-i:DDHC)\b",
+     "Déclaration des droits de l'homme et du citoyen de 1789"),
+    # « règlement (UE) 2017/1001 », « Directive 2001/20/CE », « règlement (CE) n° 507/2006 »
+    (r"\b(règlement|directive)\s*(\(\s*(?:UE|CE|CEE|Euratom)\s*\)|(?:UE|CE|CEE)\b)?\s*"
+     r"(?:n[°º]\s*)?(\d{2,4}/\d{1,4}(?:/(?:UE|CE|CEE))?)\b", "{} {} {}"),
+    # « l'arrêté du 4 août 2004 », « arrêté interministériel du 1er octobre 2025 », « un arrêté
+    # n° 2024-3958 du 24 octobre 2024 », « l'arrêté du maire de Six-Fours-les-Plages du 1er
+    # octobre 2021 »
+    (r"\barrêté(?:\s+(?:interministériel|ministériel|préfectoral|municipal))?"
+     r"(?:\s+n[°º]\s*[\w/-]+)?(?:\s+du\s+(?:maire|préfet|ministre)\b[^,;.\d]{0,60}?)?"
+     r"\s+du\s+(" + _D + r")", "Arrêté du {}"),
+    (r"\bloi\s+du\s+pays\s+(?:n[°º]\s*([\d-]+)\s+)?du\s+(" + _D + r")", "Loi du pays du {1}"),
+    (r"\bdélibération\s+n[°º]\s*([\w/.-]*\d[\w/.-]*)(?:\s+du\s+" + _D + r")?",
+     "Délibération n° {}"),
+    (r"\baccord\s+(?:d" + _APOS + r"entreprise\s+|collectif\s+|d" + _APOS
+     + r"établissement\s+)?du\s+(" + _D + r")", "Accord du {}"),
+]]
+# Un code juste derrière un article est celui de l'article, même non retenu (« l'article
+# 1134 ancien du code civil ») : pas un code cité seul.
+RE_ARTICLE_TAIL = re.compile(r"(?:\d|\b1er|\bpréliminaire|\bsuivants|\bs\.|\bancien)\W{0,3}"
+                             r"(?:(?:alinéa|al\.?)\s*\S+\s*,?\s*)?(?:du|de\s+la|de\s+l['’]|des"
+                             r"|au|aux|dudit|du\s+même|de\s+ce|\()\s*$", re.I)
+# « la méconnaissance des articles UC 1, 2, 3, 6, 7 et 13 du règlement du plan local
+# d'urbanisme » : des articles d'un règlement local, jamais publiés dans une base nationale.
+RE_PLU_ARTICLES = re.compile(r"\barticles?\s+(?-i:((?:[1-9]?AU|U|N|A)[A-Z]{0,2})\s*(\d{1,2})"
+                             r"((?:\s*(?:,|et)\s*\d{1,2}\b)*))"
+                             r"(?=[^.;]{0,80}\b(?:plan\s+local\s+d['’]\s*urbanisme|PLU|POS)\b)",
+                             re.I)
+OTHER_TEXT = "texte cité, que ce programme ne vérifie pas : non vérifié, à vérifier à la main"
+PLU_ARTICLE = ("article d'un plan local d'urbanisme, que ce programme ne vérifie pas : non "
+               "vérifié, à vérifier à la main")
+WHOLE_CODE = "code cité sans article : rien à vérifier, relevé pour mémoire"
+
+
+def extract_other_texts(text, used):
+    """Les codes cités sans article et les textes de la liste ci-dessus, hors ceux qui ont
+    servi à un article (`used`) : relevés non vérifiés."""
+    found = []
+    for title, start, end in find_codes(text):
+        if (RE_ARTICLE_TAIL.search(text, max(0, start - 40), start)
+                or re.match(r"\s*,?\s*art(?:icle)?s?\b", text[end:end + 12], re.I)):
+            continue
+        found.append((start, end, title, WHOLE_CODE))
+    for rx, label in OTHER_TEXTS:
+        for m in rx.finditer(text):
+            words = [" ".join((g or "").split()) for g in m.groups()]
+            if words and label.startswith("{} "):
+                words[0] = words[0].capitalize()
+            found.append((m.start(), m.end(), " ".join(label.format(*words).split()),
+                          OTHER_TEXT))
+    for m in RE_PLU_ARTICLES.finditer(text):
+        numbers = [m.group(2)] + re.findall(r"\d{1,2}", m.group(3))
+        found.append((m.start(), m.end(), "Plan local d'urbanisme, article"
+                      + ("s " if len(numbers) > 1 else " ")
+                      + ", ".join(f"{m.group(1)} {n}" for n in numbers), PLU_ARTICLE))
+    out, seen = [], Seen()
+    for start, end, label, why in sorted(found):
+        if any(a < end and start < b for a, b in used):
+            continue
+        key = ("other text", label)
+        if seen.again(key, (start, end)):
+            continue
+        out.append({"kind": "unverified", "order": "unverified", "court": label,
+                    "what": "text", "number": None, "cited_date": None, "reason": why,
+                    "span": (start, end)})
         seen[key] = out[-1]
     return out
 

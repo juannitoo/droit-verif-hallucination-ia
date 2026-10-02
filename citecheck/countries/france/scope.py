@@ -134,6 +134,11 @@ NOT_CHECKED = [
     "les articles d'un texte cité sans numéro ni date (« l'article 3 du décret »), des "
     "arrêtés, et des textes antérieurs à 1945 qui n'ont pas de numéro : signalés, pas "
     "vérifiés",
+    "les autres textes cités : conventions internationales (Convention européenne des droits "
+    "de l'homme, Charte des droits fondamentaux, pactes de 1966...), règlements et "
+    "directives de l'Union, arrêtés, lois du pays, délibérations, accords d'entreprise, "
+    "articles d'un plan local d'urbanisme, et un code ou la Constitution cités sans article : "
+    "relevés en gris, pas vérifiés",
     "les avenants, accords et textes salariaux attachés aux conventions collectives : "
     "signalés, pas vérifiés (seul le texte de base l'est). Chaque avenant est un texte à part "
     "dans Légifrance, et il se cite de façons trop variées (« avenant n° 12 du ... ») pour "

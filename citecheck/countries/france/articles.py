@@ -111,7 +111,7 @@ def _check_succession(client, citation, day, texts):
                     for r in [_check_one(client, {**citation, "code": t}, day, texts)]
                     if r[0] in IN_FORCE]
             other = [(t, r) for t, r in found
-                     if not r[1].startswith("pas encore en vigueur")] + also
+                     if not r[1].startswith("n'existait pas encore")] + also
             if other:
                 return ("DOUBTFUL", f"« {code} » désigne plusieurs éditions : l'article {number}"
                         f" est en vigueur le {day} dans {_the(title)} : {result[1]} ; mais "
@@ -171,7 +171,11 @@ def verdict_versions(client, citation, day, texts, versions, where, link=links.c
         first, last = versions[0], versions[-1]
         if day < first["debut"]:
             return ("ARTICLE_NOT_IN_FORCE",
-                    f"pas encore en vigueur le {day} : entre en vigueur le {first['debut']}",
+                    # (« article 61-1 de la Constitution » lu en 2005 : il n'existait pas,
+                    # « pas encore en vigueur » laissait croire à un texte voté, Jean,
+                    # 02/10/2026.)
+                    f"n'existait pas encore le {day} : sa première version entre en vigueur "
+                    f"le {first['debut']}",
                     None, link(first["id"]))
         if last["fin"] and last["fin"] <= day:
             return ("ARTICLE_NOT_IN_FORCE",
