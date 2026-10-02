@@ -815,12 +815,13 @@ QUOTE_BEFORE = 15   # « ... » (art. L. 1234-5) : le texte précède, collé
 ABBREVIATIONS_WITH_DOT = ["c", "com", "soc", "civ", "crim", "cass", "confl", "const", "cons",
                           "trib", "ass", "sect", "ch", "req", "art", "t", "m", "plén",
                           "s", "ss", "suiv", "v", "adde", "comp", "cf"]
-# « ... du 20 novembre 1989. 2°/ que ... » : la branche suivante d'un moyen commence une
-# phrase. « Vu l'article 700 du code de procédure civile, Vu le décret ... » : chaque « Vu »
+# « ... du 20 novembre 1989. 2°/ que ... », « ... remplies. 2° Sous le n° ... » : la branche
+# suivante d'un moyen commence une phrase, comme chaque tiret d'une liste (« ... ; - elle
+# méconnaît l'article ... »). « Vu l'article 700 du code de procédure civile, Vu le décret ... » : chaque « Vu »
 # est un visa à part (vraies décisions du 02/10/2026).
 RE_SENTENCE_END = re.compile(
     "(?:" + "".join(rf"(?<!\b(?i:{a}))" for a in ABBREVIATIONS_WITH_DOT)
-    + r"[.;!?]\s+(?=[A-ZÀ-ÖØ-Þ«]|\d{1,2}°\s*/)|,\s+(?=Vu\s))")
+    + r"[.;!?]\s+(?=[A-ZÀ-ÖØ-Þ«]|\d{1,2}°)|;\s+(?=[-–]\s)|,\s+(?=Vu\s))")
 
 
 def nearest_idcc(text, start, end, taken=()):
@@ -886,7 +887,7 @@ RE_TEXT_AFTER = re.compile(r"^\W{0,3}(?:(?:alinéa|al\.?)\s*(?:\d{1,2}|1er|premi
 RE_TEXT_BEFORE = re.compile(r"(?:^|\W)" + _TEXT_REF
                             + r"(?:\s*,?\s*(?:modifi[ée]e?s?|dite?\s+[^,;:.\d]{1,40}))?"
                             r"[\s,;:]*$", re.I)
-RE_SAME_TEXT = re.compile(r"^\W{0,3}(?:de\s+la\s+(?:même\s+)?|de\s+ladite\s+|de\s+cette\s+|du\s+"
+RE_SAME_TEXT = re.compile(r"^\W{0,3}(?:de\s+la\s+(?:même\s+)?|de\s+ladite\s+|de\s+cette\s+(?:même\s+)?|du\s+"
                           r"(?:même\s+)?|dudit\s+|de\s+ce\s+)(?P<nature>loi|ordonnance|d[ée]cret)"
                           r"(?:\s+(?:précitée?|susvisée?))?\b", re.I)
 TEXT_BEFORE = 100
@@ -997,20 +998,50 @@ _BEFORE_LINK = re.compile(r"\s*[,;:]?\s*")
 # (« de cette loi », « dans sa rédaction issue de la loi ... » : la même loi, ou celle qui a
 # modifié l'article, pas un autre texte pour lui.)
 _SAME_OR_AMENDING = (["dite ", "dit ", "par la ", "par le ", "par l'", "par l’", "cette ",
-                      "même ", "ladite "]
+                      "même ", "ladite ", "présente "]
                      + [f"{w} {p}" for w in ("issue", "issu", "résultant")
                         for p in ("de la ", "de l'", "de l’", "du ")])
 # (« délibéré conformément à la loi », dans l'en-tête de chaque arrêt de la Cour de
-# cassation, « la loi pénale », « déterminés par un décret en Conseil d'État » : aucun texte
-# désigné, vraies décisions du 02/10/2026.)
-_NO_TEXT_BEFORE = ["conformément à la "]
-_ANY_TEXT = re.compile(r"(?<!même )(?<!dudit )(?<!\bce )\bcodes?\b"
-                       r"|" + "".join(f"(?<!{re.escape(w)})"
-                                      for w in _SAME_OR_AMENDING + _NO_TEXT_BEFORE)
-                       + r"\b(?:lois?|décrets?|ordonnances?)\b(?!\s+pénale\b)"
+# cassation, « la loi pénale », « déterminés par un décret en Conseil d'État », « le champ
+# d'application de la loi », « ordonnance du 7 novembre 1958 portant loi organique » (son
+# titre) : aucun autre texte désigné, vraies décisions du 02/10/2026.)
+_NO_TEXT_BEFORE = ["conformément à la ", "champ d'application de la ",
+                   "champ d’application de la ", "portant "]
+
+
+def _behind(words):
+    """Les regards en arrière qui écartent ces mots, chaque espace pouvant être un saut de
+    ligne : dans un PDF, « dans sa rédaction issue du » finit souvent une ligne."""
+    out = []
+    for w in words:
+        variants = [""]
+        for ch in w:
+            variants = [v + c for v in variants for c in ((" ", "\n") if ch == " " else (ch,))]
+        out += [f"(?<!{re.escape(v)})" for v in variants]
+    return "".join(out)
+
+
+# Une ordonnance ou un règlement n'est un texte que désigné : « ordonnance n° 58-1067 »,
+# « ordonnance du 7 novembre 1958 », « règlement (UE) 2016/679 ». « Par une ordonnance
+# motivée » (celle du juge), « la charge du règlement », « un règlement au fond de
+# l'affaire » ne nomment aucun texte (décisions administratives du 02/10/2026).
+_DESIGNATED = (r"(?=\s*(?:\(|n[°ºo]|numéro|\d|du\s+(?:\d|1er|premier)|de\s+\d{4}|portant"
+               r"|relati|organique|(?-i:UE|CE|CEE)\b|européen|du\s+Parlement|du\s+Conseil"
+               r"|de\s+la\s+Commission|délégué|d['’]exécution|intérieur|sanitaire"
+               r"|de\s+copropriété|national|général|départemental|communal|municipal|local"
+               r"|d['’]urbanisme|de\s+voirie|type))")
+_ANY_TEXT = re.compile(_behind(["même ", "dudit "]) + r"(?<!\bce )(?<!\bce\n)\bcodes?\b"
+                       r"|" + _behind(_SAME_OR_AMENDING + _NO_TEXT_BEFORE)
+                       + r"\b(?:lois?|décrets?)\b(?!\s+pénale\b)"
                        r"(?!\s+en\s+Conseil\s+d['’]\s*[ÉE]tat\b(?!\s*n[°ºo]|\s+du\s+\d))"
+                       r"|" + _behind(_SAME_OR_AMENDING) + r"\b(?:ordonnances?|règlements?)\b"
+                       + _DESIGNATED +
                        r"|\b(?:conventions?|CCNT?|IDCC|directives?|traités?|constitution"
-                       r"|chartes?|pactes?|protocoles?|règlements?|annexes?)\b|\b(?:conv|ann)\."
+                       r"|chartes?|pactes?|protocoles?)\b|\b(?:conv|ann)\."
+                       # « annexe III », « l'annexe au décret » ; pas « les aménagements
+                       # annexes implantés sur la propriété »
+                       r"|\bannexes?\b(?=\s*(?:[IVX]+\b|\d|n[°ºo]|au\b|aux\b|à\s|du\b|des\b"
+                       r"|de\s+la\b|de\s+l['’]|,|\)))"
                        r"|\b(?:arrêté)s?\s+(?:\(|n[°ºo]|du\b|UE\b|CE\b)"
                        r"|\b(?-i:CESDH|EDH|RGPD|TFUE|TUE|PIDCP|DDHC)\b"
                        # la Convention, pas la Cour : « (CEDH, 25 mars 1993, n° ...) »

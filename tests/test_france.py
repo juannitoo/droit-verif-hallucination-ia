@@ -2623,6 +2623,43 @@ class AuditPass6(unittest.TestCase):
             unverified=True)[0]]
         self.assertEqual(grey, [("131-4-1 à 131-11", pen, "range"),
                                 ("132-25 à 132-70", pen, "range")])
+        # Dix vraies décisions administratives d'ArianeWeb (02/10/2026).
+        cja = "Code de justice administrative"
+        ceseda = "Code de l'entrée et du séjour des étrangers et du droit d'asile"
+        cases = [
+            ("En vertu de l'article L. 522-3 du code de justice administrative, le juge des "
+             "référés peut, par une ordonnance motivée, rejeter une requête.",
+             [("L522-3", cja)]),
+            ("dans l'hypothèse d'un règlement au fond de l'affaire, de mettre à sa charge la "
+             "somme de 3 500 euros au titre de l'article L. 761-1 du code de justice "
+             "administrative.", [("L761-1", cja)]),
+            ("l'article 1er de la loi n° 68-1250 du 31 décembre 1968 : « sous réserve des "
+             "dispositions de la présente loi, toutes créances qui n'ont pas été payées, à "
+             "charge du règlement ; ».", [("1", "Loi n° 68-1250 du 31 décembre 1968")]),
+            ("le premier alinéa de l'article 37-17 du décret n° 87-602 du 30 juillet 1987, dans "
+             "sa rédaction issue du\ndécret n° 2019-301 du 10 avril 2019, dispose.",
+             [("37-17", "Décret n° 87-602 du 30 juillet 1987")]),
+            ("garanti par l'article 41 de la Charte des droits fondamentaux de l'Union "
+             "européenne ; - elle méconnaît les dispositions de l'article L. 435-1 du code de "
+             "l'entrée et du séjour des étrangers et du droit d'asile ;", [("L435-1", ceseda)]),
+            ("les conditions posées par l'article 23-4 de l'ordonnance n° 58-1067 du 7 novembre "
+             "1958 portant loi organique ne sont pas remplies. 2° Sous le n° 518021, Mme S. "
+             "conteste la loi n° 2024-42.",
+             [("23-4", "Ordonnance n° 58-1067 du 7 novembre 1958")]),
+            ("au sens des dispositions du II de l'article 150 U du code général des impôts, "
+             "que les autres constructions et aménagements annexes implantés sur la propriété.",
+             [("150 U", "Code général des impôts")]),
+            ("en application de l'article R. 611-7 du code de justice administrative, que la "
+             "cour était susceptible de relever le moyen tiré du champ d'application de la loi.",
+             [("R611-7", cja)]),
+            # désignés, ils restent d'autres textes
+            ("l'article L. 522-3 du code de justice administrative et l'ordonnance n° 2020-305.",
+             []),
+            ("l'article 1240 du code civil et le règlement (UE) 2016/679.", []),
+            ("l'article 1240 du code civil et son annexe III.", []),
+        ]
+        for text, want in cases:
+            self.assertEqual([c[:2] for c in self.read(text)], want, text)
         rg = [(c["court"], c["cited_date"]) for c in extract(
             "contre un arrêt n° RG 23/07760 rendu le 28 novembre 2024 par la cour d'appel de "
             "Lyon (3e chambre A).")[0] if c["kind"] == "decision"]
