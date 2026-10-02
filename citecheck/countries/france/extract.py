@@ -312,6 +312,10 @@ def _court_in_sentence(text, start, rx):
     return found[-1] if found else None
 
 
+RE_EU_ACT = re.compile(r"(?:\d/|\b(?:règlement|directive|décision|traité)s?\s*\(?)\s*$",
+                       re.I)
+
+
 def unnumbered(text, used):
     """Les décisions citées sans numéro : une date qu'aucun numéro n'a prise, précédée de
     près, dans la même phrase, par une juridiction. Renvoie [(juridiction, date, span)]."""
@@ -333,6 +337,11 @@ def unnumbered(text, used):
         end, start, court = max(marks)
         start = -start
         if m.start() - end > UNNUMBERED_GAP or RE_NOT_A_DECISION.search(text, end, m.start()):
+            continue
+        # « directive 2008/115/CE du 16 décembre 2008 », « règlement (CE) n° 44/2001 » : le
+        # « CE » de la Communauté européenne, pas le Conseil d'État (audit visuel du
+        # 02/10/2026).
+        if RE_EU_ACT.search(text, max(0, start - 30), start):
             continue
         # « Le Conseil d'État a jugé le 5 juin 2009 que ce 12 mars 2019... » : la juridiction
         # appartient à la première date, pas à celle qui suit.
@@ -850,7 +859,9 @@ _TEXT_REF = (r"(?P<nature>loi(?:\s+organique)?|ordonnance|d[ée]cret(?:-loi)?)"
              r"(?:\s*n[°ºo]\s*(?P<num>\d{2,4}-\d{1,5})|\s+(?P<num2>\d{2,4}-\d{1,5}))?"
              r"(?:\s*,?\s+du\s+(?P<day>1er|\d{1,2})\s+(?P<month>" + "|".join(MONTHS) +
              r")\s+(?P<year>\d{4}))?")
-RE_TEXT_AFTER = re.compile(r"^\W{0,3}(?:de\s+la\s+|du\s+|de\s+l['’]\s*)?" + _TEXT_REF, re.I)
+# (« 37, alinéa 2, de la loi n° 91-647 du 10 juillet 1991 » : un alinéa entre les deux.)
+RE_TEXT_AFTER = re.compile(r"^\W{0,3}(?:(?:alinéa|al\.)\s*(?:\d{1,2}|1er|premier)\s*,?\s*)?"
+                           r"(?:de\s+la\s+|du\s+|de\s+l['’]\s*)?" + _TEXT_REF, re.I)
 # « loi n° 89-462 du 6 juillet 1989 modifiée, article 22 », « ..., dite loi Mermaz, article
 # 22 » : la loi reste celle de l'article (audit du 02/10/2026).
 RE_TEXT_BEFORE = re.compile(r"(?:^|\W)" + _TEXT_REF
@@ -957,7 +968,7 @@ _CODE_LINK = re.compile(
     rf"|{_FOLLOWING}\s+", re.I)
 _BARE = re.compile(rf"{_FOLLOWING}\s*", re.I)
 # Entre l'article et la loi qui le suit.
-_TEXT_LINK = re.compile(r"\s*(?:de\s+la|du|de\s+l['’])\s*", re.I)
+_TEXT_LINK = re.compile(rf"\s*(?:,\s*{_PARA}\s*,?\s*)?(?:de\s+la|du|de\s+l['’])\s*", re.I)
 # Entre le code ou la loi écrit devant et l'article.
 _BEFORE_LINK = re.compile(r"\s*[,;:]?\s*")
 # Un autre texte nommé dans la suite de la phrase : l'article n'est plus sûr (« article 22
@@ -984,8 +995,11 @@ _NEXT_ARTICLE = re.compile(r"[\s,;:]*(?:(?:et|ou)\b\s*)?(?:l['’]\s*)?\bart(?:i
 # « article 22 de la loi du 6 juillet 1989 ou du 24 mars 2014 », « article 8 du Code civil ou
 # la Convention » : une autre lecture. « ou » suffit toujours ; « et », devant un sigle ou
 # un « du » (audit du 02/10/2026).
+# « et aux articles 338-1 et suivants du code de procédure civile », « ou à l'article 1241 » :
+# l'article suivant, qui a son propre code, pas une autre lecture de celui-ci.
 _ALTERNATIVE = re.compile(r"\s*,?\s*(?:ou\b|(?:et|ni)\s+(?:du|de|des|d['’]|au|aux)\b"
-                          r"|et\s+(?:l[ae]s?\s+|l['’]\s*)?(?-i:[A-Z]{2,})\b)", re.I)
+                          r"|et\s+(?:l[ae]s?\s+|l['’]\s*)?(?-i:[A-Z]{2,})\b)"
+                          r"(?!\s*(?:à\s+|aux\s+|de\s+)?(?:l['’]\s*)?art(?:icle)?s?\b)", re.I)
 # Un « du » laissé en suspens juste avant le code écrit devant l'article suivant.
 _DANGLING = re.compile(r"\b(?:du|des|de\s+la|de\s+l['’]|de|au|aux)\s*$", re.I)
 # « de la convention collective » : rattachée à l'article, sans virgule.
@@ -1031,18 +1045,16 @@ def _code_follows(text, end):
 
 
 def _same_zone(text, start):
-    """(proche, garde) pour « du même code », « de la même loi » : le début de la phrase
-    précédente, et celui de la phrase d'avant encore, sans remonter plus de SAME_BACK. Le
-    texte repris doit être nommé dans la zone proche, et seul dans la zone de garde : « Le
-    Code pénal s'applique. » des pages plus haut, ou « Le Code pénal pose le principe.
-    L'article 1240 du Code civil s'applique. L'article 6 du même code. », ne disent pas
+    """(fenêtre, trois phrases) pour « du même code », « de la même loi » : SAME_BACK
+    caractères en arrière, et le début de la phrase d'il y a deux phrases, sans remonter plus
+    loin que la fenêtre. « Le Code pénal s'applique. » des pages plus haut ne dit pas
     sûrement lequel (audit du 02/10/2026)."""
     floor = max(0, start - SAME_BACK)
     ends = [x.end() for x in RE_SENTENCE_END.finditer(text, floor, start)]
-    return (ends[-2] if len(ends) >= 2 else floor), (ends[-3] if len(ends) >= 3 else floor)
+    return floor, (ends[-3] if len(ends) >= 3 else floor)
 
 
-SAME_BACK = 400
+SAME_BACK = 1000
 
 
 def _written_before(text, start):
@@ -1069,6 +1081,58 @@ def _fit(text, reach, core, count):
     return core
 
 
+class _Number:
+    """Un numéro qui continue une liste d'articles, lu comme un article (mêmes méthodes
+    qu'un résultat de RE_ARTICLES)."""
+
+    def __init__(self, m):
+        self._m = m
+
+    def start(self, group=0):
+        return self._m.start(1)
+
+    def end(self, group=0):
+        return self._m.end(1)
+
+    def span(self, group=0):
+        return self._m.span(1)
+
+    def group(self, group=0):
+        return self._m.group(1)
+
+
+# « articles L. 761-1 du code de justice administrative et 37 de la loi du 10 juillet 1991 » :
+# le second numéro, sans « article » devant, a son propre texte derrière lui (audit visuel du
+# 02/10/2026). Seulement après « articles » au pluriel et un code ou une loi rattaché.
+RE_CONTINUED = re.compile(r"\s*(?:,|et)\s+(" + NUM + r")(?=\s*(?:,\s*" + _PARA
+                          + r"\s*,\s*)?\s+(?:de\s+la|du|de\s+l['’]|des)\s)", re.I)
+
+
+def _continued(text, matches):
+    out = []
+    for m in matches:
+        if not m.group(0).lower().startswith("articles"):
+            continue
+        after = text[m.end():m.end() + CODE_NAME]
+        found = find_code(after)
+        named = RE_TEXT_AFTER.match(after)
+        if found and _CODE_LINK.fullmatch(after, 0, found[1]) and found[1] <= CODE_AFTER:
+            end = m.end() + found[2]
+        elif named and _text_ref(named) and _TEXT_LINK.fullmatch(after, 0,
+                                                                   named.start("nature")):
+            end = m.end() + named.end()
+        else:
+            continue
+        more = RE_CONTINUED.match(text, end)
+        if more:
+            out.append(_Number(more))
+    return out
+
+
+RE_OWN_ARTICLE = re.compile(r"\s*[:\-–]\s")
+RE_OWN_ARTICLE_BEFORE = re.compile(r"(?:^|[.;:\n\f]\s*|\s{2,})$")
+
+
 def extract_articles(text):
     """Renvoie (citations d'articles, remarques).
 
@@ -1076,11 +1140,20 @@ def extract_articles(text):
     « C. trav., art. L. 1152-1 », « article 22 de la loi n° 89-462 ») : le PDF annoté le
     surligne d'un seul tenant, et un rattachement absurde se voit sur la page. « core » :
     l'article seul, pour le retrouver si le bloc entier ne se retrouve pas sur la page."""
-    matches = list(RE_ARTICLES.finditer(text))
+    # « Article 1er : L'arrêté est annulé. Article 2 : ... » : le dispositif du jugement
+    # lui-même, pas une citation (audit visuel du 02/10/2026).
+    matches = [m for m in RE_ARTICLES.finditer(text)
+               if not (RE_OWN_ARTICLE.match(text, m.end()) and m.group(0)[0] == "A"
+                       and re.fullmatch(r"1er|\d{1,2}", m.group(1).strip())
+                       and RE_OWN_ARTICLE_BEFORE.search(text, max(0, m.start() - 3),
+                                                        m.start()))]
+    matches = sorted(matches + _continued(text, matches), key=lambda m: m.start())
     quotes = assign_quotes(text, [(m.start(), m.end()) for m in matches])
     citations, seen, no_code, attached, doubtful = [], Seen(), [], [], []
     unchecked = []          # (numéro, place, pourquoi) : relevés, jamais envoyés
     last_code = last_idcc = last_text = None
+    code_at = text_at = -1  # où commence l'article qui a pris last_code, last_text
+    codes_of = {}           # numéro -> codes auxquels il a déjà été rattaché
     last_kind = None        # ce qu'a pris l'article précédent : "code", "text" ou None
     idcc_taken = set()      # les IDCC déjà rattachés à un article (leur position)
     used_until = 0          # la fin du code ou du texte pris par l'article précédent
@@ -1279,29 +1352,34 @@ def extract_articles(text):
         same_text = RE_SAME_TEXT.match(after)
         if (same_code or same_text) and not mine_after:
             # Le texte repris, selon l'une de deux lectures sûres, sinon non vérifié :
-            #   1. celui de l'article précédent, dans cette phrase ou la précédente, si aucun
+            #   1. celui de l'article précédent, dans cette phrase ou les deux d'avant, si aucun
             #      autre n'est nommé depuis (« l'article 1719 du code civil ..., et l'article
             #      1720 du même code ») ;
-            #   2. un texte nommé tout près, seul dans la zone de garde (« Le Code du travail
-            #      est applicable. L'article L. 1152-1 du même code »). « Le Code civil et le
-            #      Code pénal s'appliquent. L'article 222-33 du même code » : lequel ?
-            near, guard = _same_zone(text, m.start())
-            prev_near = gap_start >= near
+            #   2. sinon, le seul texte nommé dans la fenêtre (« Le Code du travail est
+            #      applicable. L'article L. 1152-1 du même code »). « Le Code civil et le Code
+            #      pénal s'appliquent. L'article 222-33 du même code » : lequel ?
+            window, guard = _same_zone(text, m.start())
             prev_counts = gap_start >= guard or (
                 last_kind and not RE_SENTENCE_END.search(text, gap_start, m.start()))
         if same_code and not mine_after:
-            codes = codes_between(guard, m.start())
+            codes = codes_between(window, m.start())
             named_codes = {title for _, title in codes}
-            near_codes = {title for at, title in codes if at >= near}
             value = None
-            if (last_kind == "code" and prev_near
-                    and {title for at, title in codes if at >= gap_start} <= {last_code}):
+            # (Un article sans code entre les deux, « (anciennement article 1382) », ne
+            # nomme rien : il ne coupe pas le lien.)
+            if (last_code and code_at >= guard
+                    and {title for at, title in codes if at >= code_at} <= {last_code}):
                 value = last_code
             else:
                 if last_kind == "code" and prev_counts:
                     named_codes.add(last_code)
-                if len(named_codes) == 1 and named_codes & near_codes:
+                if len(named_codes) == 1:
                     value = named_codes.pop()
+                elif (re.search(r"précité|susvisé", same_code.group(0), re.I)
+                      and len(numbers) == 1 and len(codes_of.get(numbers[0], ())) == 1):
+                    # « l'article L. 423-23 du code précité » : ce même article a déjà été
+                    # cité, avec un seul code.
+                    value = next(iter(codes_of[numbers[0]]))
             if not value:
                 unsure()
                 continue
@@ -1312,15 +1390,14 @@ def extract_articles(text):
             key = last_text and (last_text["text_nature"], last_text["text_number"],
                                  last_text["text_date"])
             value = None
-            if (last_kind == "text" and prev_near
-                    and set(_texts_in(text[gap_start:m.start()])) <= {key}):
+            if (last_text and text_at >= guard
+                    and set(_texts_in(text[text_at:m.start()])) <= {key}):
                 value = last_text
             else:
-                refs = set(_texts_in(text[guard:m.start()]))
-                near_refs = set(_texts_in(text[near:m.start()]))
+                refs = set(_texts_in(text[window:m.start()]))
                 if last_kind == "text" and prev_counts:
                     refs.add(key)
-                if len(refs) == 1 and refs & near_refs:
+                if len(refs) == 1:
                     ref = refs.pop()
                     value = last_text if ref == key else dict(zip(
                         ("text_nature", "text_number", "text_date"), ref))
@@ -1353,9 +1430,12 @@ def extract_articles(text):
             unsure()                      # un autre texte nommé juste avant
             continue
         tail = m.end() + (mine_after[2] if mine_after else 0)
+        # (« et aux » se lit avec ce qui suit : « et aux articles 338-1 » annonce l'article
+        # suivant, pas un autre code pour celui-ci.)
+        alternative = _ALTERNATIVE.match(text, tail, min(len(text), rest_end + 40))
         if tail < rest_end and (_has_code(text, tail, rest_end)
                                 or _ANY_TEXT.search(text, tail, rest_end)
-                                or _ALTERNATIVE.match(text, tail, rest_end)):
+                                or alternative and alternative.end() <= rest_end):
             unsure()                      # un autre texte nommé dans la suite de la phrase
             continue
         if rest_end < limit and _DANGLING.search(text, tail, rest_end):
@@ -1369,7 +1449,7 @@ def extract_articles(text):
         reach = (start, m.end() + mine_after[3] if mine_after else m.end())
         used_until, last_kind = max(m.end(), reach[1]), kind
         if kind == "text":
-            last_text = value
+            last_text, text_at = value, m.start()
             for number, core in zip(numbers, cores):
                 span = _fit(text, reach, core, len(numbers))
                 key = ("text", value["text_nature"], value["text_number"], value["text_date"],
@@ -1382,7 +1462,9 @@ def extract_articles(text):
                                   "core": core})
                 seen[key] = citations[-1]
             continue
-        last_code = value
+        last_code, code_at = value, m.start()
+        for number in numbers:
+            codes_of.setdefault(number, set()).add(value)
         for number, core in zip(numbers, cores):
             span = _fit(text, reach, core, len(numbers))
             if seen.again((value, number), span, core):

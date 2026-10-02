@@ -2426,6 +2426,40 @@ class AuditPass6(unittest.TestCase):
         self.assertEqual({r["verdict"] for r in results}, {"NOT_TESTED"})
         self.assertIn("prud'hommes", results[-1]["explanation"])
 
+    def test_visual_pass(self):
+        """Relecture des documents cas-*.pdf (02/10/2026)."""
+        civ, cja = "Code civil", "Code de justice administrative"
+        ceseda = "Code de l'entrée et du séjour des étrangers et du droit d'asile"
+        cases = [
+            # « CE » de la Communauté européenne : pas une décision du Conseil d'État
+            ("l'article 6 de la directive 2008/115/CE du 16 décembre 2008.", []),
+            ("Le règlement (CE) du 22 décembre 2000 dispose.", []),
+            # le dispositif du jugement : pas une citation ; « Article 1240 : » en est une
+            ("annulé. Article 2 : Il est enjoint au préfet.", []),
+            # « et aux articles » annonce l'article suivant
+            ("l'article 388-1 du code civil et aux articles 338-1 et suivants du code de "
+             "procédure civile.", [("388-1", civ), ("338-1", "Code de procédure civile")]),
+            ("l'article 388-1 du code civil et au code pénal.", []),
+            # « du même code » jusqu'à trois phrases ; un article sans code ne coupe pas le lien
+            ("article 1240 du Code civil. (anciennement article 1382). L'article 1241 du même "
+             "code.", [("1240", civ), ("1241", civ)]),
+            ("article 1240 du Code civil. Le Code pénal réprime. (anciennement article 1382). "
+             "L'article 1241 du même code.", [("1240", civ)]),
+            # « du code précité » : le code avec lequel ce même article a déjà été cité
+            ("article L. 423-23 du CESEDA. Vu le code de justice administrative. Vu le code "
+             "civil. L'article L. 423-23 du code précité.", [("L423-23", ceseda)]),
+            ("article 1240 du Code civil et article 1240 du Code pénal. Plus loin, l'article "
+             "1240 du code précité.", [("1240", civ), ("1240", "Code pénal")]),
+            # la formule des frais d'avocat devant le juge administratif
+            ("des articles L. 761-1 du code de justice administrative et 37, alinéa 2, de la "
+             "loi n° 91-647 du 10 juillet 1991.",
+             [("L761-1", cja), ("37", "Loi n° 91-647 du 10 juillet 1991")]),
+        ]
+        for text, want in cases:
+            self.assertEqual([c[:2] for c in self.read(text)], want, text)
+        unverified = extract("Article 1240 : « Tout fait ».", unverified=True)[0]
+        self.assertEqual([(c["kind"], c["number"]) for c in unverified], [("unverified", "1240")])
+
     def test_decision_dates_as_doctrine_writes_them(self):
         for text, day, block in [
                 ("Cass. 2e civ., 7 avr. 2022, n° 20-19.977 rappelle", "2022-04-07",
