@@ -22,7 +22,7 @@ from datetime import date
 
 from . import codes, decision_quotes, links, other_courts, piste, sources, wire
 from .articles import check_articles
-from .texts import check_text_articles
+from .texts import check_text_articles, check_texts
 from .conventions import check_convention_articles
 from .lower_courts import Courts, check_lower_courts
 from . import extract as _extract
@@ -520,7 +520,7 @@ def selftest_legifrance(client, log, with_codes, with_conventions, with_texts=Fa
     return ok
 
 
-LEGISLATION = ("article", "convention_article", "text_article")
+LEGISLATION = ("article", "convention_article", "text_article", "text")
 
 
 def _check_legislation(citations, keys, day, idcc, log):
@@ -537,7 +537,7 @@ def _check_legislation(citations, keys, day, idcc, log):
     kinds = {c["kind"] for c in citations}
     if not _checked("Légifrance", lambda out: selftest_legifrance(
             client, out, "article" in kinds, "convention_article" in kinds,
-            "text_article" in kinds), log):
+            bool(kinds & {"text_article", "text"})), log):
         why = "Légifrance n'a pas passé ses contrôles : aucun verdict possible"
         return [("NOT_TESTED", why, None)] * len(citations)
     codes = iter(check_articles([c for c in citations if c["kind"] == "article"],
@@ -546,7 +546,9 @@ def _check_legislation(citations, keys, day, idcc, log):
         [c for c in citations if c["kind"] == "convention_article"], client, day, idcc))
     laws = iter(check_text_articles(
         [c for c in citations if c["kind"] == "text_article"], client, day))
-    kinds = {"article": codes, "convention_article": conventions, "text_article": laws}
+    whole = iter(check_texts([c for c in citations if c["kind"] == "text"], client, day))
+    kinds = {"article": codes, "convention_article": conventions, "text_article": laws,
+             "text": whole}
     # Les contrôles sont faits ; les citations, elles, se vérifient à la demande.
     return (next(kinds[c["kind"]]) for c in citations)
 
@@ -586,7 +588,7 @@ def prepare(keys, log=lambda s: None):
 def extract(text):
     """Les citations du document, avec ce qui est relevé sans pouvoir être vérifié : le
     rapport et le PDF annoté le montrent en gris."""
-    return _extract.extract(text, unverified=True)
+    return _extract.extract(text, unverified=True, whole_texts=True)
 
 
 def check(citations, keys, log=lambda s: None, options=None):
@@ -718,7 +720,9 @@ def _check(citations, keys, log, options):
         results.append({**c, "verdict": v, "explanation": why, "actual_date": actual,
                         "link": link[0] if link else None})
         step = f"  [{n}/{len(citations)}]"
-        if c.get("number") is None:
+        if c.get("kind") == "text":
+            log(f"{step} {c['court']} : {t.VERDICTS[v]}")
+        elif c.get("number") is None:
             log(f"{step} {c['court']}, {c.get('cited_date')}, sans numéro : {t.VERDICTS[v]}")
         else:
             log(f"{step} {c['court']} {'art.' if c.get('kind') in LEGISLATION else 'n°'} "

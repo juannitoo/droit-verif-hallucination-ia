@@ -53,6 +53,17 @@ def text_article(version_id):
     return None
 
 
+_TEXT = {"LEGITEXT": "loda", "JORFTEXT": "jorf"}
+
+
+def text(text_id):
+    """Une loi, une ordonnance, un décret, en entier."""
+    m = re.fullmatch(r"(LEGITEXT|JORFTEXT)\d{12}", text_id or "")
+    if m:
+        return f"{LEGIFRANCE}/{_TEXT[m.group(1)]}/id/{text_id}"
+    return None
+
+
 def convention_article(version_id):
     """Une version d'un article de convention collective (fonds KALI)."""
     if _KALIARTI.fullmatch(version_id or ""):

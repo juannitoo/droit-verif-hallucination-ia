@@ -249,6 +249,20 @@ class Client:
                 out[t["id"].split("_")[0]] = _strip_html(t.get("title") or "")
         return sorted(out.items())
 
+    def text_state(self, text_id, day):
+        """L'état d'un texte entier à la date `day` : (état, date de cet état), par exemple
+        (« Vigueur », « 1992-01-01 ») ou (« Abrogé », « 2016-04-01 »). Lu dans la version du
+        texte à cette date (/consult/legiPart), jamais dans la recherche : celle-ci donne
+        « VIGUEUR » à une ordonnance abrogée en 2016 (relevé le 02/10/2026). Unavailable si
+        la réponse ne le dit pas clairement."""
+        data = self._post("/consult/legiPart", {"textId": text_id, "date": day})
+        state, since = data.get("jurisState"), str(data.get("jurisDate") or "")
+        if not isinstance(state, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", since):
+            raise Unavailable(f"état du texte {text_id} illisible")
+        if data.get("textAbroge") is True:
+            state = "Abrogé"
+        return state, since
+
     def text_article_versions(self, text_number, text_id, number):
         """Toutes les versions de l'article `number` du texte `text_id` (numéro
         `text_number`), comme versions() pour un code. Liste vide si aucune."""

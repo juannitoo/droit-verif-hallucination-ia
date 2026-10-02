@@ -52,6 +52,17 @@ def refusal(c):
     """None si la citation a la forme que l'extracteur produit ; sinon, pourquoi elle ne
     part pas."""
     kind, order, number = c.get("kind"), c.get("order"), c.get("number")
+    if kind == "text":
+        # Un texte cité en entier : sa nature, et un numéro ou une date de forme connue.
+        if c.get("text_nature") not in ("LOI", "ORDONNANCE", "DECRET"):
+            return "nature de texte inconnue : non envoyé"
+        if c.get("text_number") is not None and not _is(r"\d{2,4}-\d{1,5}", c["text_number"]):
+            return "numéro de texte de forme inconnue : non envoyé"
+        if c.get("text_date") is not None and not _is(r"\d{4}-\d{2}-\d{2}", c["text_date"]):
+            return "date de texte de forme inconnue : non envoyé"
+        if not (c.get("text_number") or c.get("text_date")):
+            return "texte sans numéro ni date : non envoyé"
+        return None
     if kind in ("article", "text_article", "convention_article"):
         if not _is(_ARTICLE.pattern, number, re.I):
             return "numéro d'article de forme inconnue : non envoyé"

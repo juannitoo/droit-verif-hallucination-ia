@@ -71,6 +71,14 @@ ARTICLES = [
     "numéro, ou par sa date : une date seule en désigne souvent plusieurs (neuf lois le 6 "
     "juillet 1989). Le programme ne choisit pas : il cherche l'article dans chacune et dit "
     "dans laquelle il l'a trouvé. Base interrogée : Légifrance.",
+    "Les lois, ordonnances et décrets cités en entier : « la loi n° 91-647 du 10 juillet 1991 "
+    "relative à l'aide juridique », « dans sa rédaction issue de la loi n° 2018-217 du 29 "
+    "mars 2018 ». Le programme vérifie qu'un texte de cette nature porte ce numéro, à cette "
+    "date, et s'il est en vigueur à la date de référence ; il donne son intitulé officiel, à "
+    "comparer à celui de la pièce. Abrogé, ou pas encore en vigueur : « à vérifier ». Un "
+    "texte de codification (« décret ... portant code des marchés publics ») n'est jamais "
+    "confirmé : sa vigueur ne dit pas celle du code. Une date seule qui désigne plusieurs textes n'est pas vérifiée. "
+    "Base interrogée : Légifrance.",
     "Les numéros à suffixes du Code général des impôts : « article 199 undecies B du CGI », "
     "« 46 quater-0 ZZ bis », « 238 bis-0 I » ; et ses annexes : « article 2 de l'annexe III "
     "au CGI », « CGI, ann. III, art. 2 ».",

@@ -647,6 +647,10 @@ class UncodifiedTexts(unittest.TestCase):
         def text_article_versions(self, text_number, text_id, number):
             return self.texts[text_id][1].get(number, [])
 
+        def text_state(self, text_id, day):
+            # (état, depuis), « Vigueur » depuis 1992 sauf indication (états de legiPart)
+            return getattr(self, "states", {}).get(text_id, ("Vigueur", "1992-01-01"))
+
     def check(self, texts, **citation):
         from citecheck.countries.france.texts import check_text_article
         c = {"kind": "text_article", "text_nature": "LOI", "text_number": None,
@@ -695,6 +699,65 @@ class UncodifiedTexts(unittest.TestCase):
     def test_nature_must_match(self):
         texts = {"A": ("Décret n° 89-462 du 6 juillet 1989 x", {"22": self.V})}
         self.assertEqual(self.check(texts, text_number="89-462")[0], "TEXT_NOT_FOUND")
+
+    def test_a_whole_text(self):
+        """Un texte cité en entier : existe-t-il, avec ce numéro, cette nature, cette date ?"""
+        from citecheck.countries.france.texts import check_text
+        texts = {"A": ("Loi n° 91-647 du 10 juillet 1991 relative à l'aide juridique", {}),
+                 "B": ("Loi n° 89-462 du 6 juillet 1989 tendant", {}),
+                 "C": ("Loi n° 89-461 du 6 juillet 1989 modifiant", {}),
+                 "E": ("Ordonnance n° 2005-649 du 6 juin 2005 relative aux marchés", {}),
+                 "F": ("Décret n° 2006-975 du 1 août 2006 portant code des marchés publics.",
+                       {})}
+        states = {"E": ("Abrogé", "2016-04-01"), "F": ("Vigueur", "2006-09-01")}
+
+        def check(nature="LOI", number=None, day=None, reference="2026-09-30"):
+            client = self.Fake(texts)
+            client.states = states
+            return check_text(client, {"kind": "text", "text_nature": nature,
+                                       "text_number": number, "text_date": day}, reference)
+        from citecheck import report
+        verdict, why, *_ = check(number="91-647", day="1991-07-10")
+        self.assertEqual(verdict, "TEXT_IN_FORCE")
+        self.assertEqual(report.light(verdict), report.CONFIRMED)
+        self.assertIn("« Loi n° 91-647 du 10 juillet 1991 relative à l'aide juridique »", why)
+        self.assertEqual(check(number="91-647")[0], "TEXT_IN_FORCE")
+        # pas encore en vigueur à la date de référence
+        self.assertEqual(check(number="91-647", reference="1991-09-01")[0], "TEXT_NOT_IN_FORCE")
+        # abrogé : jamais bleu (relevé dans Légifrance le 02/10/2026)
+        verdict, why, *_ = check("ORDONNANCE", number="2005-649")
+        self.assertEqual(verdict, "TEXT_NOT_IN_FORCE")
+        self.assertNotEqual(report.light(verdict), report.CONFIRMED)
+        self.assertIn("abrogée le 2016-04-01", why)
+        # un décret « portant code » reste en vigueur, le code non : jamais bleu
+        verdict, why, *_ = check("DECRET", number="2006-975")
+        self.assertEqual(verdict, "DOUBTFUL")
+        self.assertIn("texte de codification", why)
+        verdict, why, *_ = check(number="91-647", day="1991-07-11")
+        self.assertEqual(verdict, "WRONG_DATE")
+        self.assertIn("datée du 1991-07-10, pas du 1991-07-11", why)
+        verdict, why, *_ = check("DECRET", number="91-647")
+        self.assertEqual(verdict, "DOUBTFUL")            # une loi, pas un décret
+        self.assertIn("la loi n° 91-647 du 10 juillet 1991 existe", why)
+        self.assertEqual(check(number="91-674")[0], "TEXT_NOT_FOUND")
+        # par la date seule : un texte, bleu ; plusieurs, on ne choisit pas ; aucun, rouge
+        self.assertEqual(check(day="1991-07-10")[0], "TEXT_IN_FORCE")
+        self.assertEqual(check(day="1989-07-06")[0], "NOT_TESTED")
+        self.assertEqual(check(day="1991-07-12")[0], "TEXT_NOT_FOUND")
+        texts["D"] = ("Loi du 29 juillet 1881 sur la liberté de la presse", {})
+        self.assertEqual(check(day="1881-07-29")[0], "NOT_TESTED")      # titre sans numéro
+
+    def test_whole_texts_are_found(self):
+        from citecheck.countries.france import extract as country_extract
+        text = ("Vu la loi n° 91-647 du 10 juillet 1991 relative à l'aide juridique. "
+                "L'ordonnance du 26 juin 2023 a fixé la résidence. L'article 22 de la loi "
+                "n° 89-462 du 6 juillet 1989 s'applique, dans sa rédaction issue de la loi "
+                "n° 2014-366 du 24 mars 2014. La loi n° 91-647 du 10 juillet 1991 encore.")
+        found = [(c["court"], text[slice(*c["span"])], len(c.get("repeats", [])))
+                 for c in country_extract(text)[0] if c["kind"] == "text"]
+        self.assertEqual(found, [
+            ("Loi n° 91-647 du 10 juillet 1991", "loi n° 91-647 du 10 juillet 1991", 1),
+            ("Loi n° 2014-366 du 24 mars 2014", "loi n° 2014-366 du 24 mars 2014", 0)])
 
     def test_a_title_that_does_not_read(self):
         """Audit du 02/10/2026 (11) : un texte sans numéro peut être celui que vise la pièce ;

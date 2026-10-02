@@ -120,14 +120,14 @@ def to_json(report):
     return json.dumps(report, ensure_ascii=False, indent=2)
 
 
-LEGISLATION = ("article", "convention_article", "text_article")
+LEGISLATION = ("article", "convention_article", "text_article", "text")
 
 # Le feu de chaque verdict, le même dans le rapport et dans le PDF annoté : bleu ce qui
 # est confirmé, rouge ce qui semble inventé, gris ce qui n'a pas été vérifié,
 # et orange tout le reste. Un verdict douteux n'est jamais « confirmé ».
 CONFIRMED, CHECK, INVENTED, UNCHECKED = "ok", "check", "invented", "unchecked"
 LIGHTS = {
-    "CONFIRMED": CONFIRMED, "ARTICLE_IN_FORCE": CONFIRMED,
+    "CONFIRMED": CONFIRMED, "ARTICLE_IN_FORCE": CONFIRMED, "TEXT_IN_FORCE": CONFIRMED,
     "NOT_PUBLISHED": INVENTED, "TEXT_NOT_FOUND": INVENTED, "ARTICLE_NOT_FOUND": INVENTED,
     "CONVENTION_NOT_FOUND": INVENTED,
     "NOT_TESTED": UNCHECKED, "ERROR": UNCHECKED, "UNVERIFIABLE_PERIOD": UNCHECKED,
@@ -151,6 +151,8 @@ def citation_label(r, report=None):
         return t.ARTICLE_LINE.format(code=r["code"], number=r["number"])
     if r.get("kind") == "text_article":
         return t.ARTICLE_LINE.format(code=r["court"], number=r["number"])
+    if r.get("kind") == "text":
+        return r["court"]                   # « Loi n° 91-647 du 10 juillet 1991 »
     if r.get("kind") == "unverified":
         return (t.UNVERIFIED_RG_LINE if r.get("what") == "rg"
                 else t.UNVERIFIED_ARTICLE_LINE).format(number=r["number"])

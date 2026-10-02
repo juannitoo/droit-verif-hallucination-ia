@@ -368,17 +368,18 @@ def order_of(text, start, default):
     return nearest[1] if nearest else default
 
 
-def extract(text, unverified=False):
+def extract(text, unverified=False, whole_texts=False):
     """Renvoie (citations, remarques). Une remarque signale ce qui n'a pas pu être lu.
     `unverified` : ajoute ce qui est relevé sans pouvoir être vérifié (« unverified »), pour
-    le rapport et le PDF annoté."""
+    le rapport et le PDF annoté. `whole_texts` : ajoute les lois, ordonnances et décrets
+    cités en entier (« text »), dont on vérifiera qu'ils existent."""
     try:
-        return _extract(text, unverified)
+        return _extract(text, unverified, whole_texts)
     finally:
         _ENDS[:] = [None, []]   # ne pas garder la pièce en mémoire, même après une erreur
 
 
-def _extract(text, with_unverified=False):
+def _extract(text, with_unverified=False, whole_texts=False):
     citations, undated, set_aside = [], [], []
     appeals = list(RE_APPEAL.finditer(text))
     appeal_numbers = {m.group(1) for m in appeals}
@@ -525,9 +526,11 @@ def _extract(text, with_unverified=False):
                               "number": None, "cited_date": day, "span": span})
             seen[("unnumbered", court, day)] = citations[-1]
 
-    articles, article_remarks, unverified = extract_articles(text)
+    articles, article_remarks, unverified, text_used = extract_articles(text)
     if with_unverified:
         articles += unverified + lower_unverified
+    if whole_texts:
+        articles += extract_texts(text, text_used)
     # Dans l'ordre du document, celui des numéros (pas du début de leur bloc) : c'est l'ordre
     # dans lequel l'avocat relira.
     both = sorted(citations + articles, key=lambda c: c.get("core", c["span"])[0])
@@ -1134,7 +1137,8 @@ RE_OWN_ARTICLE_BEFORE = re.compile(r"(?:^|[.;:\n\f]\s*|\s{2,})$")
 
 
 def extract_articles(text):
-    """Renvoie (citations d'articles, remarques).
+    """Renvoie (citations d'articles, remarques, relevés non vérifiés, places des lois qui ont
+    servi à un article).
 
     « span » couvre l'article ET ce à quoi il est rattaché (« article 1240 du Code civil »,
     « C. trav., art. L. 1152-1 », « article 22 de la loi n° 89-462 ») : le PDF annoté le
@@ -1151,6 +1155,7 @@ def extract_articles(text):
     quotes = assign_quotes(text, [(m.start(), m.end()) for m in matches])
     citations, seen, no_code, attached, doubtful = [], Seen(), [], [], []
     unchecked = []          # (numéro, place, pourquoi) : relevés, jamais envoyés
+    text_used = []          # où sont écrites les lois qui ont servi à un article
     last_code = last_idcc = last_text = None
     code_at = text_at = -1  # où commence l'article qui a pris last_code, last_text
     codes_of = {}           # numéro -> codes auxquels il a déjà été rattaché
@@ -1447,6 +1452,10 @@ def extract_articles(text):
         kind, value = (mine_after or mine_before)[:2]
         start = mine_before[2] if mine_before else m.start()
         reach = (start, m.end() + mine_after[3] if mine_after else m.end())
+        if kind == "text" and not via_same:
+            # La loi qui a servi à l'article : elle n'est pas vérifiée une seconde fois
+            # comme texte cité en entier.
+            text_used.append((start, m.start()) if mine_before else (m.end(), reach[1]))
         used_until, last_kind = max(m.end(), reach[1]), kind
         if kind == "text":
             last_text, text_at = value, m.start()
@@ -1490,7 +1499,7 @@ def extract_articles(text):
                        f"{'...' if len(doubtful) > 12 else ''}. La phrase ne le rattache pas à "
                        "un seul texte de façon sûre (deux textes nommés, ou un code qui peut "
                        "être celui de l'article voisin). Non vérifiés : à vérifier à la main.")
-    return citations, remarks, _unverified(unchecked, seen)
+    return citations, remarks, _unverified(unchecked, seen), text_used
 
 
 # Ce qui est relevé sans être vérifié : sur le PDF annoté, en gris avec son « ? », pour que
@@ -1505,6 +1514,34 @@ ATTACHED = ("article d'un avenant ou d'un accord collectif : seul le texte de ba
             "conventions est vérifié")
 NO_COURT = ("numéro RG sans cour d'appel ni tribunal judiciaire reconnu dans la phrase (les "
             "jugements de prud'hommes, par exemple, ne sont pas publiés) : non vérifié")
+
+
+# Les lois, ordonnances et décrets cités en entier : « la loi n° 91-647 du 10 juillet 1991
+# relative à l'aide juridique », « dans sa rédaction issue de la loi n° 2018-217 du 29 mars
+# 2018 ». Une IA invente volontiers un numéro de loi, ou donne la bonne loi avec la mauvaise
+# date : on vérifie que le texte existe (texts.check_text). Un numéro ou une date est exigé ;
+# une ordonnance sans numéro est le plus souvent celle d'un juge (« l'ordonnance du 26 juin
+# 2023 a fixé... ») : écartée.
+RE_WHOLE_TEXT = re.compile(r"\b" + _TEXT_REF, re.I)
+
+
+def extract_texts(text, used):
+    """Les textes cités en entier, hors ceux qui ont servi à un article (`used`)."""
+    out, seen = [], Seen()
+    for m in RE_WHOLE_TEXT.finditer(text):
+        ref = _text_ref(m)
+        if not ref or (ref["text_nature"] == "ORDONNANCE" and not ref["text_number"]):
+            continue
+        span = (m.start("nature"), m.end())
+        if any(a < span[1] and span[0] < b for a, b in used):
+            continue
+        key = ("text", ref["text_nature"], ref["text_number"], ref["text_date"])
+        if seen.again(key, span):
+            continue
+        out.append({"kind": "text", "order": "legislation", "court": _text_label(ref), **ref,
+                    "number": ref["text_number"], "cited_date": None, "span": span})
+        seen[key] = out[-1]
+    return out
 
 
 def _unverified(found, seen, what="article"):

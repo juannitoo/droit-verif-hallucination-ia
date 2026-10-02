@@ -14,6 +14,8 @@ VERDICTS = {
     "NOT_PUBLISHED": "NE SEMBLE PAS PUBLIÉE",
     "DOUBTFUL": "douteux, à regarder à la main",
     "ARTICLE_IN_FORCE": "article en vigueur à la date de référence",
+    "TEXT_IN_FORCE": "texte en vigueur à la date de référence",
+    "TEXT_NOT_IN_FORCE": "TEXTE PAS EN VIGUEUR à la date de référence",
     "ARTICLE_OTHER_VERSION": "TEXTE CITÉ D'UNE AUTRE VERSION",
     "QUOTE_NOT_FOUND": "TEXTE CITÉ NON RETROUVÉ dans l'article",
     "DECISION_QUOTE_NOT_FOUND": "PASSAGE CITÉ NON RETROUVÉ dans la décision",

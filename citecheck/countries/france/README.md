@@ -85,6 +85,13 @@ part sur le réseau, jamais le passage.
   compris (« 46 quater-0 ZZ bis », « 238 bis-0 I », « 302 bis ZA »).
 - **Les lois, lois organiques, ordonnances et décrets non codifiés** : « article 22 de la loi
   n° 89-462 du 6 juillet 1989 », « Loi n° 65-557, art. 14 », « article 6 de la même loi ».
+  Cités en entier aussi (« la loi n° 91-647 du 10 juillet 1991 relative à l'aide
+  juridique ») : le programme vérifie qu'un texte de cette nature porte ce numéro, à cette
+  date, et donne son intitulé officiel, à comparer à celui de la pièce. Une IA invente
+  volontiers un numéro de loi, ou date la bonne loi d'un autre jour. Confirmé seulement
+  s'il est en vigueur à la date de référence ; abrogé, ou texte de codification (« décret
+  ... portant code des marchés publics », en vigueur alors que le code est abrogé) : à
+  vérifier.
 - **Les conventions collectives**, par leur IDCC (écrit dans la phrase, ou donné au
   programme) : jamais devinées à partir de leur nom.
 

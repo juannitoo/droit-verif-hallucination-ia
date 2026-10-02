@@ -63,7 +63,7 @@ def candidates(client, citation):
     """([(identifiant, nature, numéro, date)] des textes que la citation peut désigner, nombre
     de textes de cette nature que Légifrance a renvoyés mais dont le titre ne se lit pas :
     sans numéro, « Loi du 29 juillet 1881 », ou d'une forme imprévue ; ils peuvent être celui
-    que vise la pièce)."""
+    que vise la pièce ; {identifiant: titre} de tout ce que Légifrance a renvoyé)."""
     nature, number = citation["text_nature"], citation.get("text_number")
     if number:
         found = client.texts_by_number(number)
@@ -83,7 +83,7 @@ def candidates(client, citation):
         if not number and o[2] != citation["text_date"]:
             continue
         out.append((text_id,) + o)
-    return out, unread
+    return out, unread, dict(found)
 
 
 def check_text_article(client, citation, day, texts):
@@ -93,7 +93,7 @@ def check_text_article(client, citation, day, texts):
     peut être celui que vise la pièce : on ne l'a pas fouillé, donc aucun verdict sûr, ni bleu
     ni « semble inventé » (audit du 02/10/2026)."""
     number = citation["number"]
-    found, unread = candidates(client, citation)
+    found, unread, _ = candidates(client, citation)
     if not unread:
         return _check(client, citation, day, texts, found)
     note = (f"Légifrance a {unread} autre{'s' if unread > 1 else ''} texte"
@@ -153,6 +153,113 @@ def _check(client, citation, day, texts, found):
                 "c'est bien ce texte que vise la pièce", start, *link)
     return ("DOUBTFUL", f"{head} ; il existe dans {len(hits)} d'entre eux, à vous de dire "
             "lequel est visé : " + " ; ".join(f"dans {n}, {r[1]}" for n, r in hits), None)
+
+
+# Un texte de codification (« décret n° 2006-975 portant code des marchés publics ») reste
+# « en vigueur » pour Légifrance alors que le code qu'il porte est abrogé depuis 2016 (relevé
+# le 02/10/2026) : sa vigueur ne dit rien de celle du code.
+RE_CODIFYING = re.compile(r"\b(?:portant|relative?\s+à\s+la\s+partie\s+\w+\s+du)\s+code\b",
+                          re.I)
+
+
+def check_text(client, citation, day):
+    """Un texte cité en entier (« loi n° 91-647 du 10 juillet 1991 ») : existe-t-il, avec ce
+    numéro, cette nature, cette date, et est-il en vigueur à la date de référence `day` ?
+    (verdict, explication, date, lien).
+
+    Par son numéro : rouge si aucun texte ne le porte ; orange s'il existe à une autre date
+    ou sous une autre nature (un décret, pas une loi). Par sa date seule : s'il y en a
+    plusieurs, on ne sait pas lequel est visé : non vérifié. Puis la vigueur, lue dans
+    Légifrance à la date de référence : bleu seulement en vigueur ; abrogé ou pas encore en
+    vigueur, orange (un texte abrogé cité comme applicable est une erreur typique). L'intitulé
+    officiel est donné, pour que le lecteur le compare à celui de la pièce."""
+    nature, number, cited_day = (citation["text_nature"], citation.get("text_number"),
+                                 citation.get("text_date"))
+    female = nature in FEMININE
+    bare = re.sub(r"^(?:la |le |l')", "", label(nature, number, cited_day))
+    found, unread, titles = candidates(client, citation)
+    note = (f" ; Légifrance a aussi {unread} texte{'s' if unread > 1 else ''} de ce nom dont "
+            "le titre ne se lit pas ici" if unread else "")
+
+    def official(text_id):
+        title = " ".join(titles.get(text_id, "").split())
+        return f"« {title[:160]}{'...' if len(title) > 160 else ''} »" if title else ""
+
+    if number:
+        if not found:
+            others = [o for o in (own(t) for t in titles.values()) if o]
+            if others:
+                o_nature, _, o_day = others[0]
+                return ("DOUBTFUL", f"aucun{'e' if female else ''} {bare} dans Légifrance, mais "
+                        f"{label(o_nature, number, o_day)} existe : vérifiez la nature du texte "
+                        "cité", None)
+            if unread:
+                return ("NOT_TESTED", f"aucun{'e' if female else ''} {bare} lisible dans "
+                        f"Légifrance{note} : à vérifier à la main", None)
+            return ("TEXT_NOT_FOUND", f"aucun texte n° {number} dans Légifrance : ce texte ne "
+                    "semble pas exister ; à vérifier", None)
+        if len(found) > 1:
+            return ("DOUBTFUL", f"plusieurs textes n° {number} dans Légifrance : "
+                    + " ; ".join(label(*f[1:]) for f in found), None)
+        text_id, _, _, text_day = found[0]
+        name = label(nature, number, text_day)
+        if cited_day and cited_day != text_day:
+            pronoun = "elle est datée" if female else "il est daté"
+            return ("WRONG_DATE", f"{name[0].upper()}{name[1:]} existe, mais {pronoun} du "
+                    f"{text_day}, pas du {cited_day} : {official(text_id)}", None,
+                    links.text(text_id))
+        head = f"{name[0].upper()}{name[1:]} existe dans Légifrance : {official(text_id)}{note}"
+    else:
+        if not found:
+            if unread:
+                return ("NOT_TESTED", f"aucun{'e' if female else ''} {bare} lisible dans "
+                        f"Légifrance{note} : à vérifier à la main", None)
+            return ("TEXT_NOT_FOUND", f"aucun{'e' if female else ''} {NAMES[nature]} datée du "
+                    f"{in_words(cited_day)} dans Légifrance : ce texte ne semble pas exister ; "
+                    "à vérifier", None)
+        if len(found) > 1 or unread:
+            return ("NOT_TESTED", f"« {bare} » désigne {len(found) + unread} textes dans "
+                    "Légifrance, on ne sait pas lequel est visé : "
+                    + " ; ".join(f"{label(*f[1:])} {official(f[0])}" for f in found) + note,
+                    None)
+        text_id, _, text_number, text_day = found[0]
+        name = label(nature, text_number, text_day)
+        head = (f"un{'e' if female else ''} seul{'e' if female else ''} {NAMES[nature]} porte "
+                f"cette date dans Légifrance, {name} : {official(text_id)}")
+    return _in_force(client, text_id, day, head, titles.get(text_id, ""), female, unread)
+
+
+def _in_force(client, text_id, day, head, title, female, unread):
+    """Le verdict d'un texte trouvé, d'après son état à la date de référence."""
+    link = links.text(text_id)
+    state, since = client.text_state(text_id, day)
+    e = "e" if female else ""
+    if state == "Abrogé":
+        return ("TEXT_NOT_IN_FORCE", f"{head} ; mais abrogé{e} le {since} : plus en vigueur le "
+                f"{day}", None, link)
+    if state != "Vigueur":
+        return ("DOUBTFUL", f"{head} ; état dans Légifrance le {day} : « {state} » depuis le "
+                f"{since} ; à vérifier", None, link)
+    if day < since:
+        return ("TEXT_NOT_IN_FORCE", f"{head} ; mais pas encore en vigueur le {day} : il l'est "
+                f"depuis le {since}", None, link)
+    if RE_CODIFYING.search(title):
+        return ("DOUBTFUL", f"{head} ; en vigueur le {day}, mais c'est un texte de "
+                "codification : sa vigueur ne dit pas celle du code qu'il porte ; vérifiez le "
+                "code lui-même", since, link)
+    if unread:
+        return ("DOUBTFUL", f"{head} ; en vigueur le {day}, mais un autre texte de ce nom n'a "
+                "pas pu être lu : vérifiez lequel vise la pièce", since, link)
+    return ("TEXT_IN_FORCE", f"{head} ; en vigueur le {day} (depuis le {since})", since, link)
+
+
+def check_texts(citations, client, day):
+    """Vérifie une liste de textes cités en entier, un à un, à la demande."""
+    for c in citations:
+        try:
+            yield check_text(client, c, day)
+        except Unavailable as e:
+            yield "ERROR", f"Légifrance n'a pas répondu ({e})", None
 
 
 def check_text_articles(citations, client, day):
