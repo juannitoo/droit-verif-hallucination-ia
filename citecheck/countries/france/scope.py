@@ -33,6 +33,8 @@ DECISIONS = [
     "Cours administratives d'appel : « CAA Bordeaux, 3 mars 2022, n° 21BX01234 ». Base "
     "interrogée : Légifrance, qui n'en publie qu'environ la moitié : une décision trouvée est "
     "vérifiée, une décision absente sort « non vérifiable ».",
+    "Tribunaux administratifs : « TA Paris, n° 2301234 », « par une ordonnance n° 2602422 du "
+    "5 mai 2026, le juge des référés du tribunal administratif de Nice ». "
     "Tribunaux administratifs, et CAA absentes de Légifrance : vérifiés seulement si une base "
     "locale, construite à partir des archives de opendata.justice-administrative.fr, est "
     "déclarée dans l'onglet « Clés d'accès ». Sinon, signalés « à vérifier à la main ».",
@@ -79,6 +81,11 @@ ARTICLES = [
     "texte de codification (« décret ... portant code des marchés publics ») n'est jamais "
     "confirmé : sa vigueur ne dit pas celle du code. Une date seule qui désigne plusieurs textes n'est pas vérifiée. "
     "Base interrogée : Légifrance.",
+    "Les articles de la Constitution du 4 octobre 1958 et de la Déclaration des droits de "
+    "l'homme et du citoyen de 1789 : « article 61-1 de la Constitution », « article 16 de la "
+    "Déclaration de 1789 ». En vigueur à la date de référence, ou non (l'article 61-1 n'existe "
+    "que depuis 2008). Le Préambule de 1946 et la Charte de l'environnement ne sont pas "
+    "vérifiés. Base interrogée : Légifrance.",
     "Les numéros à suffixes du Code général des impôts : « article 199 undecies B du CGI », "
     "« 46 quater-0 ZZ bis », « 238 bis-0 I » ; et ses annexes : « article 2 de l'annexe III "
     "au CGI », « CGI, ann. III, art. 2 ».",

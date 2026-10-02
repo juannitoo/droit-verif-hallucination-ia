@@ -132,9 +132,12 @@ RE_NOT_A_DECISION = re.compile(r"\b(?:loi|décret|ordonnance|arrêté|circulaire
 RE_EU = re.compile(r"\b([CT])\s?[-‑–]\s?(\d{1,4})/(\d{2})\b")
 # La date d'un texte, juste avant elle : « la loi du 8 août 2016 », « décret n° 2016-1234 du
 # 29 septembre 2016 ». Ce n'est pas la date de la décision voisine.
+# (« ordonnance n° 58-1067 du 7 novembre 1958 » est un texte ; « ordonnance n° 2602422 du 5
+# mai 2026 », sans tiret, la décision d'un juge : sa date est celle de la décision.)
 RE_TEXT_DATE = re.compile(
-    r"\b(?:loi|décret|ordonnance|arrêté|circulaire|directive|règlement|avenant|accord)s?"
-    r"(?:\s+organique)?(?:\s+n[°º]\s*[\d-]+)?\s+(?:du|en\s+date\s+du)\s+$", re.I)
+    r"\b(?:(?:loi|décret|arrêté|circulaire|directive|règlement|avenant|accord)s?"
+    r"(?:\s+organique)?(?:\s+n[°º]\s*[\d-]+)?"
+    r"|ordonnances?(?:\s+n[°º]\s*\d{2,4}-[\d-]+)?)\s+(?:du|en\s+date\s+du)\s+$", re.I)
 # Un pourvoi (« 17-28.268 ») n'est une décision de la Cour de cassation que si la phrase le
 # dit : une juridiction judiciaire ou une chambre nommée, ou les mots « pourvoi », « arrêt ».
 # « Référence 17-28.268 communiquée le 21 mars 2019 au client » n'est pas une citation
@@ -165,6 +168,11 @@ def _iso(m, words=True):
 # soc., 30 juin 2021, n° 19-10.161) » : la date de l'arrêt n'était plus lue).
 RE_EVENT_DATE = re.compile(r"\b(?:au|avant\s+le|après\s+le|depuis\s+le|compter\s+du"
                            r"|jusqu['’]au|dès\s+le|entre\s+le)\s+$", re.I)
+
+
+RE_GLUED_DATE = re.compile(
+    r"(?:/\d{1,2})?\s*,?\s*(?:du|en\s+date\s+du)\s+(\d{1,2})(?:er)?\s+("
+    + "|".join(map(re.escape, DATE_MONTHS)) + r")\s+(\d{4})\b", re.I)
 
 
 def assign_dates(text, spans, used=None, places=None):
@@ -213,6 +221,18 @@ def assign_dates(text, spans, used=None, places=None):
                     used.update((best[start][2], m.start()))
             if start not in best or gap < best[start][0]:
                 best[start] = (gap, day, m.start(), m.end())
+    # « n° 2602422 du 5 mai 2026, ... le titre émis le 29 janvier 2026 » : la date collée au
+    # numéro par « du » est la sienne, sans dispute possible (décisions du 02/10/2026). La
+    # dispute ne joue que si aucune date n'est collée (« arrêt du 1er janvier 1900 (et non du
+    # 21 mars 2019), n° 17-28.268 »).
+    for start, end in starts:
+        glued = RE_GLUED_DATE.match(text, end)
+        day = glued and _iso(glued)
+        if day:
+            if start in best and best[start][1] != day and used is not None:
+                used.add(best[start][2])
+            best[start] = (0, day, glued.start(1), glued.end())
+            disputed.discard(start)
     if used is not None:
         used.update(where for _, _, where, _ in best.values())
     if places is not None:      # où est écrite la date retenue, pour le PDF annoté
@@ -316,6 +336,19 @@ RE_EU_ACT = re.compile(r"(?:\d/|\b(?:règlement|directive|décision|traité)s?\s
                        re.I)
 
 
+RE_UNNUMBERED_GAP = re.compile(
+    r"(?:[\s,.;:()–-]"
+    r"|\b(?:du|de|des|d['’]|la|en\s+date\s+du|statuant\s+au\s+contentieux|et"
+    r"|chambres?|ch\.|sect(?:ion|\.)|ass(?:emblée|\.)|plén(?:ière|\.)?|réunies|mixte"
+    r"|civ(?:ile|\.)?|soc(?:iale|\.)?|com(?:merciale|\.)?|crim(?:inelle|\.)?"
+    r"|correctionnelle|sociale|formation|départage|référés?|juge|avis"
+    r"|\d{1,2}(?:e|è|ème|ère|re|er)|1re|1ère|Gde|grande"
+    # « Le Conseil d'État a jugé le 5 juin 2009 »
+    r"|a\s+(?:jugé|statué|décidé|retenu|rappelé)(?:\s*,)?\s+le)(?![\w'’])"
+    # une ville : « CA Paris », « tribunal administratif de Toulon », « de BESANCON »
+    r"|(?-i:[A-ZÀ-Þ][\w'’]*(?:-[\w'’]+)*))*", re.I)
+
+
 def unnumbered(text, used):
     """Les décisions citées sans numéro : une date qu'aucun numéro n'a prise, précédée de
     près, dans la même phrase, par une juridiction. Renvoie [(juridiction, date, span)]."""
@@ -338,6 +371,12 @@ def unnumbered(text, used):
         start = -start
         if m.start() - end > UNNUMBERED_GAP or RE_NOT_A_DECISION.search(text, end, m.start()):
             continue
+        # Entre la juridiction et la date, seulement une ville, une formation ou des mots de
+        # liaison : « Conseil d'État un courrier du 21 juillet 2026 », « cour administrative
+        # d'appel de Paris, sur appel de M. L..., a annulé la décision du 11 juin 2019 » ne
+        # citent aucune décision (décisions du 02/10/2026).
+        if not RE_UNNUMBERED_GAP.fullmatch(text, end, m.start()):
+            continue
         # « directive 2008/115/CE du 16 décembre 2008 », « règlement (CE) n° 44/2001 » : le
         # « CE » de la Communauté européenne, pas le Conseil d'État (audit visuel du
         # 02/10/2026).
@@ -349,6 +388,39 @@ def unnumbered(text, used):
             continue
         out.append((court, day, (start, m.end())))
     return out
+
+
+# La juridiction écrite APRÈS le numéro, selon un seul modèle, celui des visas des décisions
+# administratives : « Par une ordonnance n° 2602422 du 5 mai 2026, le juge des référés du
+# tribunal administratif de Nice », « l'ordonnance n° 2508419 du 6 mai 2026 par laquelle la
+# présidente du tribunal administratif de Melun », « un jugement n° 1908677/4 du 25 novembre
+# 2022, le tribunal administratif de Montreuil » (décisions du 02/10/2026). Elle l'emporte sur
+# une juridiction nommée avant, qui est celle d'une autre procédure (« sa requête devant la
+# cour administrative d'appel de Paris tendant à l'annulation de l'ordonnance n° 2508419 ...
+# par laquelle la présidente du tribunal administratif de Melun »).
+_DAY = r"(?:1er|\d{1,2})\s+(?:" + "|".join(map(re.escape, DATE_MONTHS)) + r")\s+\d{4}"
+RE_COURT_AFTER = re.compile(
+    r"(?:/\d{1,2})?(?:\s+du\s+" + _DAY + r")?"
+    r"(?:\s*,\s*enregistrée?\s+(?:le\s+même\s+jour|le\s+" + _DAY + r")\s+au\s+"
+    r"(?:secrétariat\s+du\s+contentieux\s+du\s+Conseil\s+d['’]\s*[ÉE]tat"
+    r"|greffe\s+de\s+(?:la\s+cour|ce\s+tribunal)))?"
+    r"\s*,?\s*(?:par\s+(?:laquelle|lequel)\s+|rendue?\s+le\s+" + _DAY + r"\s+par\s+)?"
+    r"(?:(?:le|la|l['’])\s*)?"
+    r"(?:(?:juge\s+des\s+référés|(?:vice-)?présidente?|magistrate?\s+désignée?)"
+    r"(?:\s+de\s+la\s+\d{1,2}(?:e|ème|è)\s+chambre)?\s+(?:du|de\s+la|de\s+l['’])\s*)?"
+    r"(?P<court>tribunal\s+administratif|cour\s+administrative\s+d['’]\s*appel"
+    r"|Conseil\s+d['’]\s*[ÉE]tat)\b", re.I)
+
+
+def court_after(text, end):
+    """« TA », « CAA » ou « administrative » (le Conseil d'État) si le modèle ci-dessus suit
+    le numéro qui finit à `end` ; sinon None."""
+    m = RE_COURT_AFTER.match(text, end)
+    if not m:
+        return None
+    court = m.group("court").lower()
+    return "TA" if court.startswith("tribunal") else "CAA" if court.startswith("cour") \
+        else "administrative"
 
 
 def order_of(text, start, default):
@@ -462,7 +534,7 @@ def _extract(text, with_unverified=False, whole_texts=False):
         # Sans juridiction nommée dans la phrase, « n° 308850 » n'est pas une requête du
         # Conseil d'État : « la pièce n° 308850 signée le 5 juin 2009 » n'est pas une
         # citation, et pourrait être « confirmée » (audit du 01/10/2026).
-        order = order_of(text, m.start(), None)
+        order = court_after(text, m.end()) or order_of(text, m.start(), None)
         if order is None and not RE_SLASH_YEAR.match(text, m.end()):
             unattached.append(number)
             continue
@@ -920,8 +992,32 @@ def in_words(iso):
     return f"{'1er' if day == '01' else int(day)} {MONTH_NAMES[int(month) - 1]} {year}"
 
 
+# La Constitution et la Déclaration de 1789 : des textes sans numéro, aux identifiants
+# Légifrance fixes (sonde probes/constitution.py, 02/10/2026). « article 61-1 de la
+# Constitution », « article 16 de la Déclaration de 1789 », « article 6 de la Déclaration des
+# droits de l'homme et du citoyen ». Pas la Constitution de 1946 ou de 1848, ni la
+# Déclaration universelle des droits de l'homme : non vérifiées, gris.
+BLOCK = {
+    "constitution": {"text_nature": "CONSTITUTION", "text_number": None,
+                     "text_date": "1958-10-04", "text_id": "LEGITEXT000006071194"},
+    "ddhc": {"text_nature": "DDHC", "text_number": None, "text_date": "1789-08-26",
+             "text_id": "LEGITEXT000006071192"},
+}
+BLOCK_TITLES = {"CONSTITUTION": "Constitution du 4 octobre 1958",
+                "DDHC": "Déclaration des droits de l'homme et du citoyen de 1789"}
+RE_BLOCK_AFTER = re.compile(
+    r"^\s*(?:,\s*(?:alinéa|al\.?)\s*(?:\d{1,2}|1er|premier)\s*,?\s*)?(?:de\s+la\s+|de\s+l['’]\s*)"
+    r"(?:(?P<constitution>Constitution(?:\s+(?:du\s+4\s+octobre\s+|de\s+)1958)?)"
+    r"(?!\s+(?:du\s+\d|de\s+1[78]\d\d|de\s+19[0-4]\d))"
+    r"|(?P<ddhc>Déclaration\s+(?:de\s+1789|du\s+26\s+août\s+1789|des\s+droits\s+de\s+"
+    r"l['’]\s*[Hh]omme\s+et\s+du\s+[Cc]itoyen(?:\s+(?:de\s+|du\s+26\s+août\s+)1789)?)"
+    r"|DDHC))\b")
+
+
 def _text_label(ref):
     """« Loi n° 89-462 du 6 juillet 1989 », pour le rapport."""
+    if ref["text_nature"] in BLOCK_TITLES:
+        return BLOCK_TITLES[ref["text_nature"]]
     name = {"LOI": "Loi", "ORDONNANCE": "Ordonnance", "DECRET": "Décret"}[ref["text_nature"]]
     return (name + (f" n° {ref['text_number']}" if ref["text_number"] else "")
             + (f" du {in_words(ref['text_date'])}" if ref["text_date"] else ""))
@@ -1432,6 +1528,9 @@ def extract_articles(text):
                 unsure()
                 continue
             mine_after = ("text", _text_ref(named), named.end(), named.end())
+        block = RE_BLOCK_AFTER.match(after)
+        if block and not mine_after:
+            mine_after = ("text", BLOCK[block.lastgroup], block.end(), block.end())
         via_same = False                  # « du même code », « de la même loi »
         same_text = RE_SAME_TEXT.match(after)
         if (same_code or same_text) and not mine_after:
@@ -1510,7 +1609,12 @@ def extract_articles(text):
             unchecked.extend((n, c, NO_TEXT) for n, c in zip(numbers, cores))
             used_until, last_kind = m.end(), None
             continue
-        if crowded_head and not via_same:
+        # (« les dispositions du code de l'entrée ... méconnaissent le droit garanti par
+        # l'article 16 de la Déclaration de 1789 » : écrite en toutes lettres derrière lui, la
+        # Constitution ou la Déclaration ne peut être lue comme un code nommé avant.)
+        block_after = (mine_after and not mine_before and mine_after[0] == "text"
+                       and mine_after[1]["text_nature"] in BLOCK_TITLES)
+        if crowded_head and not via_same and not block_after:
             unsure()                      # un autre texte nommé juste avant
             continue
         tail = m.end() + (mine_after[2] if mine_after else 0)

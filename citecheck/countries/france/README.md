@@ -92,6 +92,9 @@ part sur le réseau, jamais le passage.
   s'il est en vigueur à la date de référence ; abrogé, ou texte de codification (« décret
   ... portant code des marchés publics », en vigueur alors que le code est abrogé) : à
   vérifier.
+- **La Constitution du 4 octobre 1958 et la Déclaration de 1789** : « article 61-1 de la
+  Constitution », « article 16 de la Déclaration de 1789 », en vigueur ou non à la date de
+  référence. Le Préambule de 1946 et la Charte de l'environnement ne sont pas vérifiés.
 - **Les conventions collectives**, par leur IDCC (écrit dans la phrase, ou donné au
   programme) : jamais devinées à partir de leur nom.
 

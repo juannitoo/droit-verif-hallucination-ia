@@ -16,10 +16,11 @@ Seuls partent le numéro ou la date du texte, et le numéro de l'article. Jamais
 document.
 """
 import re
+from datetime import date
 
 from . import links
 from .articles import verdict_versions
-from .extract import MONTHS, in_words
+from .extract import BLOCK_TITLES, MONTHS, in_words
 from .legifrance import Unavailable
 
 # Le titre d'un texte commence par sa nature, son numéro et SA date : « Loi n° 89-462 du 6
@@ -93,6 +94,8 @@ def check_text_article(client, citation, day, texts):
     peut être celui que vise la pièce : on ne l'a pas fouillé, donc aucun verdict sûr, ni bleu
     ni « semble inventé » (audit du 02/10/2026)."""
     number = citation["number"]
+    if citation.get("text_nature") in BLOCK_TITLES:
+        return _check_block(client, citation, day, texts)
     found, unread, _ = candidates(client, citation)
     if not unread:
         return _check(client, citation, day, texts, found)
@@ -103,6 +106,25 @@ def check_text_article(client, citation, day, texts):
         return ("NOT_TESTED", f"{note} ; à vérifier à la main", None)
     verdict, why, start, *link = _check(client, citation, day, texts, found)
     return ("DOUBTFUL", f"{why} ; mais {note} : vérifiez lequel vise la pièce", start, *link)
+
+
+def _check_block(client, citation, day, texts):
+    """La Constitution, la Déclaration de 1789 : un seul texte, à l'identifiant fixe. L'article
+    est cherché dans le texte tel qu'il était à la date de référence et tel qu'il est
+    aujourd'hui. Absent des deux : il a pu exister entre-temps (les articles 90 à 93 de la
+    Constitution, abrogés en 1995) ; à vérifier, jamais « semble inventé »."""
+    number = citation["number"]
+    name = "la " + BLOCK_TITLES[citation["text_nature"]]
+    versions = client.block_article_versions(citation["text_id"], number,
+                                             sorted({day, date.today().isoformat()}))
+    if not versions and citation["text_nature"] == "DDHC":
+        # Ses 17 articles n'ont jamais changé : un autre numéro n'a jamais existé.
+        return verdict_versions(client, citation, day, texts, [], name)
+    if not versions:
+        return ("DOUBTFUL", f"aucun article {number} dans {name}, ni à la date de référence "
+                "ni aujourd'hui : il ne semble pas exister, ou a été abrogé depuis longtemps ; "
+                "à vérifier sur Légifrance", None)
+    return verdict_versions(client, citation, day, texts, versions, name, links.text_article)
 
 
 def _check(client, citation, day, texts, found):

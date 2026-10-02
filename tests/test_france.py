@@ -663,6 +663,68 @@ class Succession(unittest.TestCase):
         self.assertEqual(verdict, "DOUBTFUL")    # le nouveau n'a pas ce numéro : erreur ?
 
 
+class Constitution(unittest.TestCase):
+    """La Constitution de 1958 et la Déclaration de 1789 (sonde probes/constitution.py)."""
+    V = [{"id": "LEGIARTI000019241077", "etat": "VIGUEUR", "debut": "2008-07-25",
+          "fin": "2999-01-01"}]
+
+    class Fake:
+        def __init__(self, articles):
+            self.articles = articles        # {(identifiant du texte, numéro): versions}
+
+        def block_article_versions(self, text_id, number, days):
+            return self.articles.get((text_id, number), [])
+
+    def read(self, text):
+        return [(c["kind"], c["number"], c["court"]) for c in extract(text, unverified=True)[0]]
+
+    def test_attached(self):
+        const, ddhc = "Constitution du 4 octobre 1958", ("Déclaration des droits de l'homme et du "
+                                                        "citoyen de 1789")
+        self.assertEqual(self.read("l'article 61-1 de la Constitution."),
+                         [("text_article", "61-1", const)])
+        self.assertEqual(self.read("l'article 16 de la Déclaration de 1789."),
+                         [("text_article", "16", ddhc)])
+        self.assertEqual(self.read("l'article 6 de la Déclaration des droits de l'homme et du "
+                                   "citoyen du 26 août 1789."), [("text_article", "6", ddhc)])
+        self.assertEqual(self.read("les articles 6 et 16 de la Déclaration de 1789 ; que"),
+                         [("text_article", "6", ddhc), ("text_article", "16", ddhc)])
+        # un code nommé plus tôt dans la phrase n'en fait pas douter (décision du CE du
+        # 30/09/2026) ; un code écrit devant l'article, si
+        self.assertEqual(self.read(
+            "les dispositions du livre IV du code de l'entrée et du séjour des étrangers et du "
+            "droit d'asile méconnaissent le droit à un recours effectif, garanti par l'article "
+            "16 de la Déclaration de 1789."), [("text_article", "16", ddhc)])
+        self.assertEqual([k for k, *_ in self.read("C. civ., art. 16 de la Constitution.")],
+                         ["unverified"])
+        # d'autres textes : jamais pris pour ceux-là
+        for text in ("l'article 7 de la Déclaration universelle des droits de l'homme.",
+                     "l'article 13 de la Constitution du 27 octobre 1946.",
+                     "l'article 13 de la Constitution de 1946."):
+            self.assertEqual([k for k, *_ in self.read(text)], ["unverified"], text)
+
+    def test_checked(self):
+        from citecheck import report
+        from citecheck.countries.france.texts import check_text_article
+        from citecheck.countries.france.wire import refusal
+        const = extract("l'article 61-1 de la Constitution.")[0][0]
+        ddhc = extract("l'article 18 de la Déclaration de 1789.")[0][0]
+        self.assertIsNone(refusal(const))
+        fake = self.Fake({("LEGITEXT000006071194", "61-1"): self.V})
+        verdict, why, *_ = check_text_article(fake, const, "2026-09-30", {})
+        self.assertEqual(report.light(verdict), report.CONFIRMED)
+        self.assertEqual(check_text_article(fake, const, "2005-01-01", {})[0],
+                         "ARTICLE_NOT_IN_FORCE")
+        # absent de la Constitution : peut-être abrogé depuis longtemps, à vérifier
+        verdict, why, *_ = check_text_article(self.Fake({}), const, "2026-09-30", {})
+        self.assertEqual(verdict, "DOUBTFUL")
+        # la Déclaration n'a jamais eu que 17 articles
+        self.assertEqual(check_text_article(self.Fake({}), ddhc, "2026-09-30", {})[0],
+                         "ARTICLE_NOT_FOUND")
+        # un identifiant qui n'est pas celui d'un de ces textes ne part pas
+        self.assertIsNotNone(refusal({**const, "text_id": "LEGITEXT000000000001"}))
+
+
 class UncodifiedTexts(unittest.TestCase):
     """Articles of laws, ordinances and decrees that are not in a code."""
     V = [{"id": "x", "etat": "VIGUEUR", "debut": "2014-03-27", "fin": "2999-01-01"}]
@@ -2660,6 +2722,33 @@ class AuditPass6(unittest.TestCase):
         ]
         for text, want in cases:
             self.assertEqual([c[:2] for c in self.read(text)], want, text)
+        # Les décisions des tribunaux administratifs : la juridiction écrite après le numéro,
+        # selon le modèle des visas, l'emporte sur celle d'une autre procédure nommée avant.
+        for text, want in [
+                ("conclusions de la demande. Par une ordonnance n° 2602422 du 5 mai 2026, le "
+                 "juge des référés du tribunal administratif de Nice a suspendu l'exécution du "
+                 "titre émis le 29 janvier 2026.", [("ta", "TA", "2602422", "2026-05-05")]),
+                ("sa requête présentée devant la cour administrative d'appel de Paris tendant à "
+                 "l'annulation de l'ordonnance n° 2508419 du 6 mai 2026 par laquelle la "
+                 "présidente du tribunal administratif de Melun a rejeté sa demande.",
+                 [("ta", "TA", "2508419", "2026-05-06")]),
+                ("Par une ordonnance n° 2520445 du 16 juillet 2026, enregistrée le 21 juillet "
+                 "2026 au secrétariat du contentieux du Conseil d'Etat, la présidente de la "
+                 "12ème chambre du tribunal administratif de Cergy-Pontoise a décidé.",
+                 [("ta", "TA", "2520445", "2026-07-16")]),
+                ("Par un jugement n° 1908677/4 du 25 novembre 2022, le tribunal administratif "
+                 "de Montreuil a annulé la décision du 11 juin 2019 du maire.",
+                 [("ta", "TA", "1908677", "2022-11-25")]),
+                # sans le modèle, rien n'est deviné
+                ("1° Sous le n° 517495, M. U..., à l'appui de sa requête présentée devant la "
+                 "cour administrative d'appel de Paris.", []),
+                # pas des décisions : une date sans rapport derrière une juridiction
+                ("a transmis au Conseil d'Etat un courrier du 21 juillet 2026.", []),
+                ("la cour administrative d'appel de Paris, sur appel de M. L..., a annulé la "
+                 "décision du 11 juin 2019 du maire.", [])]:
+            got = [(c["order"], c["court"], c["number"], c["cited_date"])
+                   for c in extract(text)[0] if c["kind"] == "decision"]
+            self.assertEqual(got, want, text)
         rg = [(c["court"], c["cited_date"]) for c in extract(
             "contre un arrêt n° RG 23/07760 rendu le 28 novembre 2024 par la cour d'appel de "
             "Lyon (3e chambre A).")[0] if c["kind"] == "decision"]

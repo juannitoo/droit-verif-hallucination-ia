@@ -190,6 +190,7 @@ Quand une réponse de Légifrance surprend, une sonde de `probes/` la montre tel
 .venv/bin/python probes/text_state.py            # vigueur d'un texte entier
 .venv/bin/python probes/recodified_articles.py   # un numéro, plusieurs articles
 .venv/bin/python probes/journal_officiel.py      # article absent de la version consolidée
+.venv/bin/python probes/constitution.py          # Constitution et Déclaration de 1789
 ```
 
 ## Les trois règles, à ne jamais affaiblir

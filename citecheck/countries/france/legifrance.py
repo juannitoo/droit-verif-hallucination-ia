@@ -295,6 +295,31 @@ class Client:
             state = "Abrogé"
         return state, since
 
+    def block_article_versions(self, text_id, number, days):
+        """Les versions de l'article `number` de la Constitution ou de la Déclaration de 1789
+        (`text_id` fixe, sans numéro de texte). Lues dans le texte tel qu'il est à chacune des
+        dates `days` (/consult/legiPart, sonde probes/constitution.py) : un article abrogé
+        depuis, ou entré en vigueur après la date de référence, n'est pas dans toutes. Liste
+        vide si aucune ; Unavailable si le numéro désigne deux articles différents (« 77 »)."""
+        found = set()
+        for day in days:
+            data = self._post("/consult/legiPart", {"textId": text_id, "date": day})
+            stack = [data]
+            while stack:
+                node = stack.pop()
+                found |= {a["id"] for a in node.get("articles") or []
+                          if a.get("num") == number and a.get("id")}
+                stack += node.get("sections") or []
+        if not found:
+            return []
+        article = self._post("/consult/getArticle", {"id": sorted(found)[0]}).get("article") or {}
+        complete = [{"id": v.get("id"), "etat": v.get("etat"), "debut": _day(v.get("dateDebut")),
+                     "fin": _day(v.get("dateFin"))}
+                    for v in article.get("articleVersions") or [] if v.get("id")]
+        if not found <= {v["id"] for v in complete}:
+            raise Unavailable(f"l'article {number} désigne plusieurs articles de ce texte")
+        return sorted(dated(complete, number), key=lambda v: v["debut"])
+
     def text_article_versions(self, text_number, text_id, number):
         """Toutes les versions de l'article `number` du texte `text_id` (numéro
         `text_number`), comme versions() pour un code. Liste vide si aucune."""

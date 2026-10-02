@@ -12,7 +12,7 @@ refusée n'est pas raccourcie pour passer : elle sort « non vérifiée », avec
 import re
 
 from . import codes
-from .extract import LATIN
+from .extract import BLOCK, BLOCK_TITLES, LATIN
 
 MAX_NUMBER = 40      # caractères : « 46 quater-0 ZZ bis » en a 18
 
@@ -71,6 +71,11 @@ def refusal(c):
                 | set(codes.SUCCESSION)):
             return "code inconnu : non envoyé"
         if kind == "text_article":
+            if c.get("text_nature") in BLOCK_TITLES:
+                # La Constitution, la Déclaration de 1789 : seul leur identifiant fixe part.
+                if c.get("text_id") not in {b["text_id"] for b in BLOCK.values()}:
+                    return "identifiant de texte inconnu : non envoyé"
+                return None
             if c.get("text_nature") not in ("LOI", "ORDONNANCE", "DECRET"):
                 return "nature de texte inconnue : non envoyé"
             if c.get("text_number") is not None and not _is(r"\d{2,4}-\d{1,5}",
