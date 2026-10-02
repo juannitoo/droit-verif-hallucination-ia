@@ -2578,6 +2578,56 @@ class AuditPass6(unittest.TestCase):
         unverified = extract("Article 1240 : « Tout fait ».", unverified=True)[0]
         self.assertEqual([(c["kind"], c["number"]) for c in unverified], [("unverified", "1240")])
 
+    def test_real_decisions(self):
+        """Dix vraies décisions Judilibre (02/10/2026) : formules qui ne nomment aucun autre
+        texte, listes d'articles, intervalles."""
+        cpc, pen, cpp = "Code de procédure civile", "Code pénal", "Code de procédure pénale"
+        cases = [
+            # l'en-tête de chaque arrêt de la Cour de cassation
+            ("composée, en application de l'article R. 431-5 du code de l'organisation "
+             "judiciaire, du président et des conseillers précités, après en avoir délibéré "
+             "conformément à la loi, a rendu le présent arrêt.",
+             [("R431-5", "Code de l'organisation judiciaire")]),
+            ("méconnu le principe d'interprétation stricte de la loi pénale, ainsi que les "
+             "articles 111-4, 111-5 et 432-14 du code pénal, 591 et 593 du code de procédure "
+             "pénale ; 2°/ que", [("111-4", pen), ("111-5", pen), ("432-14", pen),
+                                  ("591", cpp), ("593", cpp)]),
+            ("au titre de l'article 700 du code de procédure civile et aux entiers dépens ; - "
+             "Ordonner l'exécution provisoire.", [("700", cpc)]),
+            ("Vu l'article 700 du Code de procédure civile, Vu le Décret n°2015-1437 du 5 "
+             "novembre 2015, Vu les pièces.", [("700", cpc)]),
+            ("avisées conformément à l'article 450 al 2 du CPC. Signé par Mme X.",
+             [("450", cpc)]),
+            ("prévues par les articles 620, alinéa 1, et 1015 du code de procédure civile, "
+             "l'arrêt", [("620", cpc), ("1015", cpc)]),
+            ("Vu les articles L. 2315-27, alinéas 1 et 2, et L. 2315-38 du code du travail.",
+             [("L2315-27", "Code du travail"), ("L2315-38", "Code du travail")]),
+            ("l'article 2 du décret numéro 2016-382 du 30 mars 2016, fixant",
+             [("2", "Décret n° 2016-382 du 30 mars 2016")]),
+            ("la convention relative aux droits de l'enfant du 20 novembre 1989. 2°/ que "
+             "seuls peuvent, dans les conditions prévues aux articles 26 et suivants du code "
+             "civil, réclamer, selon des caractères déterminés par un décret en Conseil d'État "
+             "; que", [("26", "Code civil")]),
+            # mais « un autre texte » reste un doute
+            ("l'article 1240 du code civil et la loi n° 89-462 du 6 juillet 1989.", []),
+            ("l'article 1240 du code civil, au sens du décret en Conseil d'État n° 2016-382.",
+             []),
+            # un intervalle : ses bornes ne disent rien des articles entre elles
+            ("articles 131-6 à 131-11 du code pénal et l'article 1240 du code civil.",
+             [("1240", "Code civil")]),
+        ]
+        for text, want in cases:
+            self.assertEqual([c[:2] for c in self.read(text)], want, text)
+        grey = [(c["number"], c["court"], c["what"]) for c in extract(
+            "les articles 131-4-1 à 131-11 et 132-25 à 132-70 du code pénal.",
+            unverified=True)[0]]
+        self.assertEqual(grey, [("131-4-1 à 131-11", pen, "range"),
+                                ("132-25 à 132-70", pen, "range")])
+        rg = [(c["court"], c["cited_date"]) for c in extract(
+            "contre un arrêt n° RG 23/07760 rendu le 28 novembre 2024 par la cour d'appel de "
+            "Lyon (3e chambre A).")[0] if c["kind"] == "decision"]
+        self.assertEqual(rg, [("CA Lyon", "2024-11-28")])
+
     def test_decision_dates_as_doctrine_writes_them(self):
         for text, day, block in [
                 ("Cass. 2e civ., 7 avr. 2022, n° 20-19.977 rappelle", "2022-04-07",

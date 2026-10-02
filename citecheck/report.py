@@ -154,6 +154,8 @@ def citation_label(r, report=None):
     if r.get("kind") == "text":
         return r["court"]                   # « Loi n° 91-647 du 10 juillet 1991 »
     if r.get("kind") == "unverified":
+        if r.get("what") == "range":
+            return t.UNVERIFIED_RANGE_LINE.format(code=r["court"], number=r["number"])
         return (t.UNVERIFIED_RG_LINE if r.get("what") == "rg"
                 else t.UNVERIFIED_ARTICLE_LINE).format(number=r["number"])
     if r.get("kind") == "convention_article":

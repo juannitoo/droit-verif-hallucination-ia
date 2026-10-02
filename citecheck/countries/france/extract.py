@@ -767,9 +767,22 @@ SUFFIX = (rf"(?:\s{LATIN}\b|-0\b"
           r"|\s(?-i:(?!C\.)[A-Z]{1,2})(?!\w)"
           r"(?!\.\s*(?!(?:du|de|des|d['’])(?![a-zà-ÿ]))[a-zà-ÿ]))")
 NUM = rf"(?:[LRDA]\.?\s?\*?\s?)?(?:1er|\d+(?:[-‑.]\d+)*){SUFFIX}*\b"
+# « articles 620, alinéa 1, et 1015 du code de procédure civile » : un alinéa dans la liste
+# (vraies décisions du 02/10/2026). Son numéro n'est pas un article (_LIST_PARA, retiré).
+_LIST_PARA = (r"\s*,\s*(?:alinéas\s*\d{1,2}(?:\s*(?:,|et)\s*\d{1,2})+"
+              r"|(?:alinéa|al\.?|§)\s*(?:\d{1,2}|1er|premier))\b")
 RE_ARTICLES = re.compile(
-    r"\bart(?:icle)?s?\.?\s+(" + NUM + r"(?:\s*(?:,|et|à|ou)\s*" + NUM + r")*)", re.I)
+    r"\bart(?:icle)?s?\.?\s+(" + NUM + r"(?:(?:" + _LIST_PARA + r"\s*,?)?\s*(?:,|et|à|ou)\s*"
+    + NUM + r")*)", re.I)
 RE_ONE_NUM = re.compile(NUM, re.I)
+RE_LIST_PARA = re.compile(_LIST_PARA, re.I)
+
+
+def _list_numbers(group):
+    """Les numéros d'une liste d'articles, sans ceux de ses alinéas."""
+    paras = [p.span() for p in RE_LIST_PARA.finditer(group)]
+    return [x for x in RE_ONE_NUM.finditer(group)
+            if not any(a <= x.start() < b for a, b in paras)]
 # « du même code », « dudit code », « de ce code », « du code précité ». « du code » tout
 # court seulement s'il finit le visa : « L'article 6 du code de déontologie des avocats »
 # n'est pas un article du code cité avant (audit du 02/10/2026).
@@ -802,9 +815,12 @@ QUOTE_BEFORE = 15   # « ... » (art. L. 1234-5) : le texte précède, collé
 ABBREVIATIONS_WITH_DOT = ["c", "com", "soc", "civ", "crim", "cass", "confl", "const", "cons",
                           "trib", "ass", "sect", "ch", "req", "art", "t", "m", "plén",
                           "s", "ss", "suiv", "v", "adde", "comp", "cf"]
+# « ... du 20 novembre 1989. 2°/ que ... » : la branche suivante d'un moyen commence une
+# phrase. « Vu l'article 700 du code de procédure civile, Vu le décret ... » : chaque « Vu »
+# est un visa à part (vraies décisions du 02/10/2026).
 RE_SENTENCE_END = re.compile(
-    "".join(rf"(?<!\b(?i:{a}))" for a in ABBREVIATIONS_WITH_DOT)
-    + r"[.;!?]\s+(?=[A-ZÀ-ÖØ-Þ«])")
+    "(?:" + "".join(rf"(?<!\b(?i:{a}))" for a in ABBREVIATIONS_WITH_DOT)
+    + r"[.;!?]\s+(?=[A-ZÀ-ÖØ-Þ«]|\d{1,2}°\s*/)|,\s+(?=Vu\s))")
 
 
 def nearest_idcc(text, start, end, taken=()):
@@ -859,11 +875,11 @@ def assign_quotes(text, spans):
 # 89-462 », « loi du 6 juillet 1989 », « décret n°67-223 ». Un numéro ou une date est exigé :
 # « la loi » seule ne désigne rien.
 _TEXT_REF = (r"(?P<nature>loi(?:\s+organique)?|ordonnance|d[ée]cret(?:-loi)?)"
-             r"(?:\s*n[°ºo]\s*(?P<num>\d{2,4}-\d{1,5})|\s+(?P<num2>\d{2,4}-\d{1,5}))?"
+             r"(?:\s*(?:n[°ºo]|numéro)\s*(?P<num>\d{2,4}-\d{1,5})|\s+(?P<num2>\d{2,4}-\d{1,5}))?"
              r"(?:\s*,?\s+du\s+(?P<day>1er|\d{1,2})\s+(?P<month>" + "|".join(MONTHS) +
              r")\s+(?P<year>\d{4}))?")
 # (« 37, alinéa 2, de la loi n° 91-647 du 10 juillet 1991 » : un alinéa entre les deux.)
-RE_TEXT_AFTER = re.compile(r"^\W{0,3}(?:(?:alinéa|al\.)\s*(?:\d{1,2}|1er|premier)\s*,?\s*)?"
+RE_TEXT_AFTER = re.compile(r"^\W{0,3}(?:(?:alinéa|al\.?)\s*(?:\d{1,2}|1er|premier)\s*,?\s*)?"
                            r"(?:de\s+la\s+|du\s+|de\s+l['’]\s*)?" + _TEXT_REF, re.I)
 # « loi n° 89-462 du 6 juillet 1989 modifiée, article 22 », « ..., dite loi Mermaz, article
 # 22 » : la loi reste celle de l'article (audit du 02/10/2026).
@@ -957,8 +973,8 @@ def _convention_name(text, lo, hi):
 #   « art. 1240 C. civ. », « art. 1240 (C. civ.) », « article 22 de la loi n° 89-462 du 6
 #   juillet 1989 », « article 1241 du même code », « article 23 de la même loi ».
 _PREP = r"(?:du|des|de\s+la|de\s+l['’]|de|aux|au|dudit|du\s+même|de\s+ce(?:\s+même)?)"
-# « alinéa 2 », « al. 1er », « § 1 », « , II, » (« article L. 442-1, II, du code de commerce »).
-_PARA = (r"(?:(?:alinéa|al\.)\s*(?:\d{1,2}|1er|premier)|§\s*\d{1,2}"
+# « alinéa 2 », « al. 1er », « al 2 », « § 1 », « , II, » (« article L. 442-1, II, du code de commerce »).
+_PARA = (r"(?:(?:alinéa|al\.?)\s*(?:\d{1,2}|1er|premier)|§\s*\d{1,2}"
          r"|(?-i:[IVX]{1,4})(?=\s*,))")
 # « articles L. 145-1 et suivants du code de commerce », « art. 1240 et s. C. civ. ».
 _FOLLOWING = r"(?:\s*et\s+(?:suivants|suiv\.|s\.)|\s+ss\.)?"
@@ -984,9 +1000,15 @@ _SAME_OR_AMENDING = (["dite ", "dit ", "par la ", "par le ", "par l'", "par l’
                       "même ", "ladite "]
                      + [f"{w} {p}" for w in ("issue", "issu", "résultant")
                         for p in ("de la ", "de l'", "de l’", "du ")])
+# (« délibéré conformément à la loi », dans l'en-tête de chaque arrêt de la Cour de
+# cassation, « la loi pénale », « déterminés par un décret en Conseil d'État » : aucun texte
+# désigné, vraies décisions du 02/10/2026.)
+_NO_TEXT_BEFORE = ["conformément à la "]
 _ANY_TEXT = re.compile(r"(?<!même )(?<!dudit )(?<!\bce )\bcodes?\b"
-                       r"|" + "".join(f"(?<!{re.escape(w)})" for w in _SAME_OR_AMENDING)
-                       + r"\b(?:lois?|décrets?|ordonnances?)\b"
+                       r"|" + "".join(f"(?<!{re.escape(w)})"
+                                      for w in _SAME_OR_AMENDING + _NO_TEXT_BEFORE)
+                       + r"\b(?:lois?|décrets?|ordonnances?)\b(?!\s+pénale\b)"
+                       r"(?!\s+en\s+Conseil\s+d['’]\s*[ÉE]tat\b(?!\s*n[°ºo]|\s+du\s+\d))"
                        r"|\b(?:conventions?|CCNT?|IDCC|directives?|traités?|constitution"
                        r"|chartes?|pactes?|protocoles?|règlements?|annexes?)\b|\b(?:conv|ann)\."
                        r"|\b(?:arrêté)s?\s+(?:\(|n[°ºo]|du\b|UE\b|CE\b)"
@@ -1002,7 +1024,9 @@ _NEXT_ARTICLE = re.compile(r"[\s,;:]*(?:(?:et|ou)\b\s*)?(?:l['’]\s*)?\bart(?:i
 # l'article suivant, qui a son propre code, pas une autre lecture de celui-ci.
 _ALTERNATIVE = re.compile(r"\s*,?\s*(?:ou\b|(?:et|ni)\s+(?:du|de|des|d['’]|au|aux)\b"
                           r"|et\s+(?:l[ae]s?\s+|l['’]\s*)?(?-i:[A-Z]{2,})\b)"
-                          r"(?!\s*(?:à\s+|aux\s+|de\s+)?(?:l['’]\s*)?art(?:icle)?s?\b)", re.I)
+                          r"(?!\s*(?:à\s+|aux\s+|de\s+)?(?:l['’]\s*)?art(?:icle)?s?\b)"
+                          # « au titre de l'article 700 ... et aux entiers dépens »
+                          r"(?!\s*(?:entiers\s+)?dépens\b)", re.I)
 # Un « du » laissé en suspens juste avant le code écrit devant l'article suivant.
 _DANGLING = re.compile(r"\b(?:du|des|de\s+la|de\s+l['’]|de|au|aux)\s*$", re.I)
 # « de la convention collective » : rattachée à l'article, sans virgule.
@@ -1107,8 +1131,12 @@ class _Number:
 # « articles L. 761-1 du code de justice administrative et 37 de la loi du 10 juillet 1991 » :
 # le second numéro, sans « article » devant, a son propre texte derrière lui (audit visuel du
 # 02/10/2026). Seulement après « articles » au pluriel et un code ou une loi rattaché.
-RE_CONTINUED = re.compile(r"\s*(?:,|et)\s+(" + NUM + r")(?=\s*(?:,\s*" + _PARA
-                          + r"\s*,\s*)?\s+(?:de\s+la|du|de\s+l['’]|des)\s)", re.I)
+# « articles 111-4, 111-5 et 432-14 du code pénal, 591 et 593 du code de procédure pénale » :
+# une liste entière, et autant de listes que la phrase en enchaîne (vraies décisions du
+# 02/10/2026).
+RE_CONTINUED = re.compile(r"\s*(?:,|et)\s+(" + NUM + r"(?:\s*(?:,|et|à)\s*" + NUM + r")*)"
+                          r"(?=\s*(?:,\s*" + _PARA + r"\s*,\s*)?\s+(?:de\s+la|du|de\s+l['’]|des)\s)",
+                          re.I)
 
 
 def _continued(text, matches):
@@ -1116,19 +1144,23 @@ def _continued(text, matches):
     for m in matches:
         if not m.group(0).lower().startswith("articles"):
             continue
-        after = text[m.end():m.end() + CODE_NAME]
-        found = find_code(after)
-        named = RE_TEXT_AFTER.match(after)
-        if found and _CODE_LINK.fullmatch(after, 0, found[1]) and found[1] <= CODE_AFTER:
-            end = m.end() + found[2]
-        elif named and _text_ref(named) and _TEXT_LINK.fullmatch(after, 0,
-                                                                   named.start("nature")):
-            end = m.end() + named.end()
-        else:
-            continue
-        more = RE_CONTINUED.match(text, end)
-        if more:
+        end = m.end()
+        while True:
+            after = text[end:end + CODE_NAME]
+            found = find_code(after)
+            named = RE_TEXT_AFTER.match(after)
+            if found and _CODE_LINK.fullmatch(after, 0, found[1]) and found[1] <= CODE_AFTER:
+                end += found[2]
+            elif named and _text_ref(named) and _TEXT_LINK.fullmatch(after, 0,
+                                                                       named.start("nature")):
+                end += named.end()
+            else:
+                break
+            more = RE_CONTINUED.match(text, end)
+            if not more:
+                break
             out.append(_Number(more))
+            end = more.end(1)
     return out
 
 
@@ -1155,6 +1187,7 @@ def extract_articles(text):
     quotes = assign_quotes(text, [(m.start(), m.end()) for m in matches])
     citations, seen, no_code, attached, doubtful = [], Seen(), [], [], []
     unchecked = []          # (numéro, place, pourquoi) : relevés, jamais envoyés
+    ranges = []             # (« 131-6 à 131-11 », place, code ou texte) : jamais envoyés
     text_used = []          # où sont écrites les lois qui ont servi à un article
     last_code = last_idcc = last_text = None
     code_at = text_at = -1  # où commence l'article qui a pris last_code, last_text
@@ -1186,13 +1219,28 @@ def extract_articles(text):
         # commerce (audit du 01/10/2026).
         stop = RE_SENTENCE_END.search(text, m.end(), m.end() + CODE_NAME)
         after = text[m.end(): stop.start() + 1 if stop else m.end() + CODE_NAME]
-        found_numbers = list(RE_ONE_NUM.finditer(m.group(1)))
+        found_numbers = _list_numbers(m.group(1))
         numbers = [normalize_number(x.group(0)) for x in found_numbers]
         quote = quotes.get(index) if len(numbers) == 1 else None
         # Ce que surligne chaque numéro : l'article entier s'il est seul ; sinon chacun son
         # numéro (« articles 1240 et 1241 » : deux verdicts, jamais peints l'un sur l'autre).
         cores = ([m.span()] if len(numbers) == 1 else
                  [(m.start(1) + x.start(), m.start(1) + x.end()) for x in found_numbers])
+        # « articles 131-6 à 131-11 du code pénal » : un intervalle. Ses bornes seules ne
+        # disent rien des articles entre elles : tout l'intervalle est non vérifié (gris),
+        # jamais deux bleus qui feraient croire l'ensemble vérifié (Jean, 02/10/2026).
+        ranged = {}
+        for i in range(len(found_numbers) - 1):
+            if m.group(1)[found_numbers[i].end():found_numbers[i + 1].start()].strip() == "à":
+                ranged[i] = i + 1
+
+        def kept(court):
+            """(numéro, place) à vérifier ; les intervalles partent en non vérifié."""
+            skip = set(ranged) | set(ranged.values())
+            for i, j in ranged.items():
+                ranges.append((f"{numbers[i]} à {numbers[j]}", (cores[i][0], cores[j][1]),
+                               court))
+            return [(n, c) for k, (n, c) in enumerate(zip(numbers, cores)) if k not in skip]
 
         def unsure(contested=None):
             # Un code collé derrière une virgule (« art. 1240, C. trav., art. ... ») n'est à
@@ -1300,7 +1348,7 @@ def extract_articles(text):
                             reach = (reach[0], told.end())
             last_idcc = idcc or last_idcc
             used_until, last_kind = taken, None
-            for number, core in zip(numbers, cores):
+            for number, core in kept(f"IDCC {idcc}" if idcc else "convention collective"):
                 span = _fit(text, reach, core, len(numbers))
                 if seen.again(("idcc", idcc, number), span, core):
                     continue
@@ -1459,7 +1507,7 @@ def extract_articles(text):
         used_until, last_kind = max(m.end(), reach[1]), kind
         if kind == "text":
             last_text, text_at = value, m.start()
-            for number, core in zip(numbers, cores):
+            for number, core in kept(_text_label(value)):
                 span = _fit(text, reach, core, len(numbers))
                 key = ("text", value["text_nature"], value["text_number"], value["text_date"],
                        number)
@@ -1474,7 +1522,7 @@ def extract_articles(text):
         last_code, code_at = value, m.start()
         for number in numbers:
             codes_of.setdefault(number, set()).add(value)
-        for number, core in zip(numbers, cores):
+        for number, core in kept(value):
             span = _fit(text, reach, core, len(numbers))
             if seen.again((value, number), span, core):
                 continue
@@ -1499,7 +1547,20 @@ def extract_articles(text):
                        f"{'...' if len(doubtful) > 12 else ''}. La phrase ne le rattache pas à "
                        "un seul texte de façon sûre (deux textes nommés, ou un code qui peut "
                        "être celui de l'article voisin). Non vérifiés : à vérifier à la main.")
-    return citations, remarks, _unverified(unchecked, seen), text_used
+    if ranges:
+        remarks.append(f"{len(ranges)} intervalle(s) d'articles : "
+                       f"{', '.join(r[0] for r in ranges[:12])}. Les articles compris entre "
+                       "les bornes ne sont pas vérifiés un par un : non vérifiés.")
+    out = _unverified(unchecked, seen)
+    for label, place, court in ranges:
+        key = ("range", court, label)
+        if seen.again(key, place):
+            continue
+        out.append({"kind": "unverified", "order": "unverified", "court": court,
+                    "what": "range", "number": label, "cited_date": None, "reason": RANGE,
+                    "span": place})
+        seen[key] = out[-1]
+    return citations, remarks, out, text_used
 
 
 # Ce qui est relevé sans être vérifié : sur le PDF annoté, en gris avec son « ? », pour que
@@ -1512,6 +1573,8 @@ NO_TEXT = ("ni code ni texte reconnu à côté de cet article (un texte cité sa
            "un traité, une convention internationale, un arrêté...) : non vérifié")
 ATTACHED = ("article d'un avenant ou d'un accord collectif : seul le texte de base des "
             "conventions est vérifié")
+RANGE = ("intervalle d'articles : les articles compris entre les bornes ne sont pas vérifiés "
+         "un par un : non vérifié, à vérifier à la main")
 NO_COURT = ("numéro RG sans cour d'appel ni tribunal judiciaire reconnu dans la phrase (les "
             "jugements de prud'hommes, par exemple, ne sont pas publiés) : non vérifié")
 
@@ -1566,6 +1629,9 @@ RE_RG = re.compile(r"(?:\bRG|\bR\.G\.|n[°º])\s*(?:n[°º]\s*)?:?\s*(\d{2}/\d{4
 RE_LOWER_COURT = re.compile(
     r"\b(?P<kind>CA|cour\s+d['’]\s*appel|TJ|TGI|tribunal\s+judiciaire|"
     r"tribunal\s+de\s+grande\s+instance)\b\s*(?P<link>de\s+|d['’]\s*|du\s+|des\s+)?", re.I)
+RE_RG_THEN_COURT = re.compile(
+    r"\s*,?\s*(?:rendue?|prononcée?)\s+le\s+(\d{1,2})(?:er)?\s+("
+    + "|".join(map(re.escape, DATE_MONTHS)) + r")\s+(\d{4})\s+par\s+(?:la|le)\s+", re.I)
 CITY_LINKS = {"en", "de", "du", "des", "sur", "les", "la", "le", "lès", "d", "l"}
 
 
@@ -1606,6 +1672,14 @@ def extract_lower_courts(text, rgs, dates):
         for end in RE_SENTENCE_END.finditer(text, lo, m.start()):
             lo = end.end()
         courts = list(RE_LOWER_COURT.finditer(text, lo, m.start()))
+        d = dates.get(m.start())
+        if not courts:
+            # « un arrêt n° RG 23/07760 rendu le 28 novembre 2024 par la cour d'appel de
+            # Lyon » : la cour derrière, collée, selon ce seul modèle.
+            later = RE_RG_THEN_COURT.match(text, m.end())
+            court = later and RE_LOWER_COURT.match(text, later.end())
+            if court:
+                courts, d = [court], _iso(later) or d
         city = (_place(courts[-1].group("link") or "", _city(text[courts[-1].end():]))
                 if courts else "")
         if not courts or not city:
@@ -1614,7 +1688,6 @@ def extract_lower_courts(text, rgs, dates):
             continue
         kind = courts[-1].group("kind").lower()
         jurisdiction = "ca" if kind.startswith(("ca", "cour")) else "tj"
-        d = dates.get(m.start())
         if seen.again((jurisdiction, city, number, d), m.span()):
             continue
         label = ("CA " if jurisdiction == "ca" else "TJ ") + city
