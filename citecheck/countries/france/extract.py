@@ -144,6 +144,7 @@ RE_TCOM_NUMBER = re.compile(r"\b((?:19|20)\d\d[A-Z]\d{5}|[A-Z]?(?:19|20)\d{8})\b
 # Numéro de CAA : l'année, deux lettres de la cour, cinq chiffres. Aucune autre juridiction
 # n'a cette forme.
 RE_CAA = re.compile(r"\b(\d{2}[A-Z]{2}\d{5})\b")
+MARK_JAF = re.compile(r"\bjuge\s+aux\s+affaires\s+familiales\b", re.I)
 # Pour les décisions citées sans numéro : toute juridiction, suivie de près d'une date.
 MARK_ANY = [("CE", MARK_ADMIN), ("Cass.", MARK_JUDICIAL),
             # « confirmée par arrêt de la Cour de ce siège en date du 27 mars 2015 »
@@ -154,7 +155,15 @@ MARK_ANY = [("CE", MARK_ADMIN), ("Cass.", MARK_JUDICIAL),
             ("T. com.", RE_TCOM_COURT),
             # « conseil des prud'hommes », « Conseil de Prudhommes »
             ("CPH", re.compile(r"\bCPH\b|\b[Cc]onseil\s+des?\s+[Pp]rud['’]?\s*hommes\b")),
-            ("T. corr.", re.compile(r"\b[Tt]ribunal\s+correctionnel\b"))
+            ("T. corr.", re.compile(r"\b[Tt]ribunal\s+correctionnel\b")),
+            # Le juge aux affaires familiales siège au tribunal judiciaire : « le jugement
+            # rendu par le juge aux affaires familiales de [Localité 1] le 15 décembre 2023 ».
+            ("TJ", MARK_JAF),
+            # « Par jugement du 8 juillet 2021, le tribunal de Lisieux » : un tribunal nommé par
+            # sa ville seule, ou un ancien tribunal (d'instance, de police).
+            ("Tribunal", re.compile(r"\b[Tt]ribunal\s+(?:d['’]\s*instance|de\s+police"
+                                    r"|de\s+proximité|de\s+(?!(?i:commerce|grande)\b)"
+                                    r"(?=[A-ZÀ-Þ]))")),
             ] + MARK_OTHER
 UNNUMBERED_GAP = 60   # entre la juridiction et la date : « CE, Ass., sect., »
 # « la Cour de cassation applique la loi du 6 juillet 1989 » : la date est celle d'un texte.
@@ -211,6 +220,24 @@ RE_GLUED_BEFORE = re.compile(
     r"\b(\d{1,2})(?:er)?\s+(" + "|".join(map(re.escape, DATE_MONTHS)) + r")\s+(\d{4})"
     r"\s*,\s*(?:pourvoi\s+)?(?:n[°ºo]\s*)?$", re.I)
 RE_NEGATED = re.compile(r"\b(?:non|pas|ni|ou|plutôt|sauf)\b", re.I)
+# Entre un numéro et la date qui le suit, une autre décision : la date est la sienne. « a
+# formé le pourvoi n° A 24-17.185 contre l'arrêt rendu le 14 mai 2024 par la cour d'appel de
+# Pau » (le pourvoi était daté du jour de l'arrêt d'appel), « N° RG 25/00171 ... Décision
+# déférée à la Cour : Jugement du Conseil de Prud'hommes de Basse-Terre - section commerce -
+# du 12 Décembre 2024 » (vraies décisions, relues par Grok le 03/10/2026).
+RE_AGAINST = re.compile(r"\bcontre\s+(?:l['’]\s*|le\s+|la\s+|un\s+|une\s+)"
+                        r"(?:arrêt|jugement|ordonnance|décision)\b", re.I)
+RE_DECISION_OF = re.compile(r"\b(?:arrêt|jugement|ordonnance|décision)\s+(?:rendue?\s+par\s+"
+                            r"(?:le|la|l['’])|du|de\s+la|de\s+l['’])\s*", re.I)
+
+
+def _other_decision(text, lo, hi):
+    """Vrai si une autre décision est nommée dans text[lo:hi] : « contre l'arrêt », ou une
+    décision suivie de sa juridiction (« Jugement du Conseil de Prud'hommes »)."""
+    if RE_AGAINST.search(text, lo, hi):
+        return True
+    return any(rx.match(text, d.end(), hi) for d in RE_DECISION_OF.finditer(text, lo, hi)
+               for _, rx in MARK_ANY)
 
 
 def assign_dates(text, spans, used=None, places=None):
@@ -246,6 +273,8 @@ def assign_dates(text, spans, used=None, places=None):
             lo, hi = (end, m.start()) if m.start() >= end else (m.end(), start)
             if RE_SENTENCE_END.search(text, max(0, lo - 1), hi):
                 continue                    # une fin de phrase les sépare
+            if m.start() >= end and _other_decision(text, end, m.start()):
+                continue                    # la date d'une autre décision, nommée entre eux
             candidates.append((gap, start))
         if candidates:
             gap, start = min(candidates)
@@ -390,6 +419,8 @@ RE_UNNUMBERED_GAP = re.compile(
     r"|\d{1,2}(?:e|è|ème|ère|re|er)|1re|1ère|Gde|grande"
     # « Le Conseil d'État a jugé le 5 juin 2009 »
     r"|a\s+(?:jugé|statué|décidé|retenu|rappelé)(?:\s*,)?\s+le)(?![\w'’])"
+    # un lieu pseudonymisé : « de [Localité 1] »
+    r"|\[[^\]\n]{1,30}\]"
     # une ville : « CA Paris », « tribunal administratif de Toulon », « de BESANCON »
     r"|(?-i:[A-ZÀ-Þ][\w'’]*(?:-[\w'’]+)*))*", re.I)
 
@@ -407,7 +438,7 @@ RE_DECISION_BEFORE = re.compile(
 RE_COURT_FOLLOWING = re.compile(
     r"\s*,?\s*(?:[-–]\s*)?(?:entre\s+les\s+parties\s*,\s*)?"
     r"(?:rendue?\s+en\s+formation\s+de\s+départage\s*,\s*)?"
-    r"(?:par\s+(?:laquelle|lequel)\s+|par\s+)?(?:(?:le|la|l['’])\s*)?"
+    r"(?:par\s+(?:laquelle|lequel)\s+|par\s+)?(?:(?:le|la|l['’]|du|de\s+la|de\s+l['’])\s*)?"
     r"(?:(?:juge\s+des\s+référés|juge\s+aux\s+affaires\s+familiales"
     r"|(?:premier\s+)?(?:vice-)?présidente?|magistrate?\s+désignée?)"
     r"(?:\s+de\s+la\s+\d{1,2}(?:e|ème|è)\s+chambre)?\s+(?:du|de\s+la|de\s+l['’])\s*)?", re.I)
@@ -434,8 +465,23 @@ def _court_following(text, m):
     for court, rx in MARK_ANY:
         found = rx.match(text, link.end())
         if found:
-            return court, before.start(), found.end()
+            # Sa ville et sa formation entre parenthèses : « par la cour d'appel de Pau (2e
+            # chambre, section 1) ».
+            return court, before.start(), _city_end(text, found.end())
     return None
+
+
+RE_FORMATION = re.compile(r"[^\S\f]*\([^()\f]{1,40}\)")   # pas sur deux pages
+
+
+def _city_end(text, end):
+    """La fin de la ville et de la formation écrites juste après la juridiction qui finit à
+    `end` ; `end` s'il n'y en a pas."""
+    city = RE_PLACEHOLDER.match(text, end) or _CITY.match(text, end)
+    if not city or any(rx.search(text, end, city.end()) for _, rx in _COURT_NAMES):
+        return end
+    formation = RE_FORMATION.match(text, city.end())
+    return formation.end() if formation else city.end()
 
 
 def unnumbered(text, used):
@@ -723,9 +769,20 @@ def _extract(text, with_unverified=False, whole_texts=False):
     citations += lower
     remarks += lower_remarks
     numbered_days = {c["cited_date"] for c in citations}
+    late_repeats = []
     for court, day, span in unnumbered(text, used):
-        # Déjà citée avec son numéro à cette date : c'est la même décision, reprise.
+        # Déjà citée avec son numéro à cette date : c'est la même décision, reprise. Elle n'est
+        # marquée comme reprise que si la cour et sa ville sont celles du numéro : « un arrêt
+        # n° RG 23/07760 rendu le 28 novembre 2024 par la cour d'appel de Lyon », puis
+        # « l'arrêt attaqué (Lyon, 28 novembre 2024) » (vraies décisions, relues par Grok le
+        # 03/10/2026). Sinon, comme avant, rien.
         if day in numbered_days:
+            words = text[span[0]:span[1]].lower()
+            same = [c for c in lower if c["cited_date"] == day and c.get("place")
+                    and LOWER_COURTS.get(c.get("jurisdiction")) == court
+                    and c["place"].lower() in words]
+            if len(same) == 1:
+                late_repeats.append((same[0], span))
             continue
         if not seen.again(("unnumbered", court, day), span):
             citations.append({"kind": "decision", "order": "unnumbered", "court": court,
@@ -750,6 +807,12 @@ def _extract(text, with_unverified=False, whole_texts=False):
             both[i]["quote"] = quote
     _decision_blocks(text, [c for c in both if c["kind"] == "decision" and c.get("number")],
                      date_places)
+    # (Après les blocs : une reprise sans numéro est déjà entière. Jamais sur une autre citation.)
+    taken = [tuple(s) for c in both for s in [c["span"]] + c.get("repeats", [])]
+    for c, (a, b) in late_repeats:
+        if not any(x < b and a < y for x, y in taken):
+            c.setdefault("repeats", []).append((a, b))
+            taken.append((a, b))
     _apart(both)
     return both, remarks + article_remarks
 
@@ -771,12 +834,17 @@ _EU_NAMES = [
                         r"|des\s+Communautés))", re.I)),
     ("Trib. UE", re.compile(r"\b(?:TPICE|Trib\.\s?UE|Tribunal\s+de\s+l['’]\s*Union)", re.I)),
 ]
-_COURT_NAMES = ([(name, rx) for name, rx in MARK_ANY if name != EU] + _EU_NAMES
+# (Le juge aux affaires familiales n'ouvre pas un bloc : « TRIBUNAL JUDICIAIRE DE LYON - JUGE
+# AUX AFFAIRES FAMILIALES Jugement de divorce du 18 février 2025, RG n° 23/04512 » garde la
+# date et le numéro.)
+_COURT_NAMES = ([(name, rx) for name, rx in MARK_ANY if name != EU and rx is not MARK_JAF]
+                + _EU_NAMES
                 + [("Cass.", rx) for rx, _ in CHAMBERS])
 # Les mots de liaison permis entre deux morceaux retenus d'une décision.
 _LINK = re.compile(
     r"(?:[\s,.:;()]|\b(?:du|de|des|la|le|les|l['’]|en\s+date\s+du|pourvoi|arr[êe]t|décision|"
-    r"rendue?|requête|req\.|RG|R\.G\.|avis|section|sect\.|G(?:de|rande)\s+ch(?:ambre|\.)?)"
+    r"rendue?|requête|req\.|RG|R\.G\.|avis|section|sect\.|G(?:de|rande)\s+ch(?:ambre|\.)?"
+    r"|numéro)"
     r"(?![\w'’])|\bn[°º]\.?|\bno\b)*", re.I)
 # Une ville après une cour d'appel, un tribunal, une CAA : « CA Paris », « CAA de Nancy »,
 # « CA Aix-en-Provence », « TJ Le Mans ». Un seul lieu : un mot, ou des mots liés par des
@@ -784,6 +852,10 @@ _LINK = re.compile(
 # pas un mot de liaison, le bloc revient au numéro (audit du 01/10/2026).
 _CITY = re.compile(r"\s*(?:de\s+|d['’]\s*|du\s+|des\s+)?(?:(?:Le|La|Les)\s+|L['’]\s*)?"
                    r"[A-ZÀ-Þ][^\W\d_'’-]*(?:['’-][^\W\d_]+)*(?:\s+de\s+La\s+Réunion)?")
+
+
+# Un lieu pseudonymisé à la place de la ville : « juge aux affaires familiales de [Localité 1] ».
+RE_PLACEHOLDER = re.compile(r"\s*(?:de\s+|d['’]\s*)?\[[^\]\n]{1,30}\]", re.I)
 
 
 def _accepted(c):
@@ -831,6 +903,19 @@ def _court_piece(text, lo, hi, accepted):
     return first, last
 
 
+AFTER_ORDERS = {"ta": "TA", "caa": "CAA", "administrative": "administrative"}
+LOWER_COURTS = {"ca": "CA", "tj": "TJ"}
+# La cour écrite après le RG et sa date : « un arrêt n° RG 23/07760 rendu le 28 novembre 2024
+# par la cour d'appel de Lyon (3e chambre A) ».
+RE_BY_COURT = re.compile(r"\s*,?\s*par\s+(?:la|le|l['’])\s*", re.I)
+# Les parties, entre la date et le numéro d'un arrêt de la CEDH : « CEDH, arrêt du 15 mars
+# 2012, Solomakhin c. Ukraine, n° 24429/03 ».
+# (« Dubská et Krejzová », sans « c. » : des noms propres seulement.)
+RE_PARTIES = re.compile(r"\s*,\s*(?-i:[A-ZÀ-Þ][\w'’.-]*)(?:\s+(?:e\.a\.|et\s+autres"
+                        r"|(?:et\s+)?(?-i:[A-ZÀ-Þ][\w'’.-]*)))*(?:\s+c\.\s+(?-i:[A-ZÀ-Þ][\w'’-]*)"
+                        r"(?:\s+[\w'’-]+){0,3})?\s*,\s*")
+
+
 def _block(text, lo, start, end, c, day, chamber_at):
     """Le bloc de la décision dont le numéro est text[start:end], s'il suit le modèle ;
     sinon None."""
@@ -846,7 +931,7 @@ def _block(text, lo, start, end, c, day, chamber_at):
     city = None
     if court:
         pieces.append(court)
-        if c.get("order") in ("lower", "caa"):
+        if c.get("order") in ("lower", "caa", "ta"):
             m = _CITY.match(text, court[1])
             # Une ville, pas une juridiction déguisée en ville (« CAA de Nancy CE »).
             if (m and m.end() > court[1]
@@ -854,6 +939,18 @@ def _block(text, lo, start, end, c, day, chamber_at):
                     and not any(rx.search(text, court[1], m.end()) for _, rx in _COURT_NAMES)):
                 city = (court[1], m.end())
                 pieces.append(city)
+    # La juridiction écrite après le numéro, selon le modèle de court_after : « n° 2602422 du
+    # 5 mai 2026, le juge des référés du tribunal administratif de Nice ».
+    after = RE_COURT_AFTER.match(text, end)
+    if after and court_after(text, end) == AFTER_ORDERS.get(c.get("order")):
+        pieces.append((end, _city_end(text, after.end())))
+    elif c.get("order") == "lower" and not court:
+        tail = max(b for _, b in pieces)
+        by = RE_BY_COURT.match(text, tail)
+        named = by and [m for name, rx in _COURT_NAMES if name in _accepted(c)
+                        for m in [rx.match(text, by.end())] if m]
+        if named:
+            pieces.append((tail, _city_end(text, named[0].end())))
     # Les morceaux qui se chevauchent (« Cass. soc. » et la chambre « soc. ») n'en font qu'un.
     merged = []
     for a, b in sorted(pieces):
@@ -862,7 +959,8 @@ def _block(text, lo, start, end, c, day, chamber_at):
         else:
             merged.append((a, b))
     for (_, b), (a, _) in zip(merged, merged[1:]):
-        if not _LINK.fullmatch(text, b, a):
+        if not (_LINK.fullmatch(text, b, a)
+                or c.get("order") == "other" and RE_PARTIES.fullmatch(text, b, a)):
             return None                 # autre chose qu'un mot de liaison entre deux morceaux
     first, last = merged[0][0], merged[-1][1]
     if PAGE in text[first:last]:
@@ -981,8 +1079,11 @@ NUM = (rf"(?:[LRDA]\.?\s?\*?\s?(?:\d+(?:[-‑.]\d+|\s?[-‑]\s?\d+)*)"
        rf"|(?:1er|\d+(?:[-‑.]\d+)*)){SUFFIX}*\b")
 # « articles 620, alinéa 1, et 1015 du code de procédure civile » : un alinéa dans la liste
 # (vraies décisions du 02/10/2026). Son numéro n'est pas un article (_LIST_PARA, retiré).
-_LIST_PARA = (r"\s*,\s*(?:alinéas\s*\d{1,2}(?:\s*(?:,|et)\s*\d{1,2})+"
-              r"|(?:alinéa|al\.?|§)\s*(?:\d{1,2}|1er|premier))\b")
+# « articles 12, I, 2°, et 14, I, B, de la loi n° 2021-1040 » : un paragraphe en chiffres
+# romains, suivi de ses subdivisions (vraies décisions, relues par Grok le 03/10/2026).
+_SUBDIV = r"(?-i:[IVX]{1,4})(?:\s*,\s*(?:\d{1,2}°|(?-i:[A-Z])(?![\w'’])))*(?![\w'’])"
+_LIST_PARA = (r"\s*,\s*(?:(?:alinéas\s*\d{1,2}(?:\s*(?:,|et)\s*\d{1,2})+"
+              r"|(?:alinéa|al\.?|§)\s*(?:\d{1,2}|1er|premier))\b|" + _SUBDIV + ")")
 # « l'article préliminaire du code de procédure pénale » : un article sans numéro, relevé,
 # jamais envoyé (PRELIMINARY).
 ITEM = rf"(?:{NUM}|préliminaire\b)"
@@ -1097,7 +1198,9 @@ _TEXT_REF = (r"(?P<nature>loi(?:\s+organique)?|ordonnance|d[ée]cret(?:-loi)?)"
              r"(?:\s*,?\s+du\s+(?P<day>1er|\d{1,2})\s+(?P<month>" + "|".join(MONTHS) +
              r")\s+(?P<year>\d{4}))?")
 # (« 37, alinéa 2, de la loi n° 91-647 du 10 juillet 1991 » : un alinéa entre les deux.)
-RE_TEXT_AFTER = re.compile(r"^\W{0,3}(?:(?:alinéa|al\.?)\s*(?:\d{1,2}|1er|premier)\s*,?\s*)?"
+# (« 14, I, B, de la loi n° 2021-1040 » : un paragraphe et ses subdivisions.)
+RE_TEXT_AFTER = re.compile(r"^\W{0,3}(?:(?:alinéa|al\.?)\s*(?:\d{1,2}|1er|premier)\s*,?\s*"
+                           r"|" + _SUBDIV + r"\s*,\s*)?"
                            r"(?:de\s+la\s+|du\s+|de\s+l['’]\s*)?" + _TEXT_REF, re.I)
 # « loi n° 89-462 du 6 juillet 1989 modifiée, article 22 », « ..., dite loi Mermaz, article
 # 22 » : la loi reste celle de l'article (audit du 02/10/2026).
@@ -1217,7 +1320,7 @@ def _convention_name(text, lo, hi):
 _PREP = r"(?:du|des|de\s+la|de\s+l['’]|de|aux|au|dudit|du\s+même|de\s+ce(?:\s+même)?)"
 # « alinéa 2 », « al. 1er », « al 2 », « § 1 », « , II, » (« article L. 442-1, II, du code de commerce »).
 _PARA = (r"(?:(?:alinéa|al\.?)\s*(?:\d{1,2}|1er|premier)|§\s*\d{1,2}"
-         r"|(?-i:[IVX]{1,4})(?=\s*,))")
+         r"|" + _SUBDIV + r"(?=\s*,))")
 # « articles L. 145-1 et suivants du code de commerce », « art. 1240 et s. C. civ. ».
 _FOLLOWING = r"(?:\s*et\s+(?:suivants|suiv\.|s\.)|\s+ss\.)?"
 # Entre l'article et le code qui le suit : « du », un alinéa, une parenthèse fermée juste
@@ -1986,6 +2089,10 @@ OTHER_TEXTS = [(re.compile(rx, re.I), label) for rx, label in [
     # Avec sa majuscule : « la constitution d'une société » n'en est pas une.
     (r"\b(?-i:Constitution)\b(?!\s+(?:du\s+27\s+octobre\s+1946|de\s+1946|de\s+1848))",
      "Constitution du 4 octobre 1958"),
+    # « la Constitution, notamment son Préambule », « le Préambule de la Constitution de 1946 »
+    # (Le « Préambule » d'un contrat n'en est pas un.)
+    (r"\b(?-i:Préambule)\s+(?:de\s+la\s+Constitution|de\s+1946)\b"
+     r"|(?<=\bson\s)(?-i:Préambule)\b", "Préambule de la Constitution"),
     (r"\bdéclaration\s+des\s+droits\s+de\s+l" + _APOS + r"homme\s+et\s+du\s+citoyen"
      r"|\bDéclaration\s+de\s+1789\b|\b(?-i:DDHC)\b",
      "Déclaration des droits de l'homme et du citoyen de 1789"),
@@ -1998,6 +2105,9 @@ OTHER_TEXTS = [(re.compile(rx, re.I), label) for rx, label in [
     (r"\barrêté(?:\s+(?:interministériel|ministériel|préfectoral|municipal))?"
      r"(?:\s+n[°º]\s*[\w/-]+)?(?:\s+du\s+(?:maire|préfet|ministre)\b[^,;.\d]{0,60}?)?"
      r"\s+du\s+(" + _D + r")", "Arrêté du {}"),
+    # « les dispositions du plan local d'urbanisme approuvé le 10 avril 2015 »
+    (r"\bplan\s+local\s+d" + _APOS + r"urbanisme\s+(?:approuvé|adopté)\s+(?:le|par\s+"
+     r"(?:une\s+)?délibération\s+du)\s+(" + _D + r")", "Plan local d'urbanisme approuvé le {}"),
     (r"\bloi\s+du\s+pays\s+(?:n[°º]\s*([\d-]+)\s+)?du\s+(" + _D + r")", "Loi du pays du {1}"),
     (r"\bdélibération\s+n[°º]\s*([\w/.-]*\d[\w/.-]*)(?:\s+du\s+" + _D + r")?",
      "Délibération n° {}"),
@@ -2097,7 +2207,9 @@ def _place(link, city):
 def _city(text):
     """Le nom de ville qui suit « CA » ou « tribunal judiciaire de » : mots à majuscule,
     reliés par des tirets ou par en, de, sur... Vide si rien de tel."""
-    words = re.findall(r"[\wÀ-ÿ]+|['’-]|\s+", text[:60])
+    # (Toute autre ponctuation arrête la ville : « cour d'appel de Lyon. Selon » se lisait
+    # « Lyon Selon », le point sauté.)
+    words = re.findall(r"[\wÀ-ÿ]+|['’-]|\s+|.", text[:60], re.S)
     out, pending = [], []
     for w in words:
         if w.isspace() or w in "-'’":

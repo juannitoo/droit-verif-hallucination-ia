@@ -2858,6 +2858,94 @@ class GrokReview(unittest.TestCase):
                                    "du plan local d'urbanisme."),
                          [("unverified", None, "Plan local d'urbanisme, articles UC 1, UC 2, "
                            "UC 13", None)])
+        self.assertEqual(self.read("la Constitution, notamment son Préambule et son article 61-1."
+                                   " Le Préambule du contrat."),
+                         [("unverified", None, "Constitution du 4 octobre 1958", None),
+                          ("unverified", None, "Préambule de la Constitution", None),
+                          ("unverified", "61-1", None, None)])
+
+
+class GrokSecondReview(unittest.TestCase):
+    """Les deuxième et troisième passages de Grok sur les vingt vraies décisions (03/10/2026)."""
+
+    def read(self, text):
+        return [(c["kind"], c["number"], c["court"], c.get("cited_date"),
+                 text[slice(*c["span"])])
+                for c in extract(text, unverified=True, whole_texts=True)[0]]
+
+    def test_the_date_of_another_decision(self):
+        # Le pourvoi n'a pas la date de l'arrêt qu'il attaque, ni le RG celle du jugement déféré.
+        self.assertEqual(self.read(
+            "a formé le pourvoi n° A 24-17.185 contre l'arrêt rendu le 14 mai 2024 par la cour "
+            "d'appel de Pau (2e chambre, section 1), dans le litige."),
+            [("decision", "24-17.185", "Cass", None, "24-17.185"),
+             ("decision", None, "CA", "2024-05-14",
+              "arrêt rendu le 14 mai 2024 par la cour d'appel de Pau (2e chambre, section 1)")])
+        self.assertEqual(self.read(
+            "AFFAIRE N° : N° RG 25/00171\nDécision déférée à la Cour : Jugement du Conseil de "
+            "Prud'hommes de Basse-Terre - section commerce - du 12 Décembre 2024.")[0][:4],
+            ("unverified", "25/00171", None, None))
+
+    def test_court_after_the_date(self):
+        for text, want in [
+                ("a confirmé le jugement du 29 juin 1999 du tribunal administratif de Nice "
+                 "rejetant la demande.",
+                 ("TA", "1999-06-29", "jugement du 29 juin 1999 du tribunal administratif de "
+                  "Nice")),
+                ("confirmer le jugement rendu par le juge aux affaires familiales de [Localité 1] "
+                 "le 15 décembre 2023.",
+                 ("TJ", "2023-12-15", "juge aux affaires familiales de [Localité 1] le 15 "
+                  "décembre 2023")),
+                ("Par jugement du 8 juillet 2021, le tribunal de Lisieux a débouté M. [D].",
+                 ("Tribunal", "2021-07-08", "jugement du 8 juillet 2021, le tribunal de "
+                  "Lisieux"))]:
+            self.assertEqual(self.read(text), [("decision", None) + want], text)
+
+    def test_the_whole_citation_is_highlighted(self):
+        for text, want in [
+                ("Par un jugement n° 1908677/4 du 25 novembre 2022, le tribunal administratif de "
+                 "Montreuil a annulé.",
+                 "n° 1908677/4 du 25 novembre 2022, le tribunal administratif de Montreuil"),
+                ("Article 1er : Le jugement du tribunal administratif de Toulon n° 2103189 du 28 "
+                 "juin 2024 est annulé.",
+                 "tribunal administratif de Toulon n° 2103189 du 28 juin 2024"),
+                ("( Cass. Soc, 6 mai 2009 numéro 07 44 485)",
+                 "Cass. Soc, 6 mai 2009 numéro 07 44 485"),
+                ("(CEDH, arrêt du 15 mars 2012, Solomakhin c. Ukraine, n° 24429/03, § 33)",
+                 "CEDH, arrêt du 15 mars 2012, Solomakhin c. Ukraine, n° 24429/03"),
+                ("(CEDH, arrêt du 15 novembre 2016, Dubská et Krejzová, n° 28859/11, § 174)",
+                 "CEDH, arrêt du 15 novembre 2016, Dubská et Krejzová, n° 28859/11"),
+                # la formation coupée par un saut de ligne
+                ("Mme X a formé un pourvoi contre l'arrêt rendu le 14 mai 2024 par la cour "
+                 "d'appel de Pau (2e\nchambre, section 1), dans le litige.",
+                 "arrêt rendu le 14 mai 2024 par la cour d'appel de Pau (2e\nchambre, section 1)"),
+                # la cour écrite après le RG et sa date
+                ("La société a formé un pourvoi contre un arrêt n° RG 23/07760 rendu le 28 "
+                 "novembre 2024 par la cour d'appel de\nLyon (3e chambre A), dans le litige.",
+                 "RG 23/07760 rendu le 28 novembre 2024 par la cour d'appel de\nLyon (3e "
+                 "chambre A)")]:
+            self.assertEqual(self.read(text)[0][4], want, text)
+
+    def test_a_dated_repeat_of_a_numbered_decision(self):
+        # Même cour, même ville, même date : une reprise. Une autre ville : rien, comme avant.
+        text = ("La société a formé un pourvoi contre un arrêt n° RG 23/07760 rendu le 28 "
+                "novembre 2024 par la cour d'appel de Lyon. Selon l'arrêt attaqué (Lyon, 28 "
+                "novembre 2024), rendu sur renvoi. Selon l'arrêt attaqué (Paris, 28 novembre "
+                "2024), rien.")
+        found = extract(text, unverified=True, whole_texts=True)[0]
+        self.assertEqual(len(found), 1)
+        self.assertEqual([text[a:b] for a, b in found[0]["repeats"]],
+                         ["arrêt attaqué (Lyon, 28 novembre 2024)"])
+
+    def test_a_dated_local_plan_is_grey(self):
+        self.assertEqual(self.read("les dispositions du plan local d'urbanisme approuvé le 10 "
+                                   "avril 2015 s'opposaient.")[0][:3],
+                         ("unverified", None, "Plan local d'urbanisme approuvé le 10 avril 2015"))
+
+    def test_a_paragraph_between_article_and_law(self):
+        self.assertEqual(self.read("Il résulte de l'article 14, I, B, de la loi n° 2021-1040 du "
+                                   "5 août 2021.")[0][:3],
+                         ("text_article", "14", "Loi n° 2021-1040 du 5 août 2021"))
 
 
 if __name__ == "__main__":
